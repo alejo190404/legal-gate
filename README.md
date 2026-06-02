@@ -1,4 +1,4 @@
-# LegalGate
+1# LegalGate
 
 LegalGate is a SaaS platform for automating legal consultation intake, classification, scheduling, and notifications.
 
@@ -71,3 +71,5 @@ docker compose up gateway frontend
 
 - Gateway: `http://localhost:8080/api/status`
 - Frontend: `http://localhost:4200`
+
+Made by Alejandro Barragán
