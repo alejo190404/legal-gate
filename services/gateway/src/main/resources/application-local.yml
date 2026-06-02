@@ -1,0 +1,4 @@
+legalgate:
+  gateway:
+    api-key: ${GATEWAY_API_KEY:local-dev-gateway-key}
+    forwarded-token: ${GATEWAY_FORWARDED_TOKEN:local-dev-service-token}

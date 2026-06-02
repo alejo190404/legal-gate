@@ -1,0 +1,17 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      PORT: 8080
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-local-dev-gateway-key}
+      GATEWAY_FORWARDED_TOKEN: ${GATEWAY_FORWARDED_TOKEN:-local-dev-service-token}
+      LEGALGATE_BACKEND_URL: ${LEGALGATE_BACKEND_URL:-}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
