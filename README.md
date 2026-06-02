@@ -50,6 +50,16 @@ npm start
 
 Open `http://localhost:4200`.
 
+## Vercel frontend deployment
+
+The repository includes root `vercel.json` configuration for the Angular frontend service:
+
+- Install command: `npm ci --prefix services/frontend`
+- Build command: `npm run build --prefix services/frontend`
+- Output directory: `services/frontend/dist/frontend/browser`
+
+This lets Vercel deploy the monorepo from the repository root while serving only the Angular landing page.
+
 ## Docker Compose
 
 Build and run either service locally:
