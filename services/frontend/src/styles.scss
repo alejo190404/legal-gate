@@ -1,0 +1,87 @@
+/* LegalGate global design tokens — adapted from the exported design system. */
+:root {
+  --orange-50: #fff4ed;
+  --orange-100: #ffe3d1;
+  --orange-200: #ffc2a1;
+  --orange-500: #fa5410;
+  --orange-600: #db4205;
+  --orange-700: #b23404;
+  --stone-0: #ffffff;
+  --stone-50: #faf8f4;
+  --stone-100: #f3efe8;
+  --stone-150: #ece7dd;
+  --stone-200: #e2dbce;
+  --stone-300: #d0c7b6;
+  --stone-400: #aea491;
+  --stone-500: #877e6c;
+  --stone-600: #655d4f;
+  --stone-700: #4a443a;
+  --stone-800: #322e27;
+  --stone-900: #1f1c18;
+  --stone-950: #15120f;
+  --green-500: #2e7d54;
+  --green-50: #e7f2ec;
+  --amber-500: #c98a09;
+  --amber-50: #fbf1da;
+  --blue-500: #2d6e9e;
+  --blue-50: #e4eef5;
+  --red-500: #c53314;
+  --red-50: #fbe7e1;
+  --violet-500: #6a4c93;
+  --violet-50: #ede7f3;
+
+  --brand: var(--orange-500);
+  --brand-hover: var(--orange-600);
+  --brand-subtle: var(--orange-50);
+  --fg-1: var(--stone-950);
+  --fg-2: var(--stone-700);
+  --fg-3: var(--stone-500);
+  --fg-on-dark: var(--stone-50);
+  --bg-app: var(--stone-50);
+  --bg-surface: var(--stone-0);
+  --bg-sunken: var(--stone-100);
+  --bg-inverse: var(--stone-950);
+  --border: var(--stone-200);
+  --border-ink: var(--stone-950);
+  --divider: var(--stone-150);
+  --ring: var(--orange-500);
+  --font-sans: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --ease: cubic-bezier(0.2, 0, 0.1, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--fg-1);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+a {
+  outline-color: var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

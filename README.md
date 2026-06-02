@@ -5,6 +5,7 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 ## Services
 
 - `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
+- `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
 
 ## Gateway quick start
 
@@ -31,3 +32,32 @@ curl -i -H 'X-Gateway-Api-Key: local-dev-gateway-key' http://localhost:8080/api/
 ```
 
 If `LEGALGATE_BACKEND_URL` is unset or the backend is unavailable, the gateway still returns a consistent JSON `503 service_unavailable` fallback instead of failing with an empty response.
+
+## Frontend quick start
+
+Run the frontend verification script:
+
+```bash
+./scripts/test-frontend-local.sh
+```
+
+Run the Angular dev server:
+
+```bash
+cd services/frontend
+npm start
+```
+
+Open `http://localhost:4200`.
+
+## Docker Compose
+
+Build and run either service locally:
+
+```bash
+docker compose build gateway frontend
+docker compose up gateway frontend
+```
+
+- Gateway: `http://localhost:8080/api/status`
+- Frontend: `http://localhost:4200`
