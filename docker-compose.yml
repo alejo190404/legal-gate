@@ -7,11 +7,28 @@ services:
       PORT: 8080
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-local-dev-gateway-key}
       GATEWAY_FORWARDED_TOKEN: ${GATEWAY_FORWARDED_TOKEN:-local-dev-service-token}
-      LEGALGATE_BACKEND_URL: ${LEGALGATE_BACKEND_URL:-}
+      LEGALGATE_BACKEND_URL: ${LEGALGATE_BACKEND_URL:-http://intake-orchestrator:8081}
     ports:
       - "8080:8080"
+    depends_on:
+      intake-orchestrator:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  intake-orchestrator:
+    build:
+      context: .
+      dockerfile: services/intake-orchestrator/Dockerfile
+    environment:
+      PORT: 8081
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5
