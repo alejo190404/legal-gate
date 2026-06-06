@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { App } from './app';
 
 const demoResponse = {
@@ -18,7 +19,8 @@ const demoResponse = {
       classification: {
         label: 'MANUAL_REVIEW',
         matchedUrgentKeywords: ['audiencia'],
-        explanation: 'Pending LLM classification; plain-language consultation accepted for lawyer review.',
+        explanation:
+          'Pending LLM classification; plain-language consultation accepted for lawyer review.',
       },
       notifications: {
         emailQueued: true,
@@ -33,6 +35,8 @@ const demoResponse = {
 
 describe('App landing to login to consultation inbox flow', () => {
   beforeEach(async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideHttpClient(), provideHttpClientTesting()],
@@ -94,6 +98,42 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).not.toContain('intake-orchestrator local');
     expect(compiled.textContent).not.toContain('Nueva consulta');
     expect(compiled.textContent).not.toContain('Crear caso de prueba');
+  });
+
+  it('keeps only one console navigation item active and closes the mobile drawer after selection', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    fixture.detectChanges();
+
+    const navButtons = () =>
+      Array.from(compiled.querySelectorAll<HTMLButtonElement>('.sidebar nav button'));
+    expect(
+      navButtons()
+        .filter((button) => button.classList.contains('is-active'))
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(['Dashboard']);
+
+    fixture.componentInstance.toggleConsoleMenu();
+    fixture.detectChanges();
+    expect(compiled.querySelector('.console-shell')?.classList.contains('menu-open')).toBe(true);
+
+    navButtons()
+      .find((button) => button.textContent?.includes('Consultas'))
+      ?.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeConsoleSection()).toBe('consultas');
+    expect(fixture.componentInstance.isConsoleMenuOpen()).toBe(false);
+    expect(
+      navButtons()
+        .filter((button) => button.classList.contains('is-active'))
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(['Consultas']);
   });
 
   it('keeps users on login when credentials are invalid', () => {
