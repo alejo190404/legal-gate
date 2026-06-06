@@ -539,9 +539,7 @@
   min-height: 100vh;
   place-items: center;
   padding: 32px;
-  background:
-    linear-gradient(135deg, rgba(250, 84, 16, 0.12), transparent 32%),
-    var(--bg-app);
+  background: linear-gradient(135deg, rgba(250, 84, 16, 0.12), transparent 32%), var(--bg-app);
 }
 
 .login-card {
@@ -587,13 +585,39 @@
   }
 }
 
+.mobile-menu-button,
+.sidebar-scrim {
+  display: none;
+}
+
+.mobile-menu-button {
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--stone-950);
+  background: var(--brand);
+  box-shadow: 4px 4px 0 0 var(--stone-950);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 14px;
+  z-index: 60;
+}
+
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(12, 10, 9, 0.52);
+  cursor: pointer;
+  z-index: 45;
+}
+
 .console-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: 100vh;
-  background:
-    linear-gradient(135deg, rgba(250, 84, 16, 0.08), transparent 28%),
-    var(--bg-app);
+  background: linear-gradient(135deg, rgba(250, 84, 16, 0.08), transparent 28%), var(--bg-app);
 }
 
 .sidebar {
@@ -627,16 +651,26 @@
     display: grid;
     gap: 10px;
 
-    a {
+    button {
+      width: 100%;
       padding: 12px 14px;
       border: 1px solid rgba(255, 255, 255, 0.14);
+      background: transparent;
       color: var(--stone-100);
+      cursor: pointer;
+      font: inherit;
       font-weight: 700;
+      text-align: left;
       text-decoration: none;
     }
 
-    a.is-active,
-    a:hover {
+    button:hover,
+    button:focus-visible {
+      border-color: white;
+      outline: 0;
+    }
+
+    button.is-active {
       background: var(--brand);
       border-color: white;
       color: white;
@@ -714,6 +748,11 @@
 
 .console-shell .status-banner {
   margin-bottom: 22px;
+}
+
+#dashboard,
+#consultas {
+  scroll-margin-top: 80px;
 }
 
 .metric-grid {
@@ -888,38 +927,6 @@
   color: var(--amber-500);
 }
 
-.create-card {
-  position: sticky;
-  top: 24px;
-
-  label {
-    display: block;
-    margin: 14px 0 6px;
-    color: var(--fg-2);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  input,
-  textarea {
-    width: 100%;
-    border: 1.5px solid var(--stone-950);
-    background: var(--bg-surface);
-    color: var(--fg-1);
-    font: inherit;
-    padding: 12px;
-  }
-
-  textarea {
-    resize: vertical;
-  }
-
-  .btn {
-    width: 100%;
-    margin-top: 18px;
-  }
-}
-
 @media (max-width: 980px) {
   .landing-shell {
     .nav {
@@ -966,10 +973,37 @@
     grid-template-columns: 1fr;
   }
 
-  .sidebar,
-  .create-card {
-    position: static;
-    height: auto;
+  .mobile-menu-button {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    display: inline-flex;
+    width: auto;
+  }
+
+  .sidebar-scrim {
+    display: block;
+  }
+
+  .workspace {
+    padding-top: 78px;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(320px, calc(100vw - 48px));
+    height: 100dvh;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 160ms var(--ease);
+    z-index: 50;
+  }
+
+  .console-shell.menu-open .sidebar {
+    transform: translateX(0);
   }
 
   .metric-grid,
@@ -1115,6 +1149,28 @@
   .workspace,
   .sidebar {
     padding: 20px;
+  }
+
+  .workspace {
+    padding-top: 78px;
+  }
+
+  .topbar {
+    h1 {
+      font-size: clamp(38px, 12vw, 52px);
+    }
+
+    p:last-child {
+      font-size: 17px;
+    }
+  }
+
+  .panel-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .case-card header {
+    grid-template-columns: 1fr;
   }
 
   .login-card {

@@ -1,8 +1,9 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 type ViewName = 'landing' | 'login' | 'console';
+type ConsoleSection = 'dashboard' | 'consultas';
 
 interface ClassificationResult {
   label: string;
@@ -70,6 +71,8 @@ export class App {
   readonly tenantId = signal('firma-demo');
   readonly sessionEmail = signal('');
   readonly consultations = signal<Consultation[]>([]);
+  readonly activeConsoleSection = signal<ConsoleSection>('dashboard');
+  readonly isConsoleMenuOpen = signal(false);
   readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
   readonly statusMessage = signal('Listo para iniciar sesión con credenciales demo.');
@@ -92,9 +95,14 @@ export class App {
     () => this.consultations().filter((consultation) => consultation.urgency === 'URGENT').length,
   );
   readonly queuedNotifications = computed(
-    () => this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
+    () =>
+      this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
   );
   readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
+  readonly consoleSections: ReadonlyArray<{ id: ConsoleSection; label: string }> = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'consultas', label: 'Consultas' },
+  ];
 
   showLanding(): void {
     this.view.set('landing');
@@ -118,6 +126,8 @@ export class App {
 
     this.sessionEmail.set(this.demoEmail);
     this.view.set('console');
+    this.activeConsoleSection.set('dashboard');
+    this.isConsoleMenuOpen.set(false);
     this.statusMessage.set('Sesión demo iniciada. Cargando datos de la firma…');
     this.loadConsultations();
   }
@@ -125,7 +135,41 @@ export class App {
   logout(): void {
     this.sessionEmail.set('');
     this.consultations.set([]);
+    this.isConsoleMenuOpen.set(false);
     this.showLanding();
+  }
+
+  toggleConsoleMenu(): void {
+    this.isConsoleMenuOpen.update((isOpen) => !isOpen);
+  }
+
+  closeConsoleMenu(): void {
+    this.isConsoleMenuOpen.set(false);
+  }
+
+  goToConsoleSection(section: ConsoleSection): void {
+    this.activeConsoleSection.set(section);
+    this.closeConsoleMenu();
+    document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  @HostListener('window:scroll')
+  updateActiveConsoleSection(): void {
+    if (this.view() !== 'console') {
+      return;
+    }
+
+    const threshold = 140;
+    const visibleSection = this.consoleSections.reduce<ConsoleSection>((current, section) => {
+      const element = document.getElementById(section.id);
+      if (!element) {
+        return current;
+      }
+
+      return element.getBoundingClientRect().top <= threshold ? section.id : current;
+    }, 'dashboard');
+
+    this.activeConsoleSection.set(visibleSection);
   }
 
   loadConsultations(): void {
@@ -148,7 +192,11 @@ export class App {
   }
 
   createConsultation(): void {
-    if (!this.form.clientName.trim() || !this.form.clientEmail.trim() || !this.form.summary.trim()) {
+    if (
+      !this.form.clientName.trim() ||
+      !this.form.clientEmail.trim() ||
+      !this.form.summary.trim()
+    ) {
       this.errorMessage.set('Completa nombre, email y resumen para crear la consulta.');
       return;
     }
