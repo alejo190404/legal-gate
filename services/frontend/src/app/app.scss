@@ -2,12 +2,6 @@
   display: block;
 }
 
-/*
- * TODO(auth): Replace the hardcoded demo gate in app.ts with real session management once
- * LegalGate has an auth provider. Keep these styles scoped so replacing auth does not
- * accidentally change the public landing design or backend-connected console.
- */
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -102,7 +96,6 @@
   }
 }
 
-/* Public landing — intentionally scoped to avoid console/sidebar selectors changing it. */
 .landing-shell {
   min-height: 100vh;
   overflow: hidden;
@@ -546,9 +539,7 @@
   min-height: 100vh;
   place-items: center;
   padding: 32px;
-  background:
-    linear-gradient(135deg, rgba(250, 84, 16, 0.12), transparent 32%),
-    var(--bg-app);
+  background: linear-gradient(135deg, rgba(250, 84, 16, 0.12), transparent 32%), var(--bg-app);
 }
 
 .login-card {
@@ -594,14 +585,39 @@
   }
 }
 
-/* Backend-connected admin console. Scope sidebar nav so it never changes the landing nav. */
+.mobile-menu-button,
+.sidebar-scrim {
+  display: none;
+}
+
+.mobile-menu-button {
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--stone-950);
+  background: var(--brand);
+  box-shadow: 4px 4px 0 0 var(--stone-950);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 14px;
+  z-index: 60;
+}
+
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(12, 10, 9, 0.52);
+  cursor: pointer;
+  z-index: 45;
+}
+
 .console-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: 100vh;
-  background:
-    linear-gradient(135deg, rgba(250, 84, 16, 0.08), transparent 28%),
-    var(--bg-app);
+  background: linear-gradient(135deg, rgba(250, 84, 16, 0.08), transparent 28%), var(--bg-app);
 }
 
 .sidebar {
@@ -635,16 +651,26 @@
     display: grid;
     gap: 10px;
 
-    a {
+    button {
+      width: 100%;
       padding: 12px 14px;
       border: 1px solid rgba(255, 255, 255, 0.14);
+      background: transparent;
       color: var(--stone-100);
+      cursor: pointer;
+      font: inherit;
       font-weight: 700;
+      text-align: left;
       text-decoration: none;
     }
 
-    a.is-active,
-    a:hover {
+    button:hover,
+    button:focus-visible {
+      border-color: white;
+      outline: 0;
+    }
+
+    button.is-active {
       background: var(--brand);
       border-color: white;
       color: white;
@@ -722,6 +748,11 @@
 
 .console-shell .status-banner {
   margin-bottom: 22px;
+}
+
+#dashboard,
+#consultas {
+  scroll-margin-top: 80px;
 }
 
 .metric-grid {
@@ -896,43 +927,31 @@
   color: var(--amber-500);
 }
 
-.create-card {
-  position: sticky;
-  top: 24px;
-
-  label {
-    display: block;
-    margin: 14px 0 6px;
-    color: var(--fg-2);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  input,
-  textarea {
-    width: 100%;
-    border: 1.5px solid var(--stone-950);
-    background: var(--bg-surface);
-    color: var(--fg-1);
-    font: inherit;
-    padding: 12px;
-  }
-
-  textarea {
-    resize: vertical;
-  }
-
-  .btn {
-    width: 100%;
-    margin-top: 18px;
-  }
-}
-
 @media (max-width: 980px) {
   .landing-shell {
+    .nav {
+      gap: 18px;
+      padding-inline: 24px;
+    }
+
+    .nav-links {
+      display: none;
+    }
+
     .hero,
     .demo-credentials {
       grid-template-columns: 1fr;
+    }
+
+    .hero {
+      gap: 36px;
+      min-height: auto;
+      padding-top: 64px;
+    }
+
+    .intake-demo {
+      width: min(100%, 620px);
+      justify-self: center;
     }
 
     .workflow-grid,
@@ -941,8 +960,10 @@
       grid-template-columns: 1fr 1fr;
     }
 
-    .nav-links {
-      display: none;
+    .footer {
+      grid-template-columns: 1fr;
+      gap: 14px;
+      text-align: left;
     }
   }
 
@@ -952,10 +973,37 @@
     grid-template-columns: 1fr;
   }
 
-  .sidebar,
-  .create-card {
-    position: static;
-    height: auto;
+  .mobile-menu-button {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    display: inline-flex;
+    width: auto;
+  }
+
+  .sidebar-scrim {
+    display: block;
+  }
+
+  .workspace {
+    padding-top: 78px;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(320px, calc(100vw - 48px));
+    height: 100dvh;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 160ms var(--ease);
+    z-index: 50;
+  }
+
+  .console-shell.menu-open .sidebar {
+    transform: translateX(0);
   }
 
   .metric-grid,
@@ -965,23 +1013,100 @@
 }
 
 @media (max-width: 640px) {
+  .btn {
+    width: 100%;
+    padding: 13px 16px;
+  }
+
+  .pixel-card,
+  .metric-card,
+  .panel-card {
+    box-shadow: 4px 4px 0 0 var(--stone-950);
+  }
+
+  .status-banner {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .landing-shell {
     .nav {
-      padding: 0 18px;
+      min-height: 64px;
+      padding: 10px 16px;
+    }
+
+    .brand {
+      font-size: 18px;
+
+      img {
+        width: 24px;
+        height: 24px;
+      }
     }
 
     .nav .btn {
-      display: none;
+      width: auto;
+      min-width: 0;
+      margin-left: auto;
+      padding: 10px 12px;
+      box-shadow: 3px 3px 0 0 var(--stone-950);
+      font-size: 13px;
+      white-space: nowrap;
     }
 
     .hero,
     section {
-      padding-left: 20px;
-      padding-right: 20px;
+      padding: 54px 18px;
     }
 
     .hero {
-      padding-top: 48px;
+      gap: 28px;
+      padding-top: 40px;
+    }
+
+    h1 {
+      font-size: clamp(38px, 13vw, 52px);
+      line-height: 1;
+    }
+
+    h2 {
+      font-size: clamp(30px, 10vw, 38px);
+    }
+
+    .hero-subtitle,
+    .section-heading p,
+    .demo-credentials p {
+      font-size: 16px;
+    }
+
+    .hero-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .window-bar {
+      min-height: auto;
+      flex-wrap: wrap;
+      padding: 12px;
+    }
+
+    .status-live {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .demo-body {
+      padding: 12px;
+    }
+
+    .lead-card {
+      grid-template-columns: 1fr;
+
+      em {
+        grid-row: auto;
+        grid-column: auto;
+        width: fit-content;
+      }
     }
 
     .workflow-grid,
@@ -1001,20 +1126,78 @@
       border-bottom: 0;
     }
 
-    .hero-actions {
-      align-items: stretch;
-      flex-direction: column;
+    .benefits-grid {
+      gap: 14px;
+    }
+
+    .demo-credentials {
+      gap: 22px;
+      padding: 24px 18px;
+    }
+
+    .pilot-section {
+      margin-top: 0;
+      padding: 56px 18px;
+    }
+
+    .footer {
+      padding: 30px 18px;
     }
   }
 
+  .login-shell,
   .workspace,
   .sidebar {
     padding: 20px;
   }
 
-  .metric-grid,
-  .case-card dl,
-  .status-banner {
+  .workspace {
+    padding-top: 78px;
+  }
+
+  .topbar {
+    h1 {
+      font-size: clamp(38px, 12vw, 52px);
+    }
+
+    p:last-child {
+      font-size: 17px;
+    }
+  }
+
+  .panel-heading {
     grid-template-columns: 1fr;
+  }
+
+  .case-card header {
+    grid-template-columns: 1fr;
+  }
+
+  .login-card {
+    padding: 24px 18px;
+  }
+
+  .metric-grid,
+  .case-card dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 390px) {
+  .landing-shell {
+    .nav {
+      padding-inline: 12px;
+    }
+
+    .nav .btn {
+      padding-inline: 10px;
+      font-size: 12px;
+    }
+
+    .hero,
+    section {
+      padding-left: 14px;
+      padding-right: 14px;
+    }
   }
 }

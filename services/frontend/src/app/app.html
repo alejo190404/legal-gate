@@ -146,15 +146,38 @@
   }
 
   @case ('console') {
-    <main class="console-shell">
-      <aside class="sidebar" aria-label="Navegación del panel">
-        <a class="brand" href="#top" aria-label="LegalGate Console">
+    <main class="console-shell" [class.menu-open]="isConsoleMenuOpen()">
+      <button
+        class="mobile-menu-button"
+        type="button"
+        [attr.aria-expanded]="isConsoleMenuOpen()"
+        aria-controls="console-sidebar"
+        (click)="toggleConsoleMenu()"
+      >
+        <span aria-hidden="true">☰</span>
+        <span>{{ isConsoleMenuOpen() ? 'Cerrar menú' : 'Menú' }}</span>
+      </button>
+
+      @if (isConsoleMenuOpen()) {
+        <button class="sidebar-scrim" type="button" aria-label="Cerrar menú del panel" (click)="closeConsoleMenu()"></button>
+      }
+
+      <aside id="console-sidebar" class="sidebar" aria-label="Navegación del panel">
+        <a class="brand" href="#top" aria-label="LegalGate Console" (click)="goToConsoleSection('dashboard')">
           <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
           <span>LegalGate Console</span>
         </a>
-        <nav>
-          <a class="is-active" href="#dashboard">Dashboard</a>
-          <a href="#consultas">Consultas</a>
+        <nav aria-label="Secciones del panel">
+          @for (section of consoleSections; track section.id) {
+            <button
+              type="button"
+              [class.is-active]="activeConsoleSection() === section.id"
+              [attr.aria-current]="activeConsoleSection() === section.id ? 'page' : null"
+              (click)="goToConsoleSection(section.id)"
+            >
+              {{ section.label }}
+            </button>
+          }
         </nav>
         <div class="tenant-card">
           <span>Tenant activo</span>
