@@ -2,6 +2,7 @@ package com.legalgate.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,9 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
-        "legalgate.gateway.api-key=test-gateway-key",
         "legalgate.gateway.backend.base-url=",
-        "legalgate.gateway.forwarded-token=test-service-token"
+        "legalgate.gateway.forwarded-token=test-service-token",
+        "legalgate.gateway.cors.allowed-origins=http://localhost:4200,https://app.example.test"
 })
 class GatewayApplicationTests {
 
@@ -42,29 +43,31 @@ class GatewayApplicationTests {
     }
 
     @Test
-    void protectedGatewayRoutesRejectRequestsWithoutApiKey() throws Exception {
-        mockMvc.perform(get("/api/backend/cases"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("unauthorized"));
-    }
-
-    @Test
-    void protectedGatewayRoutesRejectRequestsWithWrongApiKey() throws Exception {
-        mockMvc.perform(get("/api/backend/cases")
-                        .header("X-Gateway-Api-Key", "wrong"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("unauthorized"));
-    }
-
-    @Test
-    void protectedGatewayRoutesReturnFallbackWhenBackendIsNotConfigured() throws Exception {
-        mockMvc.perform(get("/api/backend/cases")
-                        .header("X-Gateway-Api-Key", "test-gateway-key"))
+    void prototypeGatewayFacadeReturnsFallbackWithoutSharedSecretWhenBackendIsNotConfigured() throws Exception {
+        mockMvc.perform(get("/api/backend/api/status"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status").value(503))
                 .andExpect(jsonPath("$.error").value("service_unavailable"))
                 .andExpect(jsonPath("$.service").value("backend"))
                 .andExpect(jsonPath("$.message").value("LegalGate backend is not connected yet."));
+    }
+
+    @Test
+    void unsupportedPrototypeRoutesAreNotPublic() throws Exception {
+        mockMvc.perform(get("/api/backend/internal/admin-only"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("unauthorized"));
+    }
+
+    @Test
+    void corsPreflightAllowsConfiguredFrontendOrigin() throws Exception {
+        mockMvc.perform(options("/api/backend/api/tenants/firma-demo/consultations")
+                        .header("Origin", "https://app.example.test")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "Content-Type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example.test"))
+                .andExpect(header().string("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
     }
 
     @Test

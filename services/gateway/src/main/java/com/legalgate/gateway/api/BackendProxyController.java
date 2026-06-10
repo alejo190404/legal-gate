@@ -32,8 +32,7 @@ public class BackendProxyController {
             HttpHeaders.TRANSFER_ENCODING,
             HttpHeaders.UPGRADE,
             HttpHeaders.HOST,
-            HttpHeaders.CONTENT_LENGTH,
-            "X-Gateway-Api-Key"
+            HttpHeaders.CONTENT_LENGTH
     );
 
     private final GatewayProperties properties;

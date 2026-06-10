@@ -1,4 +1,4 @@
-1# LegalGate
+# LegalGate
 
 LegalGate is a SaaS platform for automating legal consultation intake, classification, scheduling, and notifications.
 
@@ -10,6 +10,8 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 
 ## Gateway quick start
 
+Deployment guide: [`docs/deployment/vercel-render-supabase.md`](docs/deployment/vercel-render-supabase.md).
+
 Run the local verification script:
 
 ```bash
@@ -19,17 +21,15 @@ Run the local verification script:
 Run the gateway locally:
 
 ```bash
-GATEWAY_API_KEY=local-dev-gateway-key \
 GATEWAY_FORWARDED_TOKEN=local-dev-service-token \
 ./scripts/run-gateway-local.sh
 ```
 
-Then test public and protected endpoints:
+Then test public endpoints and the temporary prototype gateway facade:
 
 ```bash
 curl http://localhost:8080/api/status
-curl -i http://localhost:8080/api/backend/cases
-curl -i -H 'X-Gateway-Api-Key: local-dev-gateway-key' http://localhost:8080/api/backend/cases
+curl -i http://localhost:8080/api/backend/api/status
 ```
 
 If `LEGALGATE_BACKEND_URL` is unset or the backend is unavailable, the gateway still returns a consistent JSON `503 service_unavailable` fallback instead of failing with an empty response.
@@ -61,7 +61,7 @@ curl -X POST -H 'Content-Type: application/json' \
 curl http://localhost:8081/api/admin/tenants/firma-demo/consultations
 ```
 
-The current implementation stores data in memory and returns queued email/calendar orchestration flags so DB, RabbitMQ, LLM, email, and calendar adapters can be added later without changing the public contract.
+The default test profile stores data in memory. Docker Compose and Render can run the intake service with JDBC/Flyway enabled so consultations persist to Postgres/Supabase while preserving the public contract.
 
 ## Frontend quick start
 
@@ -90,13 +90,15 @@ The repository includes root `vercel.json` configuration for the Angular fronten
 
 This lets Vercel deploy the monorepo from the repository root while serving only the Angular landing page.
 
+Set `LEGALGATE_API_BASE_URL` in Vercel to the Render gateway facade URL, for example `https://legal-gate-gateway.onrender.com/api/backend`. The frontend build writes this value into `/assets/legalgate-config.json`.
+
 ## Docker Compose
 
 Build and run services locally:
 
 ```bash
-docker compose build gateway intake-orchestrator frontend
-docker compose up gateway intake-orchestrator frontend
+cp .env.example .env
+docker compose up --build postgres intake-orchestrator gateway frontend
 ```
 
 - Gateway: `http://localhost:8080/api/status`

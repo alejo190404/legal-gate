@@ -21,9 +21,11 @@ management:
 
 legalgate:
   gateway:
-    api-key: ${GATEWAY_API_KEY:}
     forwarded-token: ${GATEWAY_FORWARDED_TOKEN:}
     request-timeout: ${GATEWAY_REQUEST_TIMEOUT:3s}
+    auth-mode: ${LEGALGATE_AUTH_MODE:PUBLIC_PROTOTYPE}
+    cors:
+      allowed-origins: ${LEGALGATE_CORS_ALLOWED_ORIGINS:http://localhost:4200}
     backend:
       base-url: ${LEGALGATE_BACKEND_URL:}
 

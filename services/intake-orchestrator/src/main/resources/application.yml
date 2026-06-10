@@ -3,6 +3,16 @@ spring:
     name: legal-gate-intake-orchestrator
   main:
     banner-mode: off
+  datasource:
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:5}
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:false}
+
+legalgate:
+  intake:
+    persistence: ${LEGALGATE_INTAKE_PERSISTENCE:memory}
+    seed-demo-data: ${LEGALGATE_SEED_DEMO_DATA:false}
 
 server:
   port: ${PORT:8081}
