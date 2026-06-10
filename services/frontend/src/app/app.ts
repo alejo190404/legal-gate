@@ -1,6 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { AuthService } from './auth/auth.service';
+import { ApiConfigService } from './config/api-config.service';
 
 type ViewName = 'landing' | 'login' | 'console';
 type ConsoleSection = 'dashboard' | 'consultas';
@@ -57,12 +59,8 @@ interface LoginForm {
 })
 export class App {
   private readonly http = inject(HttpClient);
-
-  // TODO(auth): Replace this hardcoded demo gate with the real LegalGate auth provider.
-  // Keep credentials out of templates/landing/login copy; only authenticated state should
-  // unlock the console. This prevents demo-only details from leaking into production UI.
-  private readonly demoEmail = 'admin@firma-demo.test';
-  private readonly demoPassword = 'LegalGateDemo2026!';
+  private readonly authService = inject(AuthService);
+  private readonly apiConfig = inject(ApiConfigService);
 
   // TODO(routing): Move landing/login/console to Angular routes once auth is real.
   // For this prototype, a single component keeps the test scope small and protects the
@@ -116,15 +114,14 @@ export class App {
   }
 
   login(): void {
-    const email = this.loginForm.email.trim().toLowerCase();
-    const password = this.loginForm.password;
-
-    if (email !== this.demoEmail || password !== this.demoPassword) {
+    const session = this.authService.login(this.loginForm.email, this.loginForm.password);
+    if (!session) {
       this.errorMessage.set('Credenciales inválidas. Verifica tu email y contraseña.');
       return;
     }
 
-    this.sessionEmail.set(this.demoEmail);
+    this.sessionEmail.set(session.email);
+    this.tenantId.set(session.tenantId);
     this.view.set('console');
     this.activeConsoleSection.set('dashboard');
     this.isConsoleMenuOpen.set(false);
@@ -176,7 +173,9 @@ export class App {
     this.isLoading.set(true);
     this.errorMessage.set('');
     this.http
-      .get<ConsultationListResponse>(`/api/admin/tenants/${this.tenantId()}/consultations`)
+      .get<ConsultationListResponse>(
+        this.apiConfig.url(`/api/admin/tenants/${this.tenantId()}/consultations`),
+      )
       .subscribe({
         next: (response) => {
           this.consultations.set([...response.consultations].reverse());
@@ -204,7 +203,7 @@ export class App {
     this.isSubmitting.set(true);
     this.errorMessage.set('');
     this.http
-      .post<Consultation>(`/api/tenants/${this.tenantId()}/consultations`, {
+      .post<Consultation>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/consultations`), {
         clientName: this.form.clientName.trim(),
         clientEmail: this.form.clientEmail.trim(),
         summary: this.form.summary.trim(),

@@ -3,6 +3,7 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { App } from './app';
+import { ApiConfigService } from './config/api-config.service';
 
 const demoResponse = {
   tenantId: 'firma-demo',
@@ -46,8 +47,9 @@ describe('App landing to login to consultation inbox flow', () => {
   function create() {
     const fixture = TestBed.createComponent(App);
     const http = TestBed.inject(HttpTestingController);
+    const apiConfig = TestBed.inject(ApiConfigService);
     fixture.detectChanges();
-    return { fixture, http, compiled: fixture.nativeElement as HTMLElement };
+    return { fixture, http, apiConfig, compiled: fixture.nativeElement as HTMLElement };
   }
 
   afterEach(() => {
@@ -149,5 +151,19 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Credenciales inválidas');
     expect(compiled.textContent).not.toContain('admin@firma-demo.test');
     expect(compiled.textContent).not.toContain('LegalGateDemo2026!');
+  });
+
+  it('prefixes backend API calls with the configured gateway facade URL', () => {
+    const { fixture, http, apiConfig } = create();
+    apiConfig.setApiBaseUrl('https://legal-gate-gateway.onrender.com/api/backend/');
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne(
+      'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
+    ).flush(demoResponse);
   });
 });

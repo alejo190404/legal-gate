@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MVN="${MVN:-mvn}"
 PORT="${PORT:-8080}"
-API_KEY="${GATEWAY_API_KEY:-local-dev-gateway-key}"
 SERVICE_TOKEN="${GATEWAY_FORWARDED_TOKEN:-local-dev-service-token}"
 LOG_FILE="${LOG_FILE:-/tmp/legal-gate-gateway.log}"
 
@@ -16,7 +15,7 @@ $MVN -pl services/gateway -DskipTests package
 java \
   -Dserver.port="$PORT" \
   -Dspring.profiles.active=local \
-  -Dlegalgate.gateway.api-key="$API_KEY" \
+  -Dlegalgate.gateway.auth-mode="PUBLIC_PROTOTYPE" \
   -Dlegalgate.gateway.forwarded-token="$SERVICE_TOKEN" \
   -jar services/gateway/target/gateway-*.jar > "$LOG_FILE" 2>&1 &
 PID=$!
@@ -48,7 +47,7 @@ UNAUTH_STATUS="$(curl -sS -o /tmp/gateway-unauth.json -w '%{http_code}' "http://
 test "$UNAUTH_STATUS" = "401"
 jq -e '.error == "unauthorized"' /tmp/gateway-unauth.json >/dev/null
 
-FALLBACK_STATUS="$(curl -sS -o /tmp/gateway-fallback.json -w '%{http_code}' -H "X-Gateway-Api-Key: ${API_KEY}" "http://localhost:${PORT}/api/backend/cases")"
+FALLBACK_STATUS="$(curl -sS -o /tmp/gateway-fallback.json -w '%{http_code}' "http://localhost:${PORT}/api/backend/api/status")"
 test "$FALLBACK_STATUS" = "503"
 jq -e '.error == "service_unavailable" and .service == "backend"' /tmp/gateway-fallback.json >/dev/null
 

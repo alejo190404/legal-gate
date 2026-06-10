@@ -7,14 +7,12 @@ import com.legalgate.intake.model.CreateConsultationRequest;
 import com.legalgate.intake.model.NotificationStatus;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.TenantSettingsResponse;
+import com.legalgate.intake.repository.IntakeRepository;
 import java.text.Normalizer;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,8 +25,11 @@ public class IntakeService {
             null
     );
 
-    private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
+    private final IntakeRepository intakeRepository;
+
+    public IntakeService(IntakeRepository intakeRepository) {
+        this.intakeRepository = intakeRepository;
+    }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
         TenantSettingsResponse settings = new TenantSettingsResponse(
@@ -37,8 +38,7 @@ public class IntakeService {
                 sanitize(request.consultationWindows()),
                 request.destinationEmail().trim()
         );
-        tenantSettings.put(tenantId, settings);
-        return settings;
+        return intakeRepository.saveSettings(tenantId, settings);
     }
 
     public ConsultationResponse createConsultation(String tenantId, CreateConsultationRequest request) {
@@ -69,22 +69,23 @@ public class IntakeService {
                 notifications,
                 Instant.now()
         );
-        consultationsByTenant.computeIfAbsent(tenantId, ignored -> new ArrayList<>()).add(consultation);
-        return consultation;
+        return intakeRepository.saveConsultation(tenantId, consultation);
     }
 
     public ConsultationListResponse consultationsForTenant(String tenantId) {
-        List<ConsultationResponse> consultations = consultationsByTenant.getOrDefault(tenantId, List.of());
-        return new ConsultationListResponse(tenantId, List.copyOf(consultations));
+        // TODO(workos): Protected/admin routes should derive tenant context from WorkOS organization claims
+        // at the gateway, not from arbitrary browser-supplied tenant path parameters.
+        return intakeRepository.consultationsForTenant(tenantId);
     }
 
     private TenantSettingsResponse settingsFor(String tenantId) {
-        return tenantSettings.getOrDefault(tenantId, new TenantSettingsResponse(
+        TenantSettingsResponse defaults = new TenantSettingsResponse(
                 tenantId,
                 DEFAULT_SETTINGS.urgentKeywords(),
                 DEFAULT_SETTINGS.consultationWindows(),
                 DEFAULT_SETTINGS.destinationEmail()
-        ));
+        );
+        return intakeRepository.settingsFor(tenantId, defaults);
     }
 
     private List<String> matchUrgentKeywords(String summary, List<String> urgentKeywords) {

@@ -1,4 +1,4 @@
 legalgate:
   gateway:
-    api-key: ${GATEWAY_API_KEY:local-dev-gateway-key}
+    auth-mode: ${LEGALGATE_AUTH_MODE:PUBLIC_PROTOTYPE}
     forwarded-token: ${GATEWAY_FORWARDED_TOKEN:local-dev-service-token}

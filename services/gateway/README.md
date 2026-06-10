@@ -6,24 +6,25 @@ Spring Boot service that acts as the secured public entrypoint for LegalGate bac
 
 - `GET /actuator/health`: public health check.
 - `GET /api/status`: public gateway status and backend connectivity/configuration summary.
-- `/api/backend/**`: protected reverse-proxy route for the LegalGate backend.
+- `/api/backend/**`: temporary prototype reverse-proxy facade for the LegalGate backend.
 - `GET /api/gateway/fallback`: public fallback shape for unavailable services.
 
 ## Security model
 
-- Protected routes require `X-Gateway-Api-Key` matching `GATEWAY_API_KEY`.
-- The gateway does not forward the external API key downstream.
+- `LEGALGATE_AUTH_MODE=PUBLIC_PROTOTYPE` exposes only the demo-safe backend facade routes needed by the Vercel prototype.
+- `LEGALGATE_AUTH_MODE=WORKOS` is reserved for the next milestone and fails fast until WorkOS JWT validation is implemented.
 - If configured, the gateway forwards `GATEWAY_FORWARDED_TOKEN` as `X-LegalGate-Service-Token` to internal services.
 - Spring Security applies default hardening headers such as `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`.
-- CSRF is disabled because the gateway is stateless and API-key authenticated.
+- CSRF is disabled because the gateway is stateless.
 
 ## Configuration
 
 Environment variables:
 
 - `PORT`: HTTP port, default `8080`.
-- `GATEWAY_API_KEY`: required secret for protected gateway routes.
+- `LEGALGATE_AUTH_MODE`: `PUBLIC_PROTOTYPE` for the current demo facade; `WORKOS` is reserved until JWT validation lands.
 - `GATEWAY_FORWARDED_TOKEN`: optional internal token forwarded to LegalGate services.
+- `LEGALGATE_CORS_ALLOWED_ORIGINS`: comma-separated browser origins allowed to call the gateway facade.
 - `LEGALGATE_BACKEND_URL`: optional backend base URL, for example `http://backend:8080`.
 - `GATEWAY_REQUEST_TIMEOUT`: downstream request timeout, default `3s`.
 
@@ -44,7 +45,7 @@ mvn -pl services/gateway -DskipTests package
 cd services/gateway
 docker build -t legal-gate-gateway:local .
 docker run --rm -p 8080:8080 \
-  -e GATEWAY_API_KEY=change-me \
+  -e LEGALGATE_AUTH_MODE=PUBLIC_PROTOTYPE \
   -e GATEWAY_FORWARDED_TOKEN=change-me-too \
   legal-gate-gateway:local
 ```

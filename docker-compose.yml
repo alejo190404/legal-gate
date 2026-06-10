@@ -5,9 +5,9 @@ services:
       dockerfile: services/gateway/Dockerfile
     environment:
       PORT: 8080
-      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-local-dev-gateway-key}
       GATEWAY_FORWARDED_TOKEN: ${GATEWAY_FORWARDED_TOKEN:-local-dev-service-token}
       LEGALGATE_BACKEND_URL: ${LEGALGATE_BACKEND_URL:-http://intake-orchestrator:8081}
+      LEGALGATE_CORS_ALLOWED_ORIGINS: ${LEGALGATE_CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
     ports:
       - "8080:8080"
     depends_on:
@@ -25,8 +25,17 @@ services:
       dockerfile: services/intake-orchestrator/Dockerfile
     environment:
       PORT: 8081
+      LEGALGATE_INTAKE_PERSISTENCE: jdbc
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/legalgate?sslmode=disable}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-legalgate}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-legalgate_dev_password}
+      SPRING_DATASOURCE_MAX_POOL_SIZE: ${SPRING_DATASOURCE_MAX_POOL_SIZE:-5}
+      SPRING_FLYWAY_ENABLED: ${SPRING_FLYWAY_ENABLED:-true}
     ports:
       - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -44,3 +53,22 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-legalgate}
+      POSTGRES_USER: ${POSTGRES_USER:-legalgate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legalgate_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - legalgate-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-legalgate} -d ${POSTGRES_DB:-legalgate}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  legalgate-postgres-data:

@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MVN="${MVN:-mvn}"
 PORT="${PORT:-8080}"
 
-export GATEWAY_API_KEY="${GATEWAY_API_KEY:-local-dev-gateway-key}"
 export GATEWAY_FORWARDED_TOKEN="${GATEWAY_FORWARDED_TOKEN:-local-dev-service-token}"
+export LEGALGATE_AUTH_MODE="${LEGALGATE_AUTH_MODE:-PUBLIC_PROTOTYPE}"
 
 cd "$ROOT_DIR"
 $MVN -pl services/gateway -DskipTests package
