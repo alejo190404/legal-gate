@@ -91,12 +91,28 @@ public class GatewayProperties {
          */
         private List<String> allowedOrigins = new ArrayList<>(List.of("http://localhost:4200"));
 
+        /**
+         * Browser origin patterns allowed for preview/demo hosts whose subdomains change per deployment.
+         */
+        private List<String> allowedOriginPatterns = new ArrayList<>(List.of(
+                "https://*.vercel.app",
+                "https://*.ngrok-free.dev"
+        ));
+
         public List<String> getAllowedOrigins() {
             return allowedOrigins;
         }
 
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins == null ? List.of() : allowedOrigins;
+        }
+
+        public List<String> getAllowedOriginPatterns() {
+            return allowedOriginPatterns;
+        }
+
+        public void setAllowedOriginPatterns(List<String> allowedOriginPatterns) {
+            this.allowedOriginPatterns = allowedOriginPatterns == null ? List.of() : allowedOriginPatterns;
         }
     }
 
