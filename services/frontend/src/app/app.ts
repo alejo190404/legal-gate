@@ -247,8 +247,8 @@ export class App {
           this.isLoading.set(false);
         },
         error: () => {
-          this.errorMessage.set('No se pudo conectar con el API local de LegalGate.');
-          this.statusMessage.set('Revisa que el backend esté activo en el puerto 8081.');
+          this.errorMessage.set('No se pudo conectar con el Sistema.');
+          this.statusMessage.set('Revisa que el Sistema esté activo.');
           this.isLoading.set(false);
         },
       });
