@@ -7,6 +7,7 @@ import com.legalgate.intake.model.ClassificationResult;
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationStatus;
+import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -14,9 +15,12 @@ import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 @Repository
 @ConditionalOnProperty(name = "legalgate.intake.persistence", havingValue = "jdbc")
@@ -35,10 +39,27 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     @Override
+    public RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role) {
+        try {
+            return transactionTemplate.execute(status -> {
+                setTenantContext(firmSlug);
+                UUID firmId = ensureTenant(firmSlug, firmName);
+                jdbcTemplate.update("""
+                        insert into users (firm_id, email, full_name, role, hashed_password, is_active)
+                        values (?, ?, ?, ?, ?, true)
+                        """, firmId, email, firmName + " admin", role, hashedPassword);
+                return new RegistrationResponse(email, firmSlug, firmName + " admin", role);
+            });
+        } catch (DuplicateKeyException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered", ex);
+        }
+    }
+
+    @Override
     public TenantSettingsResponse saveSettings(String tenantSlug, TenantSettingsResponse settings) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug);
+            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
             jdbcTemplate.update("""
                     insert into tenant_settings (tenant_id, urgent_keywords, consultation_windows, destination_email, updated_at)
                     values (?, cast(? as jsonb), cast(? as jsonb), ?, now())
@@ -56,7 +77,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public TenantSettingsResponse settingsFor(String tenantSlug, TenantSettingsResponse defaultSettings) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug);
+            ensureTenant(tenantSlug, displayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
                     select t.slug, s.urgent_keywords, s.consultation_windows, s.destination_email
                     from tenants t
@@ -71,7 +92,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug);
+            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
             jdbcTemplate.update("""
                     insert into consultations (
                       id, tenant_id, client_name, client_email, summary, preferred_window, status, urgency,
@@ -97,7 +118,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug);
+            ensureTenant(tenantSlug, displayName(tenantSlug));
             List<ConsultationResponse> consultations = jdbcTemplate.query("""
                     select c.id, t.slug as tenant_slug, c.client_name, c.client_email, c.summary,
                            c.preferred_window, c.status, c.urgency, c.classification, c.notifications, c.created_at
@@ -110,14 +131,14 @@ class JdbcIntakeRepository implements IntakeRepository {
         });
     }
 
-    private UUID ensureTenant(String tenantSlug) {
+    private UUID ensureTenant(String tenantSlug, String displayName) {
         // TODO(workos): Persist workos_organization_id once the gateway derives tenant context from WorkOS org claims.
         return jdbcTemplate.queryForObject("""
                 insert into tenants (slug, display_name)
                 values (?, ?)
-                on conflict (slug) do update set slug = excluded.slug
+                on conflict (slug) do update set display_name = excluded.display_name
                 returning id
-                """, UUID.class, tenantSlug, displayName(tenantSlug));
+                """, UUID.class, tenantSlug, displayName);
     }
 
     private void setTenantContext(String tenantSlug) {

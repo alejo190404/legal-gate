@@ -41,6 +41,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/api/status", "/api/gateway/fallback", "/error").permitAll()
                         // public-prototype: only the gateway facade paths needed by the Vercel demo are public.
                         // TODO(workos): require validated WorkOS JWTs here before exposing real admin workflows.
+                        .requestMatchers(HttpMethod.POST, "/api/backend/api/auth/register", "/api/backend/api/auth/register/").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/backend/api/tenants/*/consultations").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/backend/api/admin/tenants/*/consultations").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/backend/api/tenants/*/settings").permitAll()
@@ -63,6 +64,7 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource(GatewayProperties properties) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(properties.getCors().getAllowedOrigins());
+        configuration.setAllowedOriginPatterns(properties.getCors().getAllowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));
         configuration.setExposedHeaders(List.of("Location", "X-Proxied-By"));

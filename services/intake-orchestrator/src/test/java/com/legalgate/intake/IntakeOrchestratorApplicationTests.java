@@ -36,6 +36,70 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
+    void firmOwnerCanRegisterWithEmailPasswordAndFirmNameWithoutCreatingLawyer() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "owner@barragan-legal.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Barragán Legal"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "/api/admin/tenants/barragan-legal/consultations"))
+                .andExpect(jsonPath("$.email").value("owner@barragan-legal.test"))
+                .andExpect(jsonPath("$.tenantId").value("barragan-legal"))
+                .andExpect(jsonPath("$.displayName").value("Barragán Legal admin"))
+                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"))
+                .andExpect(jsonPath("$.lawyerId").doesNotExist())
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        mockMvc.perform(get("/api/admin/tenants/barragan-legal/consultations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("barragan-legal"))
+                .andExpect(jsonPath("$.consultations", hasSize(0)));
+    }
+
+    @Test
+    void firmOwnerCanRegisterWithEightCharacterPrototypePassword() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "alejo190404@gmail.com",
+                                  "password": "password",
+                                  "firmName": "ABA juridico"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "/api/admin/tenants/aba-juridico/consultations"))
+                .andExpect(jsonPath("$.email").value("alejo190404@gmail.com"))
+                .andExpect(jsonPath("$.tenantId").value("aba-juridico"))
+                .andExpect(jsonPath("$.displayName").value("ABA juridico admin"))
+                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"))
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
+
+    @Test
+    void invalidRegistrationPayloadReturnsValidationProblem() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "bad-email",
+                                  "password": "short",
+                                  "firmName": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("validation_failed"))
+                .andExpect(jsonPath("$.fields.email").exists())
+                .andExpect(jsonPath("$.fields.password").exists())
+                .andExpect(jsonPath("$.fields.firmName").exists());
+    }
+
+    @Test
     void lawyerCanConfigureUrgencyCriteriaWindowsAndDestinationEmail() throws Exception {
         mockMvc.perform(put("/api/tenants/bogota-legal/settings")
                         .contentType(MediaType.APPLICATION_JSON)

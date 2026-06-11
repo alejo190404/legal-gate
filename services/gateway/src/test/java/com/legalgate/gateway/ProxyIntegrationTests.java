@@ -38,6 +38,7 @@ class ProxyIntegrationTests {
     static void startBackend() throws IOException {
         backend = HttpServer.create(new InetSocketAddress(0), 0);
         backend.createContext("/api/status", ProxyIntegrationTests::respondWithCase);
+        backend.createContext("/api/auth/register", ProxyIntegrationTests::respondWithRegistration);
         backend.createContext("/api/tenants/firma-demo/consultations", ProxyIntegrationTests::respondWithCase);
         backendExecutor = Executors.newSingleThreadExecutor();
         backend.setExecutor(backendExecutor);
@@ -72,6 +73,24 @@ class ProxyIntegrationTests {
     }
 
     @Test
+    void registrationRequestsAreProxiedPubliclyToConfiguredBackend() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
+                .andExpect(jsonPath("$.email").value("owner@firma.test"))
+                .andExpect(jsonPath("$.tenantId").value("firma-test"))
+                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
+    }
+
+    @Test
     void unsupportedOrUnavailableBackendResponsesUseGatewayFallbackShape() throws Exception {
         mockMvc.perform(post("/api/backend/api/tenants/firma-demo/consultations")
                         .contentType("application/json")
@@ -80,6 +99,20 @@ class ProxyIntegrationTests {
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
                 .andExpect(jsonPath("$.error").value("service_unavailable"))
                 .andExpect(jsonPath("$.service").value("backend"));
+    }
+
+    private static void respondWithRegistration(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        String body = "{\"email\":\"owner@firma.test\",\"tenantId\":\"firma-test\",\"displayName\":\"Firma Test admin\",\"role\":\"FIRM_ADMIN\"}";
+        byte[] response = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Location", "/api/admin/tenants/firma-test/consultations");
+        exchange.sendResponseHeaders(201, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
     }
 
     private static void respondWithCase(HttpExchange exchange) throws IOException {

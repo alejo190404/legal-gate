@@ -56,7 +56,7 @@ describe('App landing to login to consultation inbox flow', () => {
     TestBed.inject(HttpTestingController).verify();
   });
 
-  it('keeps the public landing intact and only adds the login entry point without exposing credentials', () => {
+  it('keeps the public landing intact and adds register next to the login entry point without exposing credentials', () => {
     const { compiled } = create();
 
     expect(compiled.querySelector('.landing-shell')).toBeTruthy();
@@ -67,11 +67,53 @@ describe('App landing to login to consultation inbox flow', () => {
       'Convierte cada correo de un cliente en una consulta agendada',
     );
     expect(compiled.textContent).toContain('Agenda una demo');
-    expect(compiled.textContent).toContain('Ingresar');
+    const navButtons = Array.from(compiled.querySelectorAll<HTMLButtonElement>('.nav button')).map(
+      (button) => button.textContent?.trim(),
+    );
+    expect(navButtons).toEqual(['Registrarse', 'Ingresar']);
     expect(compiled.textContent).toContain('© 2026 LegalGate · INTAKE · ROUTING · AUDIT');
     expect(compiled.textContent).not.toContain('admin@firma-demo.test');
     expect(compiled.textContent).not.toContain('LegalGateDemo2026!');
     expect(compiled.textContent).not.toContain('credenciales');
+  });
+
+  it('registers a firm owner user, creates a firm tenant, and loads an empty consultations inbox', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showRegister();
+    fixture.detectChanges();
+    expect(compiled.querySelector('h1')?.textContent).toContain('Crea tu cuenta en LegalGate');
+
+    fixture.componentInstance.registerForm.email = 'Owner@Barragan-Legal.test';
+    fixture.componentInstance.registerForm.password = 'StrongPass2026!';
+    fixture.componentInstance.registerForm.firmName = 'Barragán Legal';
+    fixture.componentInstance.register();
+
+    const registerRequest = http.expectOne('/api/auth/register');
+    expect(registerRequest.request.method).toBe('POST');
+    expect(registerRequest.request.body).toEqual({
+      email: 'owner@barragan-legal.test',
+      password: 'StrongPass2026!',
+      firmName: 'Barragán Legal',
+    });
+    registerRequest.flush({
+      email: 'owner@barragan-legal.test',
+      tenantId: 'barragan-legal',
+      displayName: 'Barragán Legal admin',
+      role: 'FIRM_ADMIN',
+    }, { status: 201, statusText: 'Created' });
+    http.expectOne('/api/admin/tenants/barragan-legal/consultations').flush({
+      tenantId: 'barragan-legal',
+      consultations: [],
+    });
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.console-shell')).toBeTruthy();
+    expect(compiled.textContent).toContain('barragan-legal');
+    expect(compiled.textContent).toContain('Sesión admin');
+    expect(compiled.textContent).toContain('Todavía no hay consultas para revisar.');
+    expect(compiled.textContent).not.toContain('Lawyer');
+    expect(compiled.textContent).not.toContain('Abogado');
   });
 
   it('shows a clean login screen without credential hints and then loads the consultations inbox', () => {

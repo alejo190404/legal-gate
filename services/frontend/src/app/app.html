@@ -12,7 +12,10 @@
           <a href="#beneficios">Beneficios</a>
           <a href="#seguridad">Seguridad</a>
         </div>
-        <button class="btn btn-ghost" type="button" (click)="showLogin()">Ingresar</button>
+        <div class="nav-actions">
+          <button class="btn btn-secondary" type="button" (click)="showRegister()">Registrarse</button>
+          <button class="btn btn-ghost" type="button" (click)="showLogin()">Ingresar</button>
+        </div>
       </nav>
 
       <header class="hero" aria-labelledby="hero-title">
@@ -140,6 +143,37 @@
         <div class="status-banner" [class.has-error]="errorMessage()">
           <strong>{{ errorMessage() || statusMessage() }}</strong>
           <span>Acceso privado de administradores</span>
+        </div>
+      </section>
+    </main>
+  }
+
+  @case ('register') {
+    <main class="login-shell">
+      <section class="login-card pixel-card" aria-labelledby="register-title">
+        <button class="link-button" type="button" (click)="showLanding()">← Volver a la landing</button>
+        <p class="eyebrow">Registro de firma</p>
+        <h1 id="register-title">Crea tu cuenta en LegalGate</h1>
+        <p>Registra la cuenta administradora de tu firma. Un usuario no es un abogado: la asociación con abogados se configura más adelante.</p>
+
+        <form (submit)="register(); $event.preventDefault()">
+          <label for="registerFirmName">Nombre de la firma</label>
+          <input id="registerFirmName" name="registerFirmName" [(ngModel)]="registerForm.firmName" autocomplete="organization" />
+
+          <label for="registerEmail">Email</label>
+          <input id="registerEmail" name="registerEmail" [(ngModel)]="registerForm.email" autocomplete="username" />
+
+          <label for="registerPassword">Password</label>
+          <input id="registerPassword" name="registerPassword" [(ngModel)]="registerForm.password" type="password" autocomplete="new-password" />
+
+          <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
+            {{ isSubmitting() ? 'Creando cuenta…' : 'Crear cuenta administradora' }}
+          </button>
+        </form>
+
+        <div class="status-banner" [class.has-error]="errorMessage()">
+          <strong>{{ errorMessage() || statusMessage() }}</strong>
+          <span>Sin email ni asociación de abogados todavía</span>
         </div>
       </section>
     </main>

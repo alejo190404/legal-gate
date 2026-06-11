@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from './auth/auth.service';
 import { ApiConfigService } from './config/api-config.service';
 
-type ViewName = 'landing' | 'login' | 'console';
+type ViewName = 'landing' | 'login' | 'register' | 'console';
 type ConsoleSection = 'dashboard' | 'consultas';
 
 interface ClassificationResult {
@@ -51,6 +51,19 @@ interface LoginForm {
   password: string;
 }
 
+interface RegisterForm {
+  email: string;
+  password: string;
+  firmName: string;
+}
+
+interface RegistrationResponse {
+  email: string;
+  tenantId: string;
+  displayName: string;
+  role: 'FIRM_ADMIN' | string;
+}
+
 @Component({
   selector: 'app-root',
   imports: [FormsModule],
@@ -79,6 +92,12 @@ export class App {
   readonly loginForm: LoginForm = {
     email: '',
     password: '',
+  };
+
+  readonly registerForm: RegisterForm = {
+    email: '',
+    password: '',
+    firmName: '',
   };
 
   readonly form: CreateConsultationForm = {
@@ -111,6 +130,51 @@ export class App {
     this.view.set('login');
     this.errorMessage.set('');
     this.statusMessage.set('Ingresa con tu cuenta de administrador para abrir el panel.');
+  }
+
+  showRegister(): void {
+    this.view.set('register');
+    this.errorMessage.set('');
+    this.statusMessage.set('Crea la cuenta administradora de tu firma para abrir el panel.');
+  }
+
+  register(): void {
+    const email = this.registerForm.email.trim().toLowerCase();
+    const password = this.registerForm.password;
+    const firmName = this.registerForm.firmName.trim();
+
+    if (!email || !password || !firmName) {
+      this.errorMessage.set('Completa email, password y nombre de la firma para registrarte.');
+      return;
+    }
+
+    this.isSubmitting.set(true);
+    this.errorMessage.set('');
+    this.http
+      .post<RegistrationResponse>(this.apiConfig.url('/api/auth/register'), {
+        email,
+        password,
+        firmName,
+      })
+      .subscribe({
+        next: (session) => {
+          this.sessionEmail.set(session.email);
+          this.tenantId.set(session.tenantId);
+          this.view.set('console');
+          this.activeConsoleSection.set('dashboard');
+          this.isConsoleMenuOpen.set(false);
+          this.statusMessage.set('Cuenta de administrador creada. Cargando datos de la firma…');
+          this.registerForm.email = '';
+          this.registerForm.password = '';
+          this.registerForm.firmName = '';
+          this.isSubmitting.set(false);
+          this.loadConsultations();
+        },
+        error: () => {
+          this.errorMessage.set('No se pudo crear la cuenta. Verifica los datos e intenta nuevamente.');
+          this.isSubmitting.set(false);
+        },
+      });
   }
 
   login(): void {

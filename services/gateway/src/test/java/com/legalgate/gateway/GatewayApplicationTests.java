@@ -3,6 +3,7 @@ package com.legalgate.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -53,6 +54,36 @@ class GatewayApplicationTests {
     }
 
     @Test
+    void registrationFacadeIsPublicDuringPrototypeMode() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
+    }
+
+    @Test
+    void registrationFacadeAcceptsTrailingSlashWithoutAuthentication() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/register/")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
+    }
+
+    @Test
     void unsupportedPrototypeRoutesAreNotPublic() throws Exception {
         mockMvc.perform(get("/api/backend/internal/admin-only"))
                 .andExpect(status().isUnauthorized())
@@ -67,6 +98,17 @@ class GatewayApplicationTests {
                         .header("Access-Control-Request-Headers", "Content-Type"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example.test"))
+                .andExpect(header().string("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
+    }
+
+    @Test
+    void corsPreflightAllowsVercelPreviewOriginForPublicRegistration() throws Exception {
+        mockMvc.perform(options("/api/backend/api/auth/register")
+                        .header("Origin", "https://legal-gate-git-feat-basic-user-registration-alejo190404.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "Content-Type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://legal-gate-git-feat-basic-user-registration-alejo190404.vercel.app"))
                 .andExpect(header().string("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
     }
 
