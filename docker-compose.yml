@@ -50,6 +50,9 @@ services:
         LEGALGATE_API_BASE_URL: ${LEGALGATE_API_BASE_URL:-/api/backend}
     ports:
       - "4200:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 10s
