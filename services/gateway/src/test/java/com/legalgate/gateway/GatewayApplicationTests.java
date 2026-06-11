@@ -3,6 +3,7 @@ package com.legalgate.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,6 +51,21 @@ class GatewayApplicationTests {
                 .andExpect(jsonPath("$.error").value("service_unavailable"))
                 .andExpect(jsonPath("$.service").value("backend"))
                 .andExpect(jsonPath("$.message").value("LegalGate backend is not connected yet."));
+    }
+
+    @Test
+    void registrationFacadeIsPublicDuringPrototypeMode() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
     }
 
     @Test
