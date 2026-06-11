@@ -116,6 +116,38 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).not.toContain('Abogado');
   });
 
+  it('logs in a registered firm owner through the backend and loads that tenant inbox', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'Owner@Barragan-Legal.test';
+    fixture.componentInstance.loginForm.password = 'StrongPass2026!';
+    fixture.componentInstance.login();
+
+    const loginRequest = http.expectOne('/api/auth/login');
+    expect(loginRequest.request.method).toBe('POST');
+    expect(loginRequest.request.body).toEqual({
+      email: 'owner@barragan-legal.test',
+      password: 'StrongPass2026!',
+    });
+    loginRequest.flush({
+      email: 'owner@barragan-legal.test',
+      tenantId: 'barragan-legal',
+      displayName: 'Barragán Legal admin',
+      role: 'FIRM_ADMIN',
+    });
+    http.expectOne('/api/admin/tenants/barragan-legal/consultations').flush({
+      tenantId: 'barragan-legal',
+      consultations: [],
+    });
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.console-shell')).toBeTruthy();
+    expect(compiled.textContent).toContain('barragan-legal');
+    expect(compiled.textContent).toContain('Todavía no hay consultas para revisar.');
+    expect(compiled.textContent).not.toContain('Sesión demo iniciada');
+  });
+
   it('shows a clean login screen without credential hints and then loads the consultations inbox', () => {
     const { fixture, http, compiled } = create();
 
@@ -129,6 +161,12 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
 
+    http.expectOne('/api/auth/login').flush({
+      email: 'admin@firma-demo.test',
+      tenantId: 'firma-demo',
+      displayName: 'Admin demo',
+      role: 'FIRM_ADMIN',
+    });
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
     fixture.detectChanges();
 
@@ -151,6 +189,12 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
+    http.expectOne('/api/auth/login').flush({
+      email: 'admin@firma-demo.test',
+      tenantId: 'firma-demo',
+      displayName: 'Admin demo',
+      role: 'FIRM_ADMIN',
+    });
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
     fixture.detectChanges();
 
@@ -181,12 +225,16 @@ describe('App landing to login to consultation inbox flow', () => {
   });
 
   it('keeps users on login when credentials are invalid', () => {
-    const { fixture, compiled } = create();
+    const { fixture, http, compiled } = create();
 
     fixture.componentInstance.showLogin();
     fixture.componentInstance.loginForm.email = 'wrong@example.com';
     fixture.componentInstance.loginForm.password = 'bad-password';
     fixture.componentInstance.login();
+    http.expectOne('/api/auth/login').flush(
+      { error: 'invalid_credentials' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
     fixture.detectChanges();
 
     expect(compiled.querySelector('h1')?.textContent).toContain('Ingresa a LegalGate');
@@ -204,6 +252,14 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
 
+    http.expectOne(
+      'https://legal-gate-gateway.onrender.com/api/backend/api/auth/login',
+    ).flush({
+      email: 'admin@firma-demo.test',
+      tenantId: 'firma-demo',
+      displayName: 'Admin demo',
+      role: 'FIRM_ADMIN',
+    });
     http.expectOne(
       'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
     ).flush(demoResponse);

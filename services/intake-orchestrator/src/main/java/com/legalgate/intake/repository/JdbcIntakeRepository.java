@@ -8,11 +8,13 @@ import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationStatus;
 import com.legalgate.intake.model.RegistrationResponse;
+import com.legalgate.intake.model.StoredUserCredentials;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
@@ -53,6 +55,20 @@ class JdbcIntakeRepository implements IntakeRepository {
         } catch (DuplicateKeyException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered", ex);
         }
+    }
+
+    @Override
+    public Optional<StoredUserCredentials> findActiveUserByEmail(String email) {
+        List<StoredUserCredentials> users = jdbcTemplate.query("""
+                select email, tenant_id, display_name, role, hashed_password
+                from find_active_user_for_login(?)
+                """, (rs, rowNum) -> mapStoredUser(rs), email);
+        return users.stream().findFirst();
+    }
+
+    @Override
+    public void recordLogin(String email) {
+        jdbcTemplate.queryForObject("select record_user_login(?)", Void.class, email);
     }
 
     @Override
@@ -143,6 +159,16 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     private void setTenantContext(String tenantSlug) {
         jdbcTemplate.queryForObject("select set_config('app.tenant_slug', ?, true)", String.class, tenantSlug);
+    }
+
+    private StoredUserCredentials mapStoredUser(ResultSet rs) throws SQLException {
+        return new StoredUserCredentials(
+                rs.getString("email"),
+                rs.getString("tenant_id"),
+                rs.getString("display_name"),
+                rs.getString("role"),
+                rs.getString("hashed_password")
+        );
     }
 
     private TenantSettingsResponse mapSettings(ResultSet rs) throws SQLException {

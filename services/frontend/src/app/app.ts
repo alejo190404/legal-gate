@@ -1,7 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AuthService } from './auth/auth.service';
 import { ApiConfigService } from './config/api-config.service';
 
 type ViewName = 'landing' | 'login' | 'register' | 'console';
@@ -72,7 +71,6 @@ interface RegistrationResponse {
 })
 export class App {
   private readonly http = inject(HttpClient);
-  private readonly authService = inject(AuthService);
   private readonly apiConfig = inject(ApiConfigService);
 
   // TODO(routing): Move landing/login/console to Angular routes once auth is real.
@@ -178,19 +176,38 @@ export class App {
   }
 
   login(): void {
-    const session = this.authService.login(this.loginForm.email, this.loginForm.password);
-    if (!session) {
+    const email = this.loginForm.email.trim().toLowerCase();
+    const password = this.loginForm.password;
+
+    if (!email || !password) {
       this.errorMessage.set('Credenciales inválidas. Verifica tu email y contraseña.');
       return;
     }
 
-    this.sessionEmail.set(session.email);
-    this.tenantId.set(session.tenantId);
-    this.view.set('console');
-    this.activeConsoleSection.set('dashboard');
-    this.isConsoleMenuOpen.set(false);
-    this.statusMessage.set('Sesión demo iniciada. Cargando datos de la firma…');
-    this.loadConsultations();
+    this.isSubmitting.set(true);
+    this.errorMessage.set('');
+    this.http
+      .post<RegistrationResponse>(this.apiConfig.url('/api/auth/login'), {
+        email,
+        password,
+      })
+      .subscribe({
+        next: (session) => {
+          this.sessionEmail.set(session.email);
+          this.tenantId.set(session.tenantId);
+          this.view.set('console');
+          this.activeConsoleSection.set('dashboard');
+          this.isConsoleMenuOpen.set(false);
+          this.statusMessage.set('Sesión iniciada. Cargando datos de la firma…');
+          this.loginForm.password = '';
+          this.isSubmitting.set(false);
+          this.loadConsultations();
+        },
+        error: () => {
+          this.errorMessage.set('Credenciales inválidas. Verifica tu email y contraseña.');
+          this.isSubmitting.set(false);
+        },
+      });
   }
 
   logout(): void {

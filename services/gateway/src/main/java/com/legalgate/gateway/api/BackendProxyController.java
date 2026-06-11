@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
-import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/backend")
@@ -56,9 +54,7 @@ public class BackendProxyController {
                     .uri(targetUri)
                     .headers(headers -> copyForwardableHeaders(request, headers))
                     .bodyValue(body == null ? new byte[0] : body)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, response -> Mono.error(new BackendUnavailableException()))
-                    .toEntity(byte[].class)
+                    .exchangeToMono(response -> response.toEntity(byte[].class))
                     .block(timeout());
 
             if (backendResponse == null) {

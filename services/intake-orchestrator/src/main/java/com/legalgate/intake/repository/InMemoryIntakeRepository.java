@@ -3,9 +3,11 @@ package com.legalgate.intake.repository;
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.RegistrationResponse;
+import com.legalgate.intake.model.StoredUserCredentials;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -19,17 +21,28 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, RegistrationResponse> usersByEmail = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
 
     @Override
     public RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role) {
-        RegistrationResponse response = new RegistrationResponse(email, firmSlug, firmName + " admin", role);
-        RegistrationResponse existing = usersByEmail.putIfAbsent(email, response);
+        String displayName = firmName + " admin";
+        StoredUserCredentials user = new StoredUserCredentials(email, firmSlug, displayName, role, hashedPassword);
+        StoredUserCredentials existing = usersByEmail.putIfAbsent(email, user);
         if (existing != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered");
         }
         consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
-        return response;
+        return user.toSession();
+    }
+
+    @Override
+    public Optional<StoredUserCredentials> findActiveUserByEmail(String email) {
+        return Optional.ofNullable(usersByEmail.get(email));
+    }
+
+    @Override
+    public void recordLogin(String email) {
+        // In-memory prototype repository does not track login timestamps.
     }
 
     @Override

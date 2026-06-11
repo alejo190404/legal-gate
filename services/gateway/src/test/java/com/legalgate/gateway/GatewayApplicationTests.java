@@ -69,6 +69,20 @@ class GatewayApplicationTests {
     }
 
     @Test
+    void loginFacadeIsPublicDuringPrototypeMode() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/login")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
+    }
+
+    @Test
     void registrationFacadeAcceptsTrailingSlashWithoutAuthentication() throws Exception {
         mockMvc.perform(post("/api/backend/api/auth/register/")
                         .contentType("application/json")
@@ -102,8 +116,8 @@ class GatewayApplicationTests {
     }
 
     @Test
-    void corsPreflightAllowsVercelPreviewOriginForPublicRegistration() throws Exception {
-        mockMvc.perform(options("/api/backend/api/auth/register")
+    void corsPreflightAllowsVercelPreviewOriginForPublicLogin() throws Exception {
+        mockMvc.perform(options("/api/backend/api/auth/login")
                         .header("Origin", "https://legal-gate-git-feat-basic-user-registration-alejo190404.vercel.app")
                         .header("Access-Control-Request-Method", "POST")
                         .header("Access-Control-Request-Headers", "Content-Type"))
