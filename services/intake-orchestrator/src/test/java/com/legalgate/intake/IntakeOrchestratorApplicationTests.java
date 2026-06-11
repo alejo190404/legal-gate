@@ -82,6 +82,60 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
+    void firmOwnerCanLoginAfterRegistration() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "Owner@login-barragan-legal.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Barragan Legal"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": " owner@login-BARRAGAN-LEGAL.test ",
+                                  "password": "StrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("owner@login-barragan-legal.test"))
+                .andExpect(jsonPath("$.tenantId").value("barragan-legal"))
+                .andExpect(jsonPath("$.displayName").value("Barragan Legal admin"))
+                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
+    }
+
+    @Test
+    void wrongPasswordReturnsInvalidCredentials() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "WrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_credentials"))
+                .andExpect(jsonPath("$.message").value("Email or password is incorrect."));
+    }
+
+    @Test
     void invalidRegistrationPayloadReturnsValidationProblem() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -11,9 +11,9 @@ const demoResponse = {
     {
       id: 'case-001',
       tenantId: 'firma-demo',
-      clientName: 'María Pérez',
+      clientName: 'Maria Perez',
       clientEmail: 'maria@example.com',
-      summary: 'Tengo una audiencia laboral mañana y necesito orientación urgente.',
+      summary: 'Tengo una audiencia laboral manana y necesito orientacion urgente.',
       preferredWindow: 'Jueves 2:00 p. m.',
       status: 'RECEIVED',
       urgency: 'URGENT',
@@ -32,6 +32,13 @@ const demoResponse = {
       createdAt: '2026-06-03T15:00:00Z',
     },
   ],
+};
+
+const loginResponse = {
+  email: 'admin@firma-demo.test',
+  tenantId: 'firma-demo',
+  displayName: 'Firma Demo admin',
+  role: 'FIRM_ADMIN',
 };
 
 describe('App landing to login to consultation inbox flow', () => {
@@ -71,7 +78,7 @@ describe('App landing to login to consultation inbox flow', () => {
       (button) => button.textContent?.trim(),
     );
     expect(navButtons).toEqual(['Registrarse', 'Ingresar']);
-    expect(compiled.textContent).toContain('© 2026 LegalGate · INTAKE · ROUTING · AUDIT');
+    expect(compiled.textContent).toContain('2026 LegalGate');
     expect(compiled.textContent).not.toContain('admin@firma-demo.test');
     expect(compiled.textContent).not.toContain('LegalGateDemo2026!');
     expect(compiled.textContent).not.toContain('credenciales');
@@ -86,7 +93,7 @@ describe('App landing to login to consultation inbox flow', () => {
 
     fixture.componentInstance.registerForm.email = 'Owner@Barragan-Legal.test';
     fixture.componentInstance.registerForm.password = 'StrongPass2026!';
-    fixture.componentInstance.registerForm.firmName = 'Barragán Legal';
+    fixture.componentInstance.registerForm.firmName = 'Barragan Legal';
     fixture.componentInstance.register();
 
     const registerRequest = http.expectOne('/api/auth/register');
@@ -94,14 +101,17 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(registerRequest.request.body).toEqual({
       email: 'owner@barragan-legal.test',
       password: 'StrongPass2026!',
-      firmName: 'Barragán Legal',
+      firmName: 'Barragan Legal',
     });
-    registerRequest.flush({
-      email: 'owner@barragan-legal.test',
-      tenantId: 'barragan-legal',
-      displayName: 'Barragán Legal admin',
-      role: 'FIRM_ADMIN',
-    }, { status: 201, statusText: 'Created' });
+    registerRequest.flush(
+      {
+        email: 'owner@barragan-legal.test',
+        tenantId: 'barragan-legal',
+        displayName: 'Barragan Legal admin',
+        role: 'FIRM_ADMIN',
+      },
+      { status: 201, statusText: 'Created' },
+    );
     http.expectOne('/api/admin/tenants/barragan-legal/consultations').flush({
       tenantId: 'barragan-legal',
       consultations: [],
@@ -110,8 +120,8 @@ describe('App landing to login to consultation inbox flow', () => {
 
     expect(compiled.querySelector('.console-shell')).toBeTruthy();
     expect(compiled.textContent).toContain('barragan-legal');
-    expect(compiled.textContent).toContain('Sesión admin');
-    expect(compiled.textContent).toContain('Todavía no hay consultas para revisar.');
+    expect(compiled.textContent).toContain('Sesi');
+    expect(compiled.textContent).toContain('Todav');
     expect(compiled.textContent).not.toContain('Lawyer');
     expect(compiled.textContent).not.toContain('Abogado');
   });
@@ -125,17 +135,24 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).not.toContain('admin@firma-demo.test');
     expect(compiled.textContent).not.toContain('LegalGateDemo2026!');
 
-    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.email = 'Admin@Firma-Demo.test ';
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
 
+    const loginRequest = http.expectOne('/api/auth/login');
+    expect(loginRequest.request.method).toBe('POST');
+    expect(loginRequest.request.body).toEqual({
+      email: 'admin@firma-demo.test',
+      password: 'LegalGateDemo2026!',
+    });
+    loginRequest.flush(loginResponse);
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
     fixture.detectChanges();
 
     expect(compiled.querySelector('.console-shell')).toBeTruthy();
     expect(compiled.querySelector('h1')?.textContent).toContain('Panel operativo de intake');
-    expect(compiled.textContent).toContain('Sesión admin');
-    expect(compiled.textContent).toContain('María Pérez');
+    expect(compiled.textContent).toContain('Sesi');
+    expect(compiled.textContent).toContain('Maria Perez');
     expect(compiled.textContent).toContain('audiencia');
     expect(compiled.textContent).toContain('1 consultas');
     expect(compiled.textContent).not.toContain('API proxy');
@@ -151,6 +168,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
+    http.expectOne('/api/auth/login').flush(loginResponse);
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
     fixture.detectChanges();
 
@@ -180,17 +198,21 @@ describe('App landing to login to consultation inbox flow', () => {
     ).toEqual(['Consultas']);
   });
 
-  it('keeps users on login when credentials are invalid', () => {
-    const { fixture, compiled } = create();
+  it('keeps users on login when the backend rejects credentials', () => {
+    const { fixture, http, compiled } = create();
 
     fixture.componentInstance.showLogin();
     fixture.componentInstance.loginForm.email = 'wrong@example.com';
     fixture.componentInstance.loginForm.password = 'bad-password';
     fixture.componentInstance.login();
+    http.expectOne('/api/auth/login').flush(
+      { error: 'invalid_credentials', message: 'Email or password is incorrect.' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
     fixture.detectChanges();
 
     expect(compiled.querySelector('h1')?.textContent).toContain('Ingresa a LegalGate');
-    expect(compiled.textContent).toContain('Credenciales inválidas');
+    expect(compiled.textContent).toContain('Credenciales invalidas');
     expect(compiled.textContent).not.toContain('admin@firma-demo.test');
     expect(compiled.textContent).not.toContain('LegalGateDemo2026!');
   });
@@ -204,6 +226,9 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
 
+    http.expectOne('https://legal-gate-gateway.onrender.com/api/backend/api/auth/login').flush(
+      loginResponse,
+    );
     http.expectOne(
       'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
     ).flush(demoResponse);

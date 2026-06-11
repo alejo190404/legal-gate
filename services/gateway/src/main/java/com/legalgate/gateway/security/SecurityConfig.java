@@ -41,7 +41,13 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/api/status", "/api/gateway/fallback", "/error").permitAll()
                         // public-prototype: only the gateway facade paths needed by the Vercel demo are public.
                         // TODO(workos): require validated WorkOS JWTs here before exposing real admin workflows.
-                        .requestMatchers(HttpMethod.POST, "/api/backend/api/auth/register", "/api/backend/api/auth/register/").permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/backend/api/auth/register",
+                                "/api/backend/api/auth/register/",
+                                "/api/backend/api/auth/login",
+                                "/api/backend/api/auth/login/")
+                        .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/backend/api/tenants/*/consultations").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/backend/api/admin/tenants/*/consultations").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/backend/api/tenants/*/settings").permitAll()

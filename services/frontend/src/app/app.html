@@ -126,7 +126,7 @@
     <main class="login-shell">
       <section class="login-card pixel-card" aria-labelledby="login-title">
         <button class="link-button" type="button" (click)="showLanding()">← Volver a la landing</button>
-        <p class="eyebrow">Acceso demo</p>
+        <p class="eyebrow">Acceso administrador</p>
         <h1 id="login-title">Ingresa a LegalGate</h1>
         <p>Accede con tu cuenta de administrador para revisar intake, urgencia y notificaciones.</p>
 
@@ -137,7 +137,9 @@
           <label for="loginPassword">Password</label>
           <input id="loginPassword" name="loginPassword" [(ngModel)]="loginForm.password" type="password" autocomplete="current-password" />
 
-          <button class="btn btn-primary" type="submit">Entrar a la consola</button>
+          <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
+            {{ isSubmitting() ? 'Ingresando...' : 'Entrar a la consola' }}
+          </button>
         </form>
 
         <div class="status-banner" [class.has-error]="errorMessage()">

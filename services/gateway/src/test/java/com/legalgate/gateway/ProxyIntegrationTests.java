@@ -40,6 +40,7 @@ class ProxyIntegrationTests {
         backend = HttpServer.create(new InetSocketAddress(0), 0);
         backend.createContext("/api/status", ProxyIntegrationTests::respondWithCase);
         backend.createContext("/api/auth/register", ProxyIntegrationTests::respondWithRegistration);
+        backend.createContext("/api/auth/login", ProxyIntegrationTests::respondWithLogin);
         backend.createContext("/api/tenants/firma-demo/consultations", ProxyIntegrationTests::respondWithCase);
         backendExecutor = Executors.newSingleThreadExecutor();
         backend.setExecutor(backendExecutor);
@@ -92,6 +93,24 @@ class ProxyIntegrationTests {
     }
 
     @Test
+    void loginRequestsAreProxiedPubliclyToConfiguredBackend() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/login")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
+                .andExpect(jsonPath("$.email").value("owner@firma.test"))
+                .andExpect(jsonPath("$.tenantId").value("firma-test"))
+                .andExpect(jsonPath("$.displayName").value("Firma Test admin"))
+                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
+    }
+
+    @Test
     void downstreamRegistrationErrorsKeepTheirOriginalStatusAndBody() throws Exception {
         mockMvc.perform(post("/api/backend/api/auth/register")
                         .contentType("application/json")
@@ -106,6 +125,22 @@ class ProxyIntegrationTests {
                 .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
                 .andExpect(jsonPath("$.error").value("email_already_registered"))
                 .andExpect(jsonPath("$.message").value("Email is already registered."));
+    }
+
+    @Test
+    void downstreamLoginErrorsKeepTheirOriginalStatusAndBody() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/login")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "WrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
+                .andExpect(jsonPath("$.error").value("invalid_credentials"))
+                .andExpect(jsonPath("$.message").value("Email or password is incorrect."));
     }
 
     @Test
@@ -141,6 +176,32 @@ class ProxyIntegrationTests {
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.getResponseHeaders().set("Location", "/api/admin/tenants/firma-test/consultations");
         exchange.sendResponseHeaders(201, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
+    private static void respondWithLogin(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        String requestBody;
+        try (InputStream requestStream = exchange.getRequestBody()) {
+            requestBody = new String(requestStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        if (requestBody.contains("WrongPass")) {
+            byte[] errorResponse = "{\"error\":\"invalid_credentials\",\"message\":\"Email or password is incorrect.\"}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(401, errorResponse.length);
+            exchange.getResponseBody().write(errorResponse);
+            exchange.close();
+            return;
+        }
+        String body = "{\"email\":\"owner@firma.test\",\"tenantId\":\"firma-test\",\"displayName\":\"Firma Test admin\",\"role\":\"FIRM_ADMIN\"}";
+        byte[] response = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
         exchange.getResponseBody().write(response);
         exchange.close();
     }

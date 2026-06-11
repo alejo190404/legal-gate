@@ -84,6 +84,20 @@ class GatewayApplicationTests {
     }
 
     @Test
+    void loginFacadeIsPublicDuringPrototypeMode() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/login")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner@firma.test",
+                                  "password": "StrongPass2026!"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
+    }
+
+    @Test
     void unsupportedPrototypeRoutesAreNotPublic() throws Exception {
         mockMvc.perform(get("/api/backend/internal/admin-only"))
                 .andExpect(status().isUnauthorized())
