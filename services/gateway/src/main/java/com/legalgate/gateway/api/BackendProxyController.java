@@ -8,12 +8,12 @@ import java.util.Collections;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
@@ -56,9 +56,7 @@ public class BackendProxyController {
                     .uri(targetUri)
                     .headers(headers -> copyForwardableHeaders(request, headers))
                     .bodyValue(body == null ? new byte[0] : body)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, response -> Mono.error(new BackendUnavailableException()))
-                    .toEntity(byte[].class)
+                    .exchangeToMono(response -> response.toEntity(byte[].class))
                     .block(timeout());
 
             if (backendResponse == null) {
@@ -70,8 +68,13 @@ public class BackendProxyController {
             HOP_BY_HOP_HEADERS.forEach(responseHeaders::remove);
             responseHeaders.set("X-Proxied-By", "legal-gate-gateway");
             return new ResponseEntity<>(backendResponse.getBody(), responseHeaders, backendResponse.getStatusCode());
-        } catch (RuntimeException ex) {
+        } catch (WebClientRequestException ex) {
             return FallbackController.backendUnavailable();
+        } catch (RuntimeException ex) {
+            if (causedByBackendConnectivity(ex)) {
+                return FallbackController.backendUnavailable();
+            }
+            throw ex;
         }
     }
 
@@ -114,6 +117,14 @@ public class BackendProxyController {
         return properties.getRequestTimeout() == null ? Duration.ofSeconds(3) : properties.getRequestTimeout();
     }
 
-    private static final class BackendUnavailableException extends RuntimeException {
+    private boolean causedByBackendConnectivity(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof WebClientRequestException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

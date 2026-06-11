@@ -5,7 +5,7 @@ This guide describes the first production-like LegalGate deployment slice:
 - Angular frontend on Vercel.
 - Spring Boot gateway on Render as the only browser-facing API facade.
 - Spring Boot intake-orchestrator on Render for intake persistence.
-- Supabase Postgres accessed directly from the intake service through JDBC/Flyway.
+- Supabase Postgres accessed from the intake service through JDBC/Flyway.
 
 The frontend must call only the gateway. It must not call intake-orchestrator or Supabase directly.
 
@@ -17,6 +17,8 @@ The frontend must call only the gateway. It must not call intake-orchestrator or
 4. Gateway applies CORS and temporary public-prototype route policy.
 5. Gateway proxies to `LEGALGATE_BACKEND_URL` (the Render intake-orchestrator service).
 6. Intake persists tenant settings and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
+
+The gateway should return `503 service_unavailable` only when the intake service is unreachable or `LEGALGATE_BACKEND_URL` is missing. If intake responds with `400`, `409`, or `500`, the gateway should pass that downstream status/body through so Render/Supabase failures are visible during diagnosis.
 
 ## Environment variables
 
@@ -38,10 +40,10 @@ Do not configure a browser-facing shared secret for this milestone. WorkOS/JWT w
 
 ### Render intake-orchestrator
 
-Use Supabase's direct Postgres host, not the connection pooler:
+Use the Supabase pooler connection currently configured for Render:
 
 - `LEGALGATE_INTAKE_PERSISTENCE=jdbc`
-- `SPRING_DATASOURCE_URL=jdbc:postgresql://<supabase-direct-host>:5432/postgres?sslmode=require`
+- `SPRING_DATASOURCE_URL=jdbc:postgresql://<supabase-pooler-host>:5432/postgres?sslmode=require`
 - `SPRING_DATASOURCE_USERNAME=<supabase-db-user>`
 - `SPRING_DATASOURCE_PASSWORD=<supabase-db-password>`
 - `SPRING_DATASOURCE_MAX_POOL_SIZE=5`
@@ -49,6 +51,21 @@ Use Supabase's direct Postgres host, not the connection pooler:
 - `LEGALGATE_SEED_DEMO_DATA=false`
 
 Keep real Supabase credentials only in Render environment variables. Do not store them in Vercel or committed files.
+
+## Troubleshooting registration `503`
+
+If `POST https://legal-gate-gateway.onrender.com/api/backend/api/auth/register` returns `503`, check these in order:
+
+1. `LEGALGATE_BACKEND_URL` on the Render gateway must point to the public intake service root, for example `https://legal-gate-intake-orchestrator.onrender.com`, without an extra `/api` suffix.
+2. The intake Render service must be healthy at `/actuator/health` and `/api/status`.
+3. The intake Render service must have JDBC persistence enabled with:
+   - `LEGALGATE_INTAKE_PERSISTENCE=jdbc`
+   - `SPRING_FLYWAY_ENABLED=true`
+   - a valid Supabase pooler `SPRING_DATASOURCE_URL`
+   - no stale Flyway bootstrap overrides such as `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` or `SPRING_FLYWAY_VERSION=0` unless you intentionally need them
+4. If intake starts but registration fails, inspect the intake logs for Flyway migration failures, Postgres authentication errors, or missing-table errors such as `relation "users" does not exist`.
+
+With the current gateway behavior, downstream intake errors should remain visible instead of being rewritten to a generic `503`, which makes Render-side debugging much easier.
 
 ## Local Docker Compose
 

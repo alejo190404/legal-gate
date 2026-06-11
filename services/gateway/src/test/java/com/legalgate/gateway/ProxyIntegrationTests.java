@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
@@ -91,19 +92,48 @@ class ProxyIntegrationTests {
     }
 
     @Test
-    void unsupportedOrUnavailableBackendResponsesUseGatewayFallbackShape() throws Exception {
+    void downstreamRegistrationErrorsKeepTheirOriginalStatusAndBody() throws Exception {
+        mockMvc.perform(post("/api/backend/api/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "email": "owner+taken@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Test"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
+                .andExpect(jsonPath("$.error").value("email_already_registered"))
+                .andExpect(jsonPath("$.message").value("Email is already registered."));
+    }
+
+    @Test
+    void downstreamHttpErrorsArePreservedInsteadOfBeingFlattenedToGatewayFallback() throws Exception {
         mockMvc.perform(post("/api/backend/api/tenants/firma-demo/consultations")
                         .contentType("application/json")
                         .content("{\"name\":\"client\"}"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.error").value("service_unavailable"))
-                .andExpect(jsonPath("$.service").value("backend"));
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
+                .andExpect(content().string(""));
     }
 
     private static void respondWithRegistration(HttpExchange exchange) throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        String requestBody;
+        try (InputStream requestStream = exchange.getRequestBody()) {
+            requestBody = new String(requestStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        if (requestBody.contains("taken")) {
+            byte[] errorResponse = "{\"error\":\"email_already_registered\",\"message\":\"Email is already registered.\"}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(409, errorResponse.length);
+            exchange.getResponseBody().write(errorResponse);
+            exchange.close();
             return;
         }
         String body = "{\"email\":\"owner@firma.test\",\"tenantId\":\"firma-test\",\"displayName\":\"Firma Test admin\",\"role\":\"FIRM_ADMIN\"}";

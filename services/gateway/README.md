@@ -28,7 +28,7 @@ Environment variables:
 - `LEGALGATE_BACKEND_URL`: optional backend base URL, for example `http://backend:8080`.
 - `GATEWAY_REQUEST_TIMEOUT`: downstream request timeout, default `3s`.
 
-When `LEGALGATE_BACKEND_URL` is blank or the backend returns an error, `/api/backend/**` responds with a stable JSON `503 service_unavailable` payload so consumers still receive a useful response while services are being connected.
+When `LEGALGATE_BACKEND_URL` is blank or the backend is unreachable, `/api/backend/**` responds with a stable JSON `503 service_unavailable` payload so consumers still receive a useful response while services are being connected. Real backend HTTP errors are passed through unchanged.
 
 ## Local commands
 

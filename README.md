@@ -32,7 +32,7 @@ curl http://localhost:8080/api/status
 curl -i http://localhost:8080/api/backend/api/status
 ```
 
-If `LEGALGATE_BACKEND_URL` is unset or the backend is unavailable, the gateway still returns a consistent JSON `503 service_unavailable` fallback instead of failing with an empty response.
+If `LEGALGATE_BACKEND_URL` is unset or the backend is unreachable, the gateway returns a consistent JSON `503 service_unavailable` fallback instead of failing with an empty response. Real backend HTTP errors such as `400`, `409`, and `500` are preserved so deployment issues can be diagnosed from the client response.
 
 ## Intake orchestrator quick start
 
