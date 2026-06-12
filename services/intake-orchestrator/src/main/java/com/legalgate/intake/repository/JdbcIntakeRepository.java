@@ -20,6 +20,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCallback;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -74,7 +75,12 @@ class JdbcIntakeRepository implements IntakeRepository {
     @Override
     public void recordSuccessfulLogin(String email) {
         transactionTemplate.executeWithoutResult(status ->
-                jdbcTemplate.update("select app_record_user_login(?)", email));
+                jdbcTemplate.execute("select app_record_user_login(?)", (PreparedStatementCallback<Void>) ps -> {
+                    // PostgreSQL returns a row for "select some_void_function(...)", so execute() is required here.
+                    ps.setString(1, email);
+                    ps.execute();
+                    return null;
+                }));
     }
 
     @Override
