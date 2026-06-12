@@ -1,7 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AuthService } from './auth/auth.service';
 import { ApiConfigService } from './config/api-config.service';
 
 type ViewName = 'landing' | 'login' | 'register' | 'console';
@@ -57,7 +56,7 @@ interface RegisterForm {
   firmName: string;
 }
 
-interface RegistrationResponse {
+interface SessionResponse {
   email: string;
   tenantId: string;
   displayName: string;
@@ -72,21 +71,20 @@ interface RegistrationResponse {
 })
 export class App {
   private readonly http = inject(HttpClient);
-  private readonly authService = inject(AuthService);
   private readonly apiConfig = inject(ApiConfigService);
 
   // TODO(routing): Move landing/login/console to Angular routes once auth is real.
   // For this prototype, a single component keeps the test scope small and protects the
   // existing public landing experience while validating the backend-connected console.
   readonly view = signal<ViewName>('landing');
-  readonly tenantId = signal('firma-demo');
+  readonly tenantId = signal('');
   readonly sessionEmail = signal('');
   readonly consultations = signal<Consultation[]>([]);
   readonly activeConsoleSection = signal<ConsoleSection>('dashboard');
   readonly isConsoleMenuOpen = signal(false);
   readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
-  readonly statusMessage = signal('Listo para iniciar sesión con credenciales demo.');
+  readonly statusMessage = signal('Listo para iniciar sesion.');
   readonly errorMessage = signal('');
 
   readonly loginForm: LoginForm = {
@@ -151,7 +149,7 @@ export class App {
     this.isSubmitting.set(true);
     this.errorMessage.set('');
     this.http
-      .post<RegistrationResponse>(this.apiConfig.url('/api/auth/register'), {
+      .post<SessionResponse>(this.apiConfig.url('/api/auth/register'), {
         email,
         password,
         firmName,
@@ -163,7 +161,7 @@ export class App {
           this.view.set('console');
           this.activeConsoleSection.set('dashboard');
           this.isConsoleMenuOpen.set(false);
-          this.statusMessage.set('Cuenta de administrador creada. Cargando datos de la firma…');
+          this.statusMessage.set('Cuenta de administrador creada. Cargando datos de la firma...');
           this.registerForm.email = '';
           this.registerForm.password = '';
           this.registerForm.firmName = '';
@@ -178,23 +176,48 @@ export class App {
   }
 
   login(): void {
-    const session = this.authService.login(this.loginForm.email, this.loginForm.password);
-    if (!session) {
-      this.errorMessage.set('Credenciales inválidas. Verifica tu email y contraseña.');
+    const email = this.loginForm.email.trim().toLowerCase();
+    const password = this.loginForm.password;
+
+    if (!email || !password) {
+      this.errorMessage.set('Completa email y password para iniciar sesion.');
       return;
     }
 
-    this.sessionEmail.set(session.email);
-    this.tenantId.set(session.tenantId);
-    this.view.set('console');
-    this.activeConsoleSection.set('dashboard');
-    this.isConsoleMenuOpen.set(false);
-    this.statusMessage.set('Sesión demo iniciada. Cargando datos de la firma…');
-    this.loadConsultations();
+    this.isSubmitting.set(true);
+    this.errorMessage.set('');
+    this.http
+      .post<SessionResponse>(this.apiConfig.url('/api/auth/login'), {
+        email,
+        password,
+      })
+      .subscribe({
+        next: (session) => {
+          this.sessionEmail.set(session.email);
+          this.tenantId.set(session.tenantId);
+          this.view.set('console');
+          this.activeConsoleSection.set('dashboard');
+          this.isConsoleMenuOpen.set(false);
+          this.statusMessage.set('Sesion iniciada. Cargando datos de la firma...');
+          this.loginForm.email = '';
+          this.loginForm.password = '';
+          this.isSubmitting.set(false);
+          this.loadConsultations();
+        },
+        error: (error: HttpErrorResponse) => {
+          this.errorMessage.set(
+            error.status === 401
+              ? 'Credenciales invalidas. Verifica tu email y contrasena.'
+              : 'No se pudo iniciar sesion. Intenta nuevamente.',
+          );
+          this.isSubmitting.set(false);
+        },
+      });
   }
 
   logout(): void {
     this.sessionEmail.set('');
+    this.tenantId.set('');
     this.consultations.set([]);
     this.isConsoleMenuOpen.set(false);
     this.showLanding();
@@ -243,12 +266,12 @@ export class App {
       .subscribe({
         next: (response) => {
           this.consultations.set([...response.consultations].reverse());
-          this.statusMessage.set('Datos de prueba cargados desde el servicio de intake.');
+          this.statusMessage.set('Datos de la firma cargados desde el servicio de intake.');
           this.isLoading.set(false);
         },
         error: () => {
           this.errorMessage.set('No se pudo conectar con el Sistema.');
-          this.statusMessage.set('Revisa que el Sistema esté activo.');
+          this.statusMessage.set('Revisa que el Sistema este activo.');
           this.isLoading.set(false);
         },
       });
@@ -276,7 +299,7 @@ export class App {
       .subscribe({
         next: (consultation) => {
           this.consultations.update((items) => [consultation, ...items]);
-          this.statusMessage.set('Consulta creada y enrutada para revisión del equipo legal.');
+          this.statusMessage.set('Consulta creada y enrutada para revision del equipo legal.');
           this.form.clientName = '';
           this.form.clientEmail = '';
           this.form.summary = '';
