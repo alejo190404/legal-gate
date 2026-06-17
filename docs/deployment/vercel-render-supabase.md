@@ -18,7 +18,7 @@ The frontend must call only the gateway. It must not call intake-orchestrator or
 3. Angular calls `https://legal-gate-gateway.onrender.com/api/backend/...`.
 4. Gateway applies CORS and temporary public-prototype route policy.
 5. Gateway proxies to `LEGALGATE_BACKEND_URL` (the Render intake-orchestrator service).
-6. Intake persists tenant settings and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
+6. Intake persists tenant intake email, routing rules, and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
 7. CloudMailin posts inbound email webhooks to mail-ingress, which publishes durable events to private RabbitMQ.
 8. Intake consumes RabbitMQ events asynchronously. This milestone logs/acks them without creating consultations.
 
@@ -52,6 +52,7 @@ Use the Supabase pooler connection currently configured for Render:
 - `SPRING_DATASOURCE_PASSWORD=<supabase-db-password>`
 - `SPRING_DATASOURCE_MAX_POOL_SIZE=5`
 - `SPRING_FLYWAY_ENABLED=true`
+- `SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS=*:missing`
 - `LEGALGATE_SEED_DEMO_DATA=false`
 - `LEGALGATE_MAIL_ENABLED=true`
 - `SPRING_RABBITMQ_HOST=<rabbitmq-private-host>`
@@ -103,7 +104,8 @@ If `POST https://legal-gate-gateway.onrender.com/api/backend/api/auth/register` 
    - `LEGALGATE_INTAKE_PERSISTENCE=jdbc`
    - `SPRING_FLYWAY_ENABLED=true`
    - a valid Supabase pooler `SPRING_DATASOURCE_URL`
-   - no stale Flyway bootstrap overrides such as `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` or `SPRING_FLYWAY_VERSION=0` unless you intentionally need them
+  - `SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS=*:missing` for compatibility with the earlier `V1`/`V2` migration consolidation
+  - no stale Flyway bootstrap overrides such as `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` or `SPRING_FLYWAY_VERSION=0` unless you intentionally need them
 4. If intake starts but registration fails, inspect the intake logs for Flyway migration failures, Postgres authentication errors, or missing-table errors such as `relation "users" does not exist`.
 
 With the current gateway behavior, downstream intake errors should remain visible instead of being rewritten to a generic `503`, which makes Render-side debugging much easier.
@@ -129,13 +131,15 @@ Local endpoints:
 
 ## Supabase schema and RLS
 
-Flyway migration `V1__create_intake_schema.sql` creates:
+Flyway migrations create and evolve:
 
 - `tenants`
-- `tenant_settings`
+- `tenant_settings` with tenant-wide `intake_email` and JSON `routing_rules`
 - `consultations`
 
 RLS is enabled and forced on tenant-scoped tables. The JDBC repository sets `app.tenant_slug` inside each transaction before reads/writes so policies enforce tenant isolation as a defense-in-depth layer.
+
+`V6__add_routing_rules_to_tenant_settings.sql` adds the production-safe routing model. Existing flat settings rows are backfilled into a single `Default intake route`, preserving the old `urgent_keywords`, `consultation_windows`, and `destination_email` columns for compatibility while new clients use `routing_rules`.
 
 ## WorkOS seam
 

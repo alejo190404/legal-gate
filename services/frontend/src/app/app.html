@@ -235,13 +235,6 @@
           </button>
         </header>
 
-        @if (errorMessage()) {
-          <div class="status-banner has-error">
-            <strong>{{ errorMessage() }}</strong>
-            <span>No pudimos actualizar la bandeja. Intenta de nuevo.</span>
-          </div>
-        }
-
         <section id="dashboard" class="metric-grid" aria-label="Resumen del intake">
           <article class="metric-card"><span>Total</span><strong>{{ totalConsultations() }}</strong><small>{{ totalConsultations() }} consultas cargadas</small></article>
           <article class="metric-card is-urgent"><span>Urgentes</span><strong>{{ urgentConsultations() }}</strong><small>Por palabras clave del tenant</small></article>
@@ -252,6 +245,12 @@
         <div class="content-grid">
           <section id="consultas" class="panel-card cases-panel" aria-labelledby="cases-title">
             <div class="panel-heading"><div><p class="eyebrow">Admin review</p><h2 id="cases-title">Bandeja de consultas</h2></div><span class="pill">{{ totalConsultations() }} consultas</span></div>
+            @if (consultationsErrorMessage()) {
+              <div class="panel-error">
+                <strong>{{ consultationsErrorMessage() }}</strong>
+                <span>No pudimos actualizar la bandeja. Intenta de nuevo.</span>
+              </div>
+            }
             @if (isLoading()) {
               <p class="empty-state">Cargando consultas desde el backend…</p>
             } @else if (!consultations().length) {
@@ -283,7 +282,7 @@
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">Configuracion</p>
-                <h2 id="settings-title">Email principal de intake</h2>
+                <h2 id="settings-title">Reglas de enrutamiento</h2>
               </div>
               <span class="pill">{{ tenantId() }}</span>
             </div>
@@ -299,33 +298,63 @@
                 placeholder="consultas@firma.com"
               />
 
-              <label for="destinationEmail">Email de notificaciones</label>
-              <input
-                id="destinationEmail"
-                name="destinationEmail"
-                [(ngModel)]="settingsForm.destinationEmail"
-                type="email"
-                autocomplete="email"
-              />
+              <div class="routing-rules">
+                @for (rule of settingsForm.routingRules; track $index; let index = $index) {
+                  <section class="routing-rule" aria-label="Regla de enrutamiento">
+                    <div class="routing-rule-header">
+                      <h3>Regla {{ index + 1 }}</h3>
+                      @if (settingsForm.routingRules.length > 1) {
+                        <button class="link-button" type="button" (click)="removeRoutingRule(index)">Eliminar</button>
+                      }
+                    </div>
 
-              <label for="urgentKeywords">Palabras urgentes</label>
-              <input
-                id="urgentKeywords"
-                name="urgentKeywords"
-                [(ngModel)]="settingsForm.urgentKeywords"
-              />
+                    <label [for]="'routeName-' + index">Nombre</label>
+                    <input
+                      [id]="'routeName-' + index"
+                      [name]="'routeName-' + index"
+                      [(ngModel)]="rule.name"
+                    />
 
-              <label for="consultationWindows">Ventanas de consulta</label>
-              <input
-                id="consultationWindows"
-                name="consultationWindows"
-                [(ngModel)]="settingsForm.consultationWindows"
-                placeholder="LUN-VIE 09:00-13:00"
-              />
+                    <label [for]="'destinationEmail-' + index">Email de destino</label>
+                    <input
+                      [id]="'destinationEmail-' + index"
+                      [name]="'destinationEmail-' + index"
+                      [(ngModel)]="rule.destinationEmail"
+                      type="email"
+                      autocomplete="email"
+                    />
 
-              <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
-                {{ isSubmitting() ? 'Guardando...' : 'Guardar configuracion' }}
-              </button>
+                    <label [for]="'urgentKeywords-' + index">Palabras clave</label>
+                    <input
+                      [id]="'urgentKeywords-' + index"
+                      [name]="'urgentKeywords-' + index"
+                      [(ngModel)]="rule.urgentKeywords"
+                    />
+
+                    <label [for]="'consultationWindows-' + index">Ventanas de consulta</label>
+                    <input
+                      [id]="'consultationWindows-' + index"
+                      [name]="'consultationWindows-' + index"
+                      [(ngModel)]="rule.consultationWindows"
+                      placeholder="LUN 08:00-10:00"
+                    />
+                  </section>
+                }
+              </div>
+
+              @if (settingsErrorMessage()) {
+                <div class="panel-error">
+                  <strong>{{ settingsErrorMessage() }}</strong>
+                  <span>No se guardaron cambios en la configuracion.</span>
+                </div>
+              }
+
+              <div class="settings-actions">
+                <button class="btn btn-secondary" type="button" (click)="addRoutingRule()">Agregar regla</button>
+                <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
+                  {{ isSubmitting() ? 'Guardando...' : 'Guardar configuracion' }}
+                </button>
+              </div>
             </form>
           </section>
         </div>

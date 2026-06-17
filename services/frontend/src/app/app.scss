@@ -855,6 +855,26 @@
   color: var(--fg-2);
 }
 
+.panel-error {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--red-50);
+  border: 1px solid var(--red-500);
+  color: var(--red-500);
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+}
+
 .case-list {
   display: grid;
   gap: 16px;
@@ -884,6 +904,39 @@
     width: fit-content;
     margin-top: 8px;
   }
+}
+
+.routing-rules {
+  display: grid;
+  gap: 16px;
+}
+
+.routing-rule {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+
+.routing-rule-header,
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.routing-rule-header {
+  h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+}
+
+.settings-actions {
+  justify-content: flex-start;
 }
 
 .case-card {

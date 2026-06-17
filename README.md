@@ -5,7 +5,7 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 ## Services
 
 - `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
-- `services/intake-orchestrator`: Spring Boot consultation intake service for tenant settings, plain-language consultation creation, urgency pre-classification, and admin review.
+- `services/intake-orchestrator`: Spring Boot consultation intake service for tenant routing-rule settings, plain-language consultation creation, urgency pre-classification, and admin review.
 - `services/mail-ingress`: Spring Boot CloudMailin webhook adapter that publishes inbound email events to RabbitMQ.
 - `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
 
@@ -54,7 +54,7 @@ Then test tenant settings, consultation creation, and admin review:
 ```bash
 curl http://localhost:8081/api/status
 curl -X PUT -H 'Content-Type: application/json' \
-  -d '{"urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@firma.test","intakeEmail":"intake@firma.test"}' \
+  -d '{"intakeEmail":"intake@firma.test","routingRules":[{"name":"Urgencias laborales","urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@firma.test"}]}' \
   http://localhost:8081/api/tenants/firma-demo/settings
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"clientName":"María Pérez","clientEmail":"maria@example.com","summary":"Tengo una audiencia mañana y necesito orientación aunque no conozco términos legales."}' \
@@ -112,7 +112,7 @@ Local CloudMailin-style webhook smoke test:
 
 ```bash
 curl -fsS -X PUT -H 'Content-Type: application/json' \
-  -d '{"urgentKeywords":["audiencia"],"consultationWindows":[],"destinationEmail":"notificaciones@firma.test","intakeEmail":"intake@firma.test"}' \
+  -d '{"intakeEmail":"intake@firma.test","routingRules":[{"name":"Default intake route","urgentKeywords":["audiencia"],"consultationWindows":[],"destinationEmail":"notificaciones@firma.test"}]}' \
   http://localhost:8081/api/tenants/firma-demo/settings
 
 curl -i -u cloudmailin-local:cloudmailin-local-password \

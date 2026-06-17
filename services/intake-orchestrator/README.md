@@ -4,7 +4,7 @@ Spring Boot service for the first LegalGate consultation-intake slice from the c
 
 ## Implemented user-story coverage
 
-- Lawyer configures tenant urgency criteria, consultation windows, and destination email.
+- Firm admin configures tenant routing rules, each with keywords, consultation windows, and destination email.
 - Firm admin configures the main inbound intake email for CloudMailin routing.
 - Consultant submits plain-language case information without needing legal terminology.
 - Admin reviews consultations stored for a tenant.
@@ -40,3 +40,5 @@ Smoke-test the service:
 - `GET /api/admin/tenants/{tenantId}/consultations`
 
 The inbound email consumer currently logs and acknowledges validated events only. It does not create consultations yet.
+
+Tenant settings use one tenant-wide `intakeEmail` and a `routingRules` array. Each rule groups the content keywords, destination email, and consultation windows for a lawyer or team. The service still accepts the earlier flat settings payload and converts it into one default routing rule.

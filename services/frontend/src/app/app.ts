@@ -44,6 +44,14 @@ interface TenantSettingsResponse {
   consultationWindows: string[];
   destinationEmail: string | null;
   intakeEmail: string | null;
+  routingRules: TenantRoutingRule[];
+}
+
+interface TenantRoutingRule {
+  name: string;
+  urgentKeywords: string[];
+  consultationWindows: string[];
+  destinationEmail: string | null;
 }
 
 interface CreateConsultationForm {
@@ -66,6 +74,11 @@ interface RegisterForm {
 
 interface TenantSettingsForm {
   intakeEmail: string;
+  routingRules: TenantRoutingRuleForm[];
+}
+
+interface TenantRoutingRuleForm {
+  name: string;
   destinationEmail: string;
   urgentKeywords: string;
   consultationWindows: string;
@@ -102,6 +115,8 @@ export class App {
   readonly isSubmitting = signal(false);
   readonly statusMessage = signal('Listo para iniciar sesion.');
   readonly errorMessage = signal('');
+  readonly consultationsErrorMessage = signal('');
+  readonly settingsErrorMessage = signal('');
 
   readonly loginForm: LoginForm = {
     email: '',
@@ -123,9 +138,14 @@ export class App {
 
   readonly settingsForm: TenantSettingsForm = {
     intakeEmail: '',
-    destinationEmail: '',
-    urgentKeywords: 'audiencia, captura, tutela, vencimiento',
-    consultationWindows: '',
+    routingRules: [
+      {
+        name: 'Default intake route',
+        destinationEmail: '',
+        urgentKeywords: 'audiencia, captura, tutela, vencimiento',
+        consultationWindows: '',
+      },
+    ],
   };
 
   readonly totalConsultations = computed(() => this.consultations().length);
@@ -149,17 +169,20 @@ export class App {
   showLanding(): void {
     this.view.set('landing');
     this.errorMessage.set('');
+    this.clearConsoleErrors();
   }
 
   showLogin(): void {
     this.view.set('login');
     this.errorMessage.set('');
+    this.clearConsoleErrors();
     this.statusMessage.set('Ingresa con tu cuenta de administrador para abrir el panel.');
   }
 
   showRegister(): void {
     this.view.set('register');
     this.errorMessage.set('');
+    this.clearConsoleErrors();
     this.statusMessage.set('Crea la cuenta administradora de tu firma para abrir el panel.');
   }
 
@@ -188,6 +211,7 @@ export class App {
           this.view.set('console');
           this.activeConsoleSection.set('dashboard');
           this.isConsoleMenuOpen.set(false);
+          this.clearConsoleErrors();
           this.statusMessage.set('Cuenta de administrador creada. Cargando datos de la firma...');
           this.registerForm.email = '';
           this.registerForm.password = '';
@@ -226,6 +250,7 @@ export class App {
           this.view.set('console');
           this.activeConsoleSection.set('dashboard');
           this.isConsoleMenuOpen.set(false);
+          this.clearConsoleErrors();
           this.statusMessage.set('Sesion iniciada. Cargando datos de la firma...');
           this.loginForm.email = '';
           this.loginForm.password = '';
@@ -250,6 +275,7 @@ export class App {
     this.consultations.set([]);
     this.tenantSettings.set(null);
     this.isConsoleMenuOpen.set(false);
+    this.clearConsoleErrors();
     this.showLanding();
   }
 
@@ -288,7 +314,7 @@ export class App {
 
   loadConsultations(): void {
     this.isLoading.set(true);
-    this.errorMessage.set('');
+    this.consultationsErrorMessage.set('');
     this.http
       .get<ConsultationListResponse>(
         this.apiConfig.url(`/api/admin/tenants/${this.tenantId()}/consultations`),
@@ -300,7 +326,7 @@ export class App {
           this.isLoading.set(false);
         },
         error: () => {
-          this.errorMessage.set('No se pudo conectar con el Sistema.');
+          this.consultationsErrorMessage.set('No se pudo conectar con el Sistema.');
           this.statusMessage.set('Revisa que el Sistema este activo.');
           this.isLoading.set(false);
         },
@@ -312,6 +338,7 @@ export class App {
       return;
     }
 
+    this.settingsErrorMessage.set('');
     this.http
       .get<TenantSettingsResponse>(
         this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`),
@@ -320,51 +347,54 @@ export class App {
         next: (settings) => {
           this.tenantSettings.set(settings);
           this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
-          this.settingsForm.destinationEmail = settings.destinationEmail ?? this.sessionEmail();
-          this.settingsForm.urgentKeywords = settings.urgentKeywords.join(', ');
-          this.settingsForm.consultationWindows = settings.consultationWindows.join(', ');
+          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
         },
         error: () => {
-          this.errorMessage.set('No se pudo cargar la configuracion de intake.');
+          this.settingsErrorMessage.set('No se pudo cargar la configuracion de intake.');
         },
       });
   }
 
   saveSettings(): void {
     const intakeEmail = this.settingsForm.intakeEmail.trim().toLowerCase();
-    const destinationEmail = (this.settingsForm.destinationEmail.trim() || this.sessionEmail()).toLowerCase();
+    const routingRules = this.settingsForm.routingRules.map((rule, index) => ({
+      name: rule.name.trim() || `Route ${index + 1}`,
+      urgentKeywords: this.csvValues(rule.urgentKeywords),
+      consultationWindows: this.csvValues(rule.consultationWindows),
+      destinationEmail: rule.destinationEmail.trim().toLowerCase(),
+    }));
 
     if (!this.isValidEmail(intakeEmail)) {
-      this.errorMessage.set('Ingresa un email de intake valido.');
+      this.settingsErrorMessage.set('Ingresa un email de intake valido.');
       return;
     }
 
-    if (!this.isValidEmail(destinationEmail)) {
-      this.errorMessage.set('Ingresa un email de notificaciones valido.');
+    if (
+      !routingRules.length ||
+      routingRules.some((rule) => !this.isValidEmail(rule.destinationEmail))
+    ) {
+      this.settingsErrorMessage.set('Cada regla necesita un email de destino valido.');
       return;
     }
 
     this.isSubmitting.set(true);
-    this.errorMessage.set('');
+    this.settingsErrorMessage.set('');
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
-        urgentKeywords: this.csvValues(this.settingsForm.urgentKeywords),
-        consultationWindows: this.csvValues(this.settingsForm.consultationWindows),
-        destinationEmail,
         intakeEmail,
+        routingRules,
       })
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
           this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
-          this.settingsForm.destinationEmail = settings.destinationEmail ?? '';
-          this.settingsForm.urgentKeywords = settings.urgentKeywords.join(', ');
-          this.settingsForm.consultationWindows = settings.consultationWindows.join(', ');
-          this.statusMessage.set('Email principal de intake actualizado.');
+          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
+          this.settingsErrorMessage.set('');
+          this.statusMessage.set('Reglas de enrutamiento actualizadas.');
           this.isSubmitting.set(false);
         },
         error: (error: HttpErrorResponse) => {
-          this.errorMessage.set(
+          this.settingsErrorMessage.set(
             error.status === 409
               ? 'Ese email de intake ya esta configurado para otra firma.'
               : 'No se pudo guardar la configuracion. Intenta nuevamente.',
@@ -374,18 +404,41 @@ export class App {
       });
   }
 
+  addRoutingRule(): void {
+    this.settingsForm.routingRules = [
+      ...this.settingsForm.routingRules,
+      {
+        name: `Route ${this.settingsForm.routingRules.length + 1}`,
+        destinationEmail: this.sessionEmail(),
+        urgentKeywords: '',
+        consultationWindows: '',
+      },
+    ];
+  }
+
+  removeRoutingRule(index: number): void {
+    if (this.settingsForm.routingRules.length === 1) {
+      this.settingsErrorMessage.set('Manten al menos una regla de enrutamiento.');
+      return;
+    }
+    this.settingsErrorMessage.set('');
+    this.settingsForm.routingRules = this.settingsForm.routingRules.filter(
+      (_, itemIndex) => itemIndex !== index,
+    );
+  }
+
   createConsultation(): void {
     if (
       !this.form.clientName.trim() ||
       !this.form.clientEmail.trim() ||
       !this.form.summary.trim()
     ) {
-      this.errorMessage.set('Completa nombre, email y resumen para crear la consulta.');
+      this.consultationsErrorMessage.set('Completa nombre, email y resumen para crear la consulta.');
       return;
     }
 
     this.isSubmitting.set(true);
-    this.errorMessage.set('');
+    this.consultationsErrorMessage.set('');
     this.http
       .post<Consultation>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/consultations`), {
         clientName: this.form.clientName.trim(),
@@ -396,6 +449,7 @@ export class App {
       .subscribe({
         next: (consultation) => {
           this.consultations.update((items) => [consultation, ...items]);
+          this.consultationsErrorMessage.set('');
           this.statusMessage.set('Consulta creada y enrutada para revision del equipo legal.');
           this.form.clientName = '';
           this.form.clientEmail = '';
@@ -404,7 +458,7 @@ export class App {
           this.isSubmitting.set(false);
         },
         error: () => {
-          this.errorMessage.set('No se pudo crear la consulta. Intenta nuevamente.');
+          this.consultationsErrorMessage.set('No se pudo crear la consulta. Intenta nuevamente.');
           this.isSubmitting.set(false);
         },
       });
@@ -430,5 +484,31 @@ export class App {
 
   private isValidEmail(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  private clearConsoleErrors(): void {
+    this.consultationsErrorMessage.set('');
+    this.settingsErrorMessage.set('');
+  }
+
+  private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
+    const rules =
+      settings.routingRules?.length
+        ? settings.routingRules
+        : [
+            {
+              name: 'Default intake route',
+              urgentKeywords: settings.urgentKeywords ?? [],
+              consultationWindows: settings.consultationWindows ?? [],
+              destinationEmail: settings.destinationEmail,
+            },
+          ];
+
+    return rules.map((rule, index) => ({
+      name: rule.name || `Route ${index + 1}`,
+      destinationEmail: rule.destinationEmail ?? this.sessionEmail(),
+      urgentKeywords: (rule.urgentKeywords ?? []).join(', '),
+      consultationWindows: (rule.consultationWindows ?? []).join(', '),
+    }));
   }
 }

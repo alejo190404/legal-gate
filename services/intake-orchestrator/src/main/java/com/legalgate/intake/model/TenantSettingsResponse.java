@@ -7,6 +7,7 @@ public record TenantSettingsResponse(
         List<String> urgentKeywords,
         List<String> consultationWindows,
         String destinationEmail,
-        String intakeEmail
+        String intakeEmail,
+        List<TenantRoutingRule> routingRules
 ) {
 }

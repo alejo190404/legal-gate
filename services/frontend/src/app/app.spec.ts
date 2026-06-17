@@ -47,6 +47,14 @@ const demoSettings = {
   consultationWindows: ['LUN-VIE 09:00-13:00'],
   destinationEmail: 'notificaciones@firma.test',
   intakeEmail: 'consultas@firma.test',
+  routingRules: [
+    {
+      name: 'Default intake route',
+      urgentKeywords: ['audiencia', 'captura'],
+      consultationWindows: ['LUN-VIE 09:00-13:00'],
+      destinationEmail: 'notificaciones@firma.test',
+    },
+  ],
 };
 
 describe('App landing to login to consultation inbox flow', () => {
@@ -273,18 +281,34 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Sin configurar');
 
     fixture.componentInstance.settingsForm.intakeEmail = 'Consultas@Firma.test ';
-    fixture.componentInstance.settingsForm.destinationEmail = 'Notificaciones@Firma.test ';
-    fixture.componentInstance.settingsForm.urgentKeywords = 'audiencia, tutela';
-    fixture.componentInstance.settingsForm.consultationWindows = 'LUN-VIE 09:00-13:00';
+    fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'Notificaciones@Firma.test ';
+    fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
+    fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
+    fixture.componentInstance.addRoutingRule();
+    fixture.componentInstance.settingsForm.routingRules[1].name = 'Labor penalties';
+    fixture.componentInstance.settingsForm.routingRules[1].destinationEmail = 'Laboral@Firma.test ';
+    fixture.componentInstance.settingsForm.routingRules[1].urgentKeywords = 'penalties';
+    fixture.componentInstance.settingsForm.routingRules[1].consultationWindows = 'MAR 09:00-12:00, JUE 09:00-12:00';
     fixture.componentInstance.saveSettings();
 
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.method).toBe('PUT');
     expect(settingsRequest.request.body).toEqual({
-      urgentKeywords: ['audiencia', 'tutela'],
-      consultationWindows: ['LUN-VIE 09:00-13:00'],
-      destinationEmail: 'notificaciones@firma.test',
       intakeEmail: 'consultas@firma.test',
+      routingRules: [
+        {
+          name: 'Default intake route',
+          urgentKeywords: ['audiencia', 'tutela'],
+          consultationWindows: ['LUN-VIE 09:00-13:00'],
+          destinationEmail: 'notificaciones@firma.test',
+        },
+        {
+          name: 'Labor penalties',
+          urgentKeywords: ['penalties'],
+          consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
+          destinationEmail: 'laboral@firma.test',
+        },
+      ],
     });
     settingsRequest.flush({
       ...demoSettings,
@@ -292,9 +316,69 @@ describe('App landing to login to consultation inbox flow', () => {
       consultationWindows: ['LUN-VIE 09:00-13:00'],
       destinationEmail: 'notificaciones@firma.test',
       intakeEmail: 'consultas@firma.test',
+      routingRules: [
+        {
+          name: 'Default intake route',
+          urgentKeywords: ['audiencia', 'tutela'],
+          consultationWindows: ['LUN-VIE 09:00-13:00'],
+          destinationEmail: 'notificaciones@firma.test',
+        },
+        {
+          name: 'Labor penalties',
+          urgentKeywords: ['penalties'],
+          consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
+          destinationEmail: 'laboral@firma.test',
+        },
+      ],
     });
     fixture.detectChanges();
 
     expect(compiled.textContent).toContain('consultas@firma.test');
+  });
+
+  it('shows configuration validation errors inside the configuration panel', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    fixture.componentInstance.settingsForm.intakeEmail = 'bad-email';
+    fixture.componentInstance.saveSettings();
+    fixture.detectChanges();
+
+    const settingsPanel = compiled.querySelector('#configuracion');
+    const casesPanel = compiled.querySelector('#consultas');
+    expect(settingsPanel?.textContent).toContain('Ingresa un email de intake valido');
+    expect(casesPanel?.textContent).not.toContain('Ingresa un email de intake valido');
+    expect(compiled.querySelector('.workspace > .status-banner.has-error')).toBeFalsy();
+  });
+
+  it('shows consultation inbox errors inside the consultations panel', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http
+      .expectOne('/api/admin/tenants/firma-demo/consultations')
+      .flush({ error: 'service_unavailable' }, { status: 503, statusText: 'Unavailable' });
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    const casesPanel = compiled.querySelector('#consultas');
+    const settingsPanel = compiled.querySelector('#configuracion');
+    expect(casesPanel?.textContent).toContain('No se pudo conectar con el Sistema');
+    expect(settingsPanel?.textContent).not.toContain('No se pudo conectar con el Sistema');
+    expect(compiled.querySelector('.workspace > .status-banner.has-error')).toBeFalsy();
   });
 });

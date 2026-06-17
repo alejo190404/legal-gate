@@ -170,12 +170,59 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
                 .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
                 .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
-                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"));
+                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"))
+                .andExpect(jsonPath("$.routingRules", hasSize(1)))
+                .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("consultas@firma.test"));
 
         mockMvc.perform(get("/api/tenants/bogota-legal/settings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
                 .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"));
+    }
+
+    @Test
+    void firmCanConfigureMultipleContentRoutesAndRouteMatchingConsultation() throws Exception {
+        mockMvc.perform(put("/api/tenants/laboral-legal/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "intakeEmail": "intake@laboral.test",
+                                  "routingRules": [
+                                    {
+                                      "name": "Workspace incidents",
+                                      "urgentKeywords": ["harassment", "workspace incident"],
+                                      "consultationWindows": ["LUN 08:00-10:00"],
+                                      "destinationEmail": "personal@firma.test"
+                                    },
+                                    {
+                                      "name": "Labor penalties",
+                                      "urgentKeywords": ["penalties"],
+                                      "consultationWindows": ["MAR 09:00-12:00", "JUE 09:00-12:00"],
+                                      "destinationEmail": "laboral@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("laboral-legal"))
+                .andExpect(jsonPath("$.routingRules", hasSize(2)))
+                .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("personal@firma.test"))
+                .andExpect(jsonPath("$.routingRules[1].destinationEmail").value("laboral@firma.test"));
+
+        mockMvc.perform(post("/api/tenants/laboral-legal/consultations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "clientName": "Ana Diaz",
+                                  "clientEmail": "ana@example.com",
+                                  "summary": "Necesito apoyo urgente por penalties laborales."
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.urgency").value("URGENT"))
+                .andExpect(jsonPath("$.classification.matchedUrgentKeywords[0]").value("penalties"))
+                .andExpect(jsonPath("$.notifications.destinationEmail").value("laboral@firma.test"))
+                .andExpect(jsonPath("$.notifications.preferredWindow").value("MAR 09:00-12:00"));
     }
 
     @Test
