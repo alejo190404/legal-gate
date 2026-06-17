@@ -22,6 +22,7 @@ public class IntakeService {
             "default",
             List.of("audiencia", "captura", "tutela", "vencimiento"),
             List.of(),
+            null,
             null
     );
 
@@ -36,9 +37,14 @@ public class IntakeService {
                 tenantId,
                 sanitize(request.urgentKeywords()),
                 sanitize(request.consultationWindows()),
-                request.destinationEmail().trim()
+                request.destinationEmail().trim(),
+                sanitizeEmail(request.intakeEmail())
         );
         return intakeRepository.saveSettings(tenantId, settings);
+    }
+
+    public TenantSettingsResponse settingsForTenant(String tenantId) {
+        return settingsFor(tenantId);
     }
 
     public ConsultationResponse createConsultation(String tenantId, CreateConsultationRequest request) {
@@ -83,9 +89,17 @@ public class IntakeService {
                 tenantId,
                 DEFAULT_SETTINGS.urgentKeywords(),
                 DEFAULT_SETTINGS.consultationWindows(),
-                DEFAULT_SETTINGS.destinationEmail()
+                DEFAULT_SETTINGS.destinationEmail(),
+                DEFAULT_SETTINGS.intakeEmail()
         );
         return intakeRepository.settingsFor(tenantId, defaults);
+    }
+
+    private String sanitizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private List<String> matchUrgentKeywords(String summary, List<String> urgentKeywords) {

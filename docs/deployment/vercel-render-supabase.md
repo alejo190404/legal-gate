@@ -5,6 +5,8 @@ This guide describes the first production-like LegalGate deployment slice:
 - Angular frontend on Vercel.
 - Spring Boot gateway on Render as the only browser-facing API facade.
 - Spring Boot intake-orchestrator on Render for intake persistence.
+- Spring Boot mail-ingress on Render as the CloudMailin-facing webhook adapter.
+- RabbitMQ on Render private networking for inbound email events.
 - Supabase Postgres accessed from the intake service through JDBC/Flyway.
 
 The frontend must call only the gateway. It must not call intake-orchestrator or Supabase directly.
@@ -17,6 +19,8 @@ The frontend must call only the gateway. It must not call intake-orchestrator or
 4. Gateway applies CORS and temporary public-prototype route policy.
 5. Gateway proxies to `LEGALGATE_BACKEND_URL` (the Render intake-orchestrator service).
 6. Intake persists tenant settings and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
+7. CloudMailin posts inbound email webhooks to mail-ingress, which publishes durable events to private RabbitMQ.
+8. Intake consumes RabbitMQ events asynchronously. This milestone logs/acks them without creating consultations.
 
 The gateway should return `503 service_unavailable` only when the intake service is unreachable or `LEGALGATE_BACKEND_URL` is missing. If intake responds with `400`, `409`, or `500`, the gateway should pass that downstream status/body through so Render/Supabase failures are visible during diagnosis.
 
@@ -49,8 +53,45 @@ Use the Supabase pooler connection currently configured for Render:
 - `SPRING_DATASOURCE_MAX_POOL_SIZE=5`
 - `SPRING_FLYWAY_ENABLED=true`
 - `LEGALGATE_SEED_DEMO_DATA=false`
+- `LEGALGATE_MAIL_ENABLED=true`
+- `SPRING_RABBITMQ_HOST=<rabbitmq-private-host>`
+- `SPRING_RABBITMQ_PORT=5672`
+- `SPRING_RABBITMQ_USERNAME=<rabbitmq-user>`
+- `SPRING_RABBITMQ_PASSWORD=<rabbitmq-password>`
+- `LEGALGATE_MAIL_EXCHANGE=legalgate.mail`
+- `LEGALGATE_MAIL_INCOMING_QUEUE=legalgate.mail.incoming`
+- `LEGALGATE_MAIL_DEAD_LETTER_QUEUE=legalgate.mail.incoming.dlq`
+- `LEGALGATE_MAIL_ROUTING_KEY=mail.inbound.received`
+- `LEGALGATE_MAIL_DEAD_LETTER_ROUTING_KEY=mail.inbound.dead`
 
 Keep real Supabase credentials only in Render environment variables. Do not store them in Vercel or committed files.
+
+### Render RabbitMQ
+
+Create RabbitMQ as a private Render Docker service using `rabbitmq:3.13-management-alpine`. It should not receive public traffic. Configure:
+
+- `RABBITMQ_DEFAULT_USER=<rabbitmq-user>`
+- `RABBITMQ_DEFAULT_PASS=<rabbitmq-password>`
+
+Attach persistent disk storage if message durability matters beyond service restarts.
+
+### Render mail-ingress
+
+Deploy `services/mail-ingress/Dockerfile` as a public Render web service and configure:
+
+- `SPRING_DATASOURCE_URL=<same Supabase JDBC URL used by intake>`
+- `SPRING_DATASOURCE_USERNAME=<supabase-db-user>`
+- `SPRING_DATASOURCE_PASSWORD=<supabase-db-password>`
+- `SPRING_RABBITMQ_HOST=<rabbitmq-private-host>`
+- `SPRING_RABBITMQ_PORT=5672`
+- `SPRING_RABBITMQ_USERNAME=<rabbitmq-user>`
+- `SPRING_RABBITMQ_PASSWORD=<rabbitmq-password>`
+- `LEGALGATE_CLOUDMAILIN_USERNAME=<cloudmailin-basic-auth-user>`
+- `LEGALGATE_CLOUDMAILIN_PASSWORD=<cloudmailin-basic-auth-password>`
+- `LEGALGATE_MAIL_EXCHANGE=legalgate.mail`
+- `LEGALGATE_MAIL_ROUTING_KEY=mail.inbound.received`
+
+In CloudMailin, set the target URL to `https://<user>:<password>@<mail-ingress-render-host>/webhooks/cloudmailin` and choose the Normalized JSON format.
 
 ## Troubleshooting registration `503`
 
@@ -73,7 +114,7 @@ With the current gateway behavior, downstream intake errors should remain visibl
 
 ```bash
 cp .env.example .env
-docker compose up --build postgres intake-orchestrator gateway frontend
+docker compose up --build postgres rabbitmq intake-orchestrator mail-ingress gateway frontend
 ```
 
 Local endpoints:
@@ -82,6 +123,8 @@ Local endpoints:
 - Gateway API status: `http://localhost:8080/api/status`
 - Gateway proxy status: `http://localhost:8080/api/backend/api/status`
 - Intake health: `http://localhost:8081/actuator/health`
+- Mail ingress health: `http://localhost:8082/actuator/health`
+- RabbitMQ management: `http://localhost:15672`
 - Frontend: `http://localhost:4200`
 
 ## Supabase schema and RLS

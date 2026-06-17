@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: legal-gate-mail-ingress
+  main:
+    banner-mode: off
+  datasource:
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:5}
+
+server:
+  port: ${PORT:8082}
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+legalgate:
+  mail-ingress:
+    basic-auth:
+      username: ${LEGALGATE_CLOUDMAILIN_USERNAME:cloudmailin-local}
+      password: ${LEGALGATE_CLOUDMAILIN_PASSWORD:cloudmailin-local-password}
+    exchange: ${LEGALGATE_MAIL_EXCHANGE:legalgate.mail}
+    routing-key: ${LEGALGATE_MAIL_ROUTING_KEY:mail.inbound.received}
+
+logging:
+  level:
+    com.legalgate.mail: INFO

@@ -98,6 +98,13 @@ class GatewayApplicationTests {
     }
 
     @Test
+    void tenantSettingsReadFacadeIsPublicDuringPrototypeMode() throws Exception {
+        mockMvc.perform(get("/api/backend/api/tenants/firma-demo/settings"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("service_unavailable"));
+    }
+
+    @Test
     void unsupportedPrototypeRoutesAreNotPublic() throws Exception {
         mockMvc.perform(get("/api/backend/internal/admin-only"))
                 .andExpect(status().isUnauthorized())

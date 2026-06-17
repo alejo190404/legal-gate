@@ -42,9 +42,12 @@ curl -fsS "http://localhost:${PORT}/api/status" | jq -e '.service == "legal-gate
 curl -fsS \
   -X PUT \
   -H 'Content-Type: application/json' \
-  -d '{"urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"intake@familia.test"}' \
+  -d '{"urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@familia.test","intakeEmail":"intake@familia.test"}' \
   "http://localhost:${PORT}/api/tenants/familia-legal/settings" \
-  | jq -e '.tenantId == "familia-legal" and .urgentKeywords[0] == "audiencia"' >/dev/null
+  | jq -e '.tenantId == "familia-legal" and .urgentKeywords[0] == "audiencia" and .intakeEmail == "intake@familia.test"' >/dev/null
+
+curl -fsS "http://localhost:${PORT}/api/tenants/familia-legal/settings" \
+  | jq -e '.tenantId == "familia-legal" and .intakeEmail == "intake@familia.test"' >/dev/null
 
 CREATE_STATUS="$(curl -sS -o /tmp/intake-create.json -w '%{http_code}' \
   -X POST \

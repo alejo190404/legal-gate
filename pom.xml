@@ -22,6 +22,7 @@
     <modules>
         <module>services/gateway</module>
         <module>services/intake-orchestrator</module>
+        <module>services/mail-ingress</module>
     </modules>
 
     <properties>

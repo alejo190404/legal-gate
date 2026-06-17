@@ -50,6 +50,7 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/backend/api/tenants/*/consultations").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/backend/api/admin/tenants/*/consultations").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/backend/api/tenants/*/settings").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/backend/api/tenants/*/settings").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/backend/api/status").permitAll()
                         .anyRequest().denyAll())

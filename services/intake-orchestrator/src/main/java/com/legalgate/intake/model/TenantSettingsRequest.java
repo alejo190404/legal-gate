@@ -7,6 +7,7 @@ import java.util.List;
 public record TenantSettingsRequest(
         List<@NotBlank String> urgentKeywords,
         List<@NotBlank String> consultationWindows,
-        @NotBlank @Email String destinationEmail
+        @NotBlank @Email String destinationEmail,
+        @Email String intakeEmail
 ) {
 }

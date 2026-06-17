@@ -18,6 +18,8 @@ public interface IntakeRepository {
 
     TenantSettingsResponse settingsFor(String tenantSlug, TenantSettingsResponse defaultSettings);
 
+    Optional<String> tenantSlugForIntakeEmail(String intakeEmail);
+
     ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation);
 
     ConsultationListResponse consultationsForTenant(String tenantSlug);

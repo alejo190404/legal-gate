@@ -161,14 +161,48 @@ class IntakeOrchestratorApplicationTests {
                                 {
                                   "urgentKeywords": ["tutela", "captura", "audiencia"],
                                   "consultationWindows": ["LUN-VIE 08:00-12:00", "LUN-VIE 14:00-17:00"],
-                                  "destinationEmail": "consultas@firma.test"
+                                  "destinationEmail": "consultas@firma.test",
+                                  "intakeEmail": "Consultas@Firma.test"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
                 .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
                 .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
-                .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"));
+                .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
+                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"));
+
+        mockMvc.perform(get("/api/tenants/bogota-legal/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
+                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"));
+    }
+
+    @Test
+    void intakeEmailMustBeUniqueAcrossTenants() throws Exception {
+        mockMvc.perform(put("/api/tenants/firma-uno/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgentKeywords": ["audiencia"],
+                                  "consultationWindows": [],
+                                  "destinationEmail": "notificaciones@firma-uno.test",
+                                  "intakeEmail": "intake@firma.test"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/tenants/firma-dos/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgentKeywords": ["captura"],
+                                  "consultationWindows": [],
+                                  "destinationEmail": "notificaciones@firma-dos.test",
+                                  "intakeEmail": "INTAKE@firma.test"
+                                }
+                                """))
+                .andExpect(status().isConflict());
     }
 
     @Test

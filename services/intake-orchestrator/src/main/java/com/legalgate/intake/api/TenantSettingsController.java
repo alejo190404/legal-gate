@@ -4,6 +4,7 @@ import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import com.legalgate.intake.service.IntakeService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,6 +19,11 @@ public class TenantSettingsController {
 
     public TenantSettingsController(IntakeService intakeService) {
         this.intakeService = intakeService;
+    }
+
+    @GetMapping
+    public TenantSettingsResponse settings(@PathVariable String tenantId) {
+        return intakeService.settingsForTenant(tenantId);
     }
 
     @PutMapping

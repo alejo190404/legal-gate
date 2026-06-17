@@ -41,6 +41,14 @@ const loginResponse = {
   role: 'FIRM_ADMIN',
 };
 
+const demoSettings = {
+  tenantId: 'firma-demo',
+  urgentKeywords: ['audiencia', 'captura'],
+  consultationWindows: ['LUN-VIE 09:00-13:00'],
+  destinationEmail: 'notificaciones@firma.test',
+  intakeEmail: 'consultas@firma.test',
+};
+
 describe('App landing to login to consultation inbox flow', () => {
   beforeEach(async () => {
     Element.prototype.scrollIntoView = vi.fn();
@@ -116,6 +124,11 @@ describe('App landing to login to consultation inbox flow', () => {
       tenantId: 'barragan-legal',
       consultations: [],
     });
+    http.expectOne('/api/tenants/barragan-legal/settings').flush({
+      ...demoSettings,
+      tenantId: 'barragan-legal',
+      intakeEmail: null,
+    });
     fixture.detectChanges();
 
     expect(compiled.querySelector('.console-shell')).toBeTruthy();
@@ -147,6 +160,7 @@ describe('App landing to login to consultation inbox flow', () => {
     });
     loginRequest.flush(loginResponse);
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
     fixture.detectChanges();
 
     expect(compiled.querySelector('.console-shell')).toBeTruthy();
@@ -154,6 +168,7 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Sesi');
     expect(compiled.textContent).toContain('Maria Perez');
     expect(compiled.textContent).toContain('audiencia');
+    expect(compiled.textContent).toContain('consultas@firma.test');
     expect(compiled.textContent).toContain('1 consultas');
     expect(compiled.textContent).not.toContain('API proxy');
     expect(compiled.textContent).not.toContain('intake-orchestrator local');
@@ -170,6 +185,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.login();
     http.expectOne('/api/auth/login').flush(loginResponse);
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
     fixture.detectChanges();
 
     const navButtons = () =>
@@ -232,5 +248,53 @@ describe('App landing to login to consultation inbox flow', () => {
     http.expectOne(
       'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
     ).flush(demoResponse);
+    http.expectOne(
+      'https://legal-gate-gateway.onrender.com/api/backend/api/tenants/firma-demo/settings',
+    ).flush(demoSettings);
+  });
+
+  it('lets an admin configure the main intake email for the active tenant', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush({
+      ...demoSettings,
+      intakeEmail: null,
+    });
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Configuracion');
+    expect(compiled.textContent).toContain('Sin configurar');
+
+    fixture.componentInstance.settingsForm.intakeEmail = 'Consultas@Firma.test ';
+    fixture.componentInstance.settingsForm.destinationEmail = 'Notificaciones@Firma.test ';
+    fixture.componentInstance.settingsForm.urgentKeywords = 'audiencia, tutela';
+    fixture.componentInstance.settingsForm.consultationWindows = 'LUN-VIE 09:00-13:00';
+    fixture.componentInstance.saveSettings();
+
+    const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
+    expect(settingsRequest.request.method).toBe('PUT');
+    expect(settingsRequest.request.body).toEqual({
+      urgentKeywords: ['audiencia', 'tutela'],
+      consultationWindows: ['LUN-VIE 09:00-13:00'],
+      destinationEmail: 'notificaciones@firma.test',
+      intakeEmail: 'consultas@firma.test',
+    });
+    settingsRequest.flush({
+      ...demoSettings,
+      urgentKeywords: ['audiencia', 'tutela'],
+      consultationWindows: ['LUN-VIE 09:00-13:00'],
+      destinationEmail: 'notificaciones@firma.test',
+      intakeEmail: 'consultas@firma.test',
+    });
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('consultas@firma.test');
   });
 });

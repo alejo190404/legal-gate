@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiConfigService } from './config/api-config.service';
 
 type ViewName = 'landing' | 'login' | 'register' | 'console';
-type ConsoleSection = 'dashboard' | 'consultas';
+type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion';
 
 interface ClassificationResult {
   label: string;
@@ -38,6 +38,14 @@ interface ConsultationListResponse {
   consultations: Consultation[];
 }
 
+interface TenantSettingsResponse {
+  tenantId: string;
+  urgentKeywords: string[];
+  consultationWindows: string[];
+  destinationEmail: string | null;
+  intakeEmail: string | null;
+}
+
 interface CreateConsultationForm {
   clientName: string;
   clientEmail: string;
@@ -54,6 +62,13 @@ interface RegisterForm {
   email: string;
   password: string;
   firmName: string;
+}
+
+interface TenantSettingsForm {
+  intakeEmail: string;
+  destinationEmail: string;
+  urgentKeywords: string;
+  consultationWindows: string;
 }
 
 interface SessionResponse {
@@ -80,6 +95,7 @@ export class App {
   readonly tenantId = signal('');
   readonly sessionEmail = signal('');
   readonly consultations = signal<Consultation[]>([]);
+  readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
   readonly activeConsoleSection = signal<ConsoleSection>('dashboard');
   readonly isConsoleMenuOpen = signal(false);
   readonly isLoading = signal(false);
@@ -105,6 +121,13 @@ export class App {
     preferredWindow: '',
   };
 
+  readonly settingsForm: TenantSettingsForm = {
+    intakeEmail: '',
+    destinationEmail: '',
+    urgentKeywords: 'audiencia, captura, tutela, vencimiento',
+    consultationWindows: '',
+  };
+
   readonly totalConsultations = computed(() => this.consultations().length);
   readonly urgentConsultations = computed(
     () => this.consultations().filter((consultation) => consultation.urgency === 'URGENT').length,
@@ -114,9 +137,13 @@ export class App {
       this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
   );
   readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
+  readonly configuredIntakeEmail = computed(
+    () => this.tenantSettings()?.intakeEmail || 'Sin configurar',
+  );
   readonly consoleSections: ReadonlyArray<{ id: ConsoleSection; label: string }> = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'consultas', label: 'Consultas' },
+    { id: 'configuracion', label: 'Configuracion' },
   ];
 
   showLanding(): void {
@@ -167,6 +194,7 @@ export class App {
           this.registerForm.firmName = '';
           this.isSubmitting.set(false);
           this.loadConsultations();
+          this.loadSettings();
         },
         error: () => {
           this.errorMessage.set('No se pudo crear la cuenta. Verifica los datos e intenta nuevamente.');
@@ -203,6 +231,7 @@ export class App {
           this.loginForm.password = '';
           this.isSubmitting.set(false);
           this.loadConsultations();
+          this.loadSettings();
         },
         error: (error: HttpErrorResponse) => {
           this.errorMessage.set(
@@ -219,6 +248,7 @@ export class App {
     this.sessionEmail.set('');
     this.tenantId.set('');
     this.consultations.set([]);
+    this.tenantSettings.set(null);
     this.isConsoleMenuOpen.set(false);
     this.showLanding();
   }
@@ -277,6 +307,73 @@ export class App {
       });
   }
 
+  loadSettings(): void {
+    if (!this.tenantId()) {
+      return;
+    }
+
+    this.http
+      .get<TenantSettingsResponse>(
+        this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`),
+      )
+      .subscribe({
+        next: (settings) => {
+          this.tenantSettings.set(settings);
+          this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
+          this.settingsForm.destinationEmail = settings.destinationEmail ?? this.sessionEmail();
+          this.settingsForm.urgentKeywords = settings.urgentKeywords.join(', ');
+          this.settingsForm.consultationWindows = settings.consultationWindows.join(', ');
+        },
+        error: () => {
+          this.errorMessage.set('No se pudo cargar la configuracion de intake.');
+        },
+      });
+  }
+
+  saveSettings(): void {
+    const intakeEmail = this.settingsForm.intakeEmail.trim().toLowerCase();
+    const destinationEmail = (this.settingsForm.destinationEmail.trim() || this.sessionEmail()).toLowerCase();
+
+    if (!this.isValidEmail(intakeEmail)) {
+      this.errorMessage.set('Ingresa un email de intake valido.');
+      return;
+    }
+
+    if (!this.isValidEmail(destinationEmail)) {
+      this.errorMessage.set('Ingresa un email de notificaciones valido.');
+      return;
+    }
+
+    this.isSubmitting.set(true);
+    this.errorMessage.set('');
+    this.http
+      .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
+        urgentKeywords: this.csvValues(this.settingsForm.urgentKeywords),
+        consultationWindows: this.csvValues(this.settingsForm.consultationWindows),
+        destinationEmail,
+        intakeEmail,
+      })
+      .subscribe({
+        next: (settings) => {
+          this.tenantSettings.set(settings);
+          this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
+          this.settingsForm.destinationEmail = settings.destinationEmail ?? '';
+          this.settingsForm.urgentKeywords = settings.urgentKeywords.join(', ');
+          this.settingsForm.consultationWindows = settings.consultationWindows.join(', ');
+          this.statusMessage.set('Email principal de intake actualizado.');
+          this.isSubmitting.set(false);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.errorMessage.set(
+            error.status === 409
+              ? 'Ese email de intake ya esta configurado para otra firma.'
+              : 'No se pudo guardar la configuracion. Intenta nuevamente.',
+          );
+          this.isSubmitting.set(false);
+        },
+      });
+  }
+
   createConsultation(): void {
     if (
       !this.form.clientName.trim() ||
@@ -322,5 +419,16 @@ export class App {
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(new Date(value));
+  }
+
+  private csvValues(value: string): string[] {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  private isValidEmail(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 }

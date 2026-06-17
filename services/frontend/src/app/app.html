@@ -245,7 +245,7 @@
         <section id="dashboard" class="metric-grid" aria-label="Resumen del intake">
           <article class="metric-card"><span>Total</span><strong>{{ totalConsultations() }}</strong><small>{{ totalConsultations() }} consultas cargadas</small></article>
           <article class="metric-card is-urgent"><span>Urgentes</span><strong>{{ urgentConsultations() }}</strong><small>Por palabras clave del tenant</small></article>
-          <article class="metric-card"><span>Notificaciones</span><strong>{{ queuedNotifications() }}</strong><small>Email/calendario en cola</small></article>
+          <article class="metric-card"><span>Email intake</span><strong>{{ configuredIntakeEmail() }}</strong><small>Entrada principal</small></article>
           <article class="metric-card"><span>Último caso</span>@if (latestConsultation(); as latest) {<strong>{{ latest.clientName }}</strong><small>{{ formatDate(latest.createdAt) }}</small>} @else {<strong>—</strong><small>Sin consultas</small>}</article>
         </section>
 
@@ -277,6 +277,56 @@
                 }
               </div>
             }
+          </section>
+
+          <section id="configuracion" class="panel-card settings-panel" aria-labelledby="settings-title">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Configuracion</p>
+                <h2 id="settings-title">Email principal de intake</h2>
+              </div>
+              <span class="pill">{{ tenantId() }}</span>
+            </div>
+
+            <form class="settings-form" (submit)="saveSettings(); $event.preventDefault()">
+              <label for="intakeEmail">Email de entrada</label>
+              <input
+                id="intakeEmail"
+                name="intakeEmail"
+                [(ngModel)]="settingsForm.intakeEmail"
+                type="email"
+                autocomplete="email"
+                placeholder="consultas@firma.com"
+              />
+
+              <label for="destinationEmail">Email de notificaciones</label>
+              <input
+                id="destinationEmail"
+                name="destinationEmail"
+                [(ngModel)]="settingsForm.destinationEmail"
+                type="email"
+                autocomplete="email"
+              />
+
+              <label for="urgentKeywords">Palabras urgentes</label>
+              <input
+                id="urgentKeywords"
+                name="urgentKeywords"
+                [(ngModel)]="settingsForm.urgentKeywords"
+              />
+
+              <label for="consultationWindows">Ventanas de consulta</label>
+              <input
+                id="consultationWindows"
+                name="consultationWindows"
+                [(ngModel)]="settingsForm.consultationWindows"
+                placeholder="LUN-VIE 09:00-13:00"
+              />
+
+              <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
+                {{ isSubmitting() ? 'Guardando...' : 'Guardar configuracion' }}
+              </button>
+            </form>
           </section>
         </div>
       </section>

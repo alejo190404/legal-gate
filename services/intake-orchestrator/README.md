@@ -5,9 +5,11 @@ Spring Boot service for the first LegalGate consultation-intake slice from the c
 ## Implemented user-story coverage
 
 - Lawyer configures tenant urgency criteria, consultation windows, and destination email.
+- Firm admin configures the main inbound intake email for CloudMailin routing.
 - Consultant submits plain-language case information without needing legal terminology.
 - Admin reviews consultations stored for a tenant.
 - Service returns queued side-effect flags for email notification and calendar update orchestration.
+- Service can consume inbound email events from RabbitMQ when `LEGALGATE_MAIL_ENABLED=true`.
 
 ## Local commands
 
@@ -32,8 +34,9 @@ Smoke-test the service:
 ## Endpoints
 
 - `GET /api/status`
+- `GET /api/tenants/{tenantId}/settings`
 - `PUT /api/tenants/{tenantId}/settings`
 - `POST /api/tenants/{tenantId}/consultations`
 - `GET /api/admin/tenants/{tenantId}/consultations`
 
-This implementation is intentionally in-memory and ready for later replacement with Core DB, RabbitMQ, LLM classification, email, and calendar adapters.
+The inbound email consumer currently logs and acknowledges validated events only. It does not create consultations yet.

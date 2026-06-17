@@ -757,7 +757,8 @@
 }
 
 #dashboard,
-#consultas {
+#consultas,
+#configuracion {
   scroll-margin-top: 80px;
 }
 
@@ -857,6 +858,32 @@
 .case-list {
   display: grid;
   gap: 16px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+
+  label {
+    color: var(--fg-2);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  input {
+    width: 100%;
+    border: 1.5px solid var(--stone-950);
+    background: var(--bg-surface);
+    color: var(--fg-1);
+    font: inherit;
+    padding: 12px;
+  }
+
+  .btn {
+    width: fit-content;
+    margin-top: 8px;
+  }
 }
 
 .case-card {
