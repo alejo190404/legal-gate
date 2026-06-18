@@ -8,7 +8,14 @@ import com.legalgate.intake.model.TenantSettingsResponse;
 import java.util.Optional;
 
 public interface IntakeRepository {
-    RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role);
+    RegistrationResponse registerFirmOwner(
+            String firmSlug,
+            String firmName,
+            String email,
+            String hashedPassword,
+            String role,
+            String intakeEmail
+    );
 
     Optional<StoredUserCredentials> findActiveUserByEmail(String email);
 

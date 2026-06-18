@@ -44,11 +44,22 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role) {
+    public RegistrationResponse registerFirmOwner(
+            String firmSlug,
+            String firmName,
+            String email,
+            String hashedPassword,
+            String role,
+            String intakeEmail
+    ) {
         try {
             return transactionTemplate.execute(status -> {
                 setTenantContext(firmSlug);
-                UUID firmId = ensureTenant(firmSlug, firmName);
+                UUID firmId = createTenant(firmSlug, firmName);
+                jdbcTemplate.update("""
+                        insert into tenant_settings (tenant_id, intake_email, routing_rules, updated_at)
+                        values (?, ?, '[]'::jsonb, now())
+                        """, firmId, intakeEmail);
                 jdbcTemplate.update("""
                         insert into users (firm_id, email, full_name, role, hashed_password, is_active)
                         values (?, ?, ?, ?, ?, true)
@@ -56,7 +67,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                 return new RegistrationResponse(email, firmSlug, firmName + " admin", role);
             });
         } catch (DuplicateKeyException ex) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered", ex);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, duplicateRegistrationReason(ex), ex);
         }
     }
 
@@ -199,6 +210,15 @@ class JdbcIntakeRepository implements IntakeRepository {
                 """, UUID.class, tenantSlug, displayName);
     }
 
+    private UUID createTenant(String tenantSlug, String displayName) {
+        // TODO(workos): Persist workos_organization_id once the gateway derives tenant context from WorkOS org claims.
+        return jdbcTemplate.queryForObject("""
+                insert into tenants (slug, display_name)
+                values (?, ?)
+                returning id
+                """, UUID.class, tenantSlug, displayName);
+    }
+
     private void setTenantContext(String tenantSlug) {
         jdbcTemplate.queryForObject("select set_config('app.tenant_slug', ?, true)", String.class, tenantSlug);
     }
@@ -232,6 +252,17 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     private String displayName(String tenantSlug) {
         return tenantSlug.replace('-', ' ');
+    }
+
+    private String duplicateRegistrationReason(DuplicateKeyException ex) {
+        String message = ex.getMostSpecificCause() == null ? ex.getMessage() : ex.getMostSpecificCause().getMessage();
+        if (message != null && message.contains("tenants_slug")) {
+            return "tenant_slug_already_registered";
+        }
+        if (message != null && message.contains("users_email")) {
+            return "email_already_registered";
+        }
+        return "tenant_or_email_already_registered";
     }
 
     private String toJson(Object value) {

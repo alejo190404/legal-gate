@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.legalgate.intake.model.TenantSettingsResponse;
+import com.legalgate.intake.repository.IntakeRepository;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -24,6 +27,9 @@ class IntakeOrchestratorApplicationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private IntakeRepository intakeRepository;
 
     @Test
     void statusEndpointDescribesReadyIntakeService() throws Exception {
@@ -59,6 +65,10 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("barragan-legal"))
                 .andExpect(jsonPath("$.consultations", hasSize(0)));
+
+        mockMvc.perform(get("/api/tenants/barragan-legal/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intakeEmail").value("barragan-legal@intake.legal-gate.local"));
     }
 
     @Test
@@ -89,7 +99,7 @@ class IntakeOrchestratorApplicationTests {
                                 {
                                   "email": "Owner@login-barragan-legal.test",
                                   "password": "StrongPass2026!",
-                                  "firmName": "Barragan Legal"
+                                  "firmName": "Login Barragan Legal"
                                 }
                                 """))
                 .andExpect(status().isCreated());
@@ -104,8 +114,8 @@ class IntakeOrchestratorApplicationTests {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("owner@login-barragan-legal.test"))
-                .andExpect(jsonPath("$.tenantId").value("barragan-legal"))
-                .andExpect(jsonPath("$.displayName").value("Barragan Legal admin"))
+                .andExpect(jsonPath("$.tenantId").value("login-barragan-legal"))
+                .andExpect(jsonPath("$.displayName").value("Login Barragan Legal admin"))
                 .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
     }
 
@@ -161,8 +171,7 @@ class IntakeOrchestratorApplicationTests {
                                 {
                                   "urgentKeywords": ["tutela", "captura", "audiencia"],
                                   "consultationWindows": ["LUN-VIE 08:00-12:00", "LUN-VIE 14:00-17:00"],
-                                  "destinationEmail": "consultas@firma.test",
-                                  "intakeEmail": "Consultas@Firma.test"
+                                  "destinationEmail": "consultas@firma.test"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -170,14 +179,34 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
                 .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
                 .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
-                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"))
+                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.local"))
                 .andExpect(jsonPath("$.routingRules", hasSize(1)))
                 .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("consultas@firma.test"));
 
         mockMvc.perform(get("/api/tenants/bogota-legal/settings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
-                .andExpect(jsonPath("$.intakeEmail").value("consultas@firma.test"));
+                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.local"));
+    }
+
+    @Test
+    void settingsGetSelfHealsMissingOrManualIntakeEmail() throws Exception {
+        intakeRepository.saveSettings("manual-email", new TenantSettingsResponse(
+                "manual-email",
+                List.of("captura"),
+                List.of(),
+                "notificaciones@firma.test",
+                "manual@firma.test",
+                List.of()
+        ));
+
+        mockMvc.perform(get("/api/tenants/manual-email/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.local"));
+
+        mockMvc.perform(get("/api/tenants/manual-email/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.local"));
     }
 
     @Test
@@ -186,7 +215,6 @@ class IntakeOrchestratorApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "intakeEmail": "intake@laboral.test",
                                   "routingRules": [
                                     {
                                       "name": "Workspace incidents",
@@ -226,27 +254,46 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
-    void intakeEmailMustBeUniqueAcrossTenants() throws Exception {
+    void settingsPutRejectsSystemManagedIntakeEmail() throws Exception {
         mockMvc.perform(put("/api/tenants/firma-uno/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgentKeywords": ["audiencia"],
-                                  "consultationWindows": [],
-                                  "destinationEmail": "notificaciones@firma-uno.test",
-                                  "intakeEmail": "intake@firma.test"
+                                  "intakeEmail": null,
+                                  "routingRules": [
+                                    {
+                                      "name": "Default intake route",
+                                      "urgentKeywords": ["audiencia"],
+                                      "consultationWindows": [],
+                                      "destinationEmail": "notificaciones@firma-uno.test"
+                                    }
+                                  ]
                                 }
                                 """))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("system_managed_intake_email"));
+    }
 
-        mockMvc.perform(put("/api/tenants/firma-dos/settings")
+    @Test
+    void duplicateTenantSlugRegistrationFailsWithoutAutoSuffixing() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgentKeywords": ["captura"],
-                                  "consultationWindows": [],
-                                  "destinationEmail": "notificaciones@firma-dos.test",
-                                  "intakeEmail": "INTAKE@firma.test"
+                                  "email": "uno@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Uno"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "dos@firma.test",
+                                  "password": "StrongPass2026!",
+                                  "firmName": "Firma Uno"
                                 }
                                 """))
                 .andExpect(status().isConflict());

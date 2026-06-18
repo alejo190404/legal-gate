@@ -6,7 +6,7 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 
 - `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
 - `services/intake-orchestrator`: Spring Boot consultation intake service for tenant routing-rule settings, plain-language consultation creation, urgency pre-classification, and admin review.
-- `services/mail-ingress`: Spring Boot CloudMailin webhook adapter that publishes inbound email events to RabbitMQ.
+- `services/mail-ingress`: Spring Boot CloudMailin and MailerSend webhook adapter that publishes inbound email events to RabbitMQ.
 - `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
 
 ## Gateway quick start
@@ -53,8 +53,9 @@ Then test tenant settings, consultation creation, and admin review:
 
 ```bash
 curl http://localhost:8081/api/status
+curl http://localhost:8081/api/tenants/firma-demo/settings
 curl -X PUT -H 'Content-Type: application/json' \
-  -d '{"intakeEmail":"intake@firma.test","routingRules":[{"name":"Urgencias laborales","urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@firma.test"}]}' \
+  -d '{"routingRules":[{"name":"Urgencias laborales","urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@firma.test"}]}' \
   http://localhost:8081/api/tenants/firma-demo/settings
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"clientName":"María Pérez","clientEmail":"maria@example.com","summary":"Tengo una audiencia mañana y necesito orientación aunque no conozco términos legales."}' \
@@ -112,13 +113,22 @@ Local CloudMailin-style webhook smoke test:
 
 ```bash
 curl -fsS -X PUT -H 'Content-Type: application/json' \
-  -d '{"intakeEmail":"intake@firma.test","routingRules":[{"name":"Default intake route","urgentKeywords":["audiencia"],"consultationWindows":[],"destinationEmail":"notificaciones@firma.test"}]}' \
+  -d '{"routingRules":[{"name":"Default intake route","urgentKeywords":["audiencia"],"consultationWindows":[],"destinationEmail":"notificaciones@firma.test"}]}' \
   http://localhost:8081/api/tenants/firma-demo/settings
 
 curl -i -u cloudmailin-local:cloudmailin-local-password \
   -H 'Content-Type: application/json' \
-  -d '{"headers":{"from":"Cliente <cliente@example.com>","subject":"Consulta","message_id":"<local@example.com>"},"envelope":{"to":"intake@firma.test","recipients":["intake@firma.test"],"from":"cliente@example.com"},"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>","attachments":[]}' \
+  -d '{"headers":{"from":"Cliente <cliente@example.com>","subject":"Consulta","message_id":"<local@example.com>"},"envelope":{"to":"firma-demo@intake.legal-gate.local","recipients":["firma-demo@intake.legal-gate.local"],"from":"cliente@example.com"},"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>","attachments":[]}' \
   http://localhost:8082/webhooks/cloudmailin
+```
+
+Local MailerSend-style webhook smoke test:
+
+```bash
+curl -i -H 'Content-Type: application/json' \
+  -H 'X-MailerSend-Webhook-Secret: mailersend-local-secret' \
+  -d '{"type":"inbound.message","data":{"from":{"email":"cliente@example.com","name":"Cliente"},"recipients":[{"email":"firma-demo@intake.legal-gate.local"}],"subject":"Consulta","message_id":"<local-mailersend@example.com>","text":{"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>"}}}' \
+  http://localhost:8082/webhooks/mailersend
 ```
 
 Made by Alejandro Barragán

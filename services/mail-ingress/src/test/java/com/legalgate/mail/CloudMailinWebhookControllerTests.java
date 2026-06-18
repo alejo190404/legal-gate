@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(properties = {
         "legalgate.mail-ingress.basic-auth.username=cloudmailin",
         "legalgate.mail-ingress.basic-auth.password=secret",
+        "legalgate.mail-ingress.mailersend.webhook-secret=mailersend-secret",
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"
 })
 @AutoConfigureMockMvc
@@ -111,6 +112,62 @@ class CloudMailinWebhookControllerTests {
                 .andExpect(jsonPath("$.error").value("rabbitmq_publish_failed"));
     }
 
+    @Test
+    void acceptsMailerSendWebhookTestPayload() throws Exception {
+        mockMvc.perform(post("/webhooks/mailersend")
+                        .header("X-MailerSend-Webhook-Secret", "mailersend-secret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "webhook.test",
+                                  "data": {}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"));
+
+        verify(inboundEmailPublisher, never()).publish(any());
+    }
+
+    @Test
+    void rejectsMailerSendPayloadWithInvalidSecret() throws Exception {
+        mockMvc.perform(post("/webhooks/mailersend")
+                        .header("X-MailerSend-Webhook-Secret", "wrong")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mailerSendInboundPayload()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_mailersend_signature"));
+
+        verify(inboundEmailPublisher, never()).publish(any());
+    }
+
+    @Test
+    void publishesMailerSendInboundMessageForKnownRecipient() throws Exception {
+        when(tenantLookupService.tenantForIntakeEmail(eq("firma-demo@intake.legal-gate.co")))
+                .thenReturn(Optional.of("firma-demo"));
+
+        mockMvc.perform(post("/webhooks/mailersend")
+                        .header("X-MailerSend-Webhook-Secret", "mailersend-secret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mailerSendInboundPayload()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("queued"))
+                .andExpect(jsonPath("$.tenantId").value("firma-demo"))
+                .andExpect(jsonPath("$.eventId").isNotEmpty());
+
+        ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
+        verify(inboundEmailPublisher).publish(eventCaptor.capture());
+        InboundEmailReceived event = eventCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(event.tenantId()).isEqualTo("firma-demo");
+        org.assertj.core.api.Assertions.assertThat(event.envelopeTo()).isEqualTo("firma-demo@intake.legal-gate.co");
+        org.assertj.core.api.Assertions.assertThat(event.recipients()).containsExactly("firma-demo@intake.legal-gate.co");
+        org.assertj.core.api.Assertions.assertThat(event.envelopeFrom()).isEqualTo("maria@example.com");
+        org.assertj.core.api.Assertions.assertThat(event.headerFrom()).isEqualTo("Maria Perez <maria@example.com>");
+        org.assertj.core.api.Assertions.assertThat(event.subject()).isEqualTo("Consulta familia");
+        org.assertj.core.api.Assertions.assertThat(event.messageId()).isEqualTo("ms-message-123");
+        org.assertj.core.api.Assertions.assertThat(event.plain()).isEqualTo("Necesito orientacion por custodia.");
+    }
+
     private String basicAuth() {
         String credentials = "cloudmailin:secret";
         return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
@@ -133,6 +190,32 @@ class CloudMailinWebhookControllerTests {
                   "plain": "Necesito orientacion.",
                   "html": "<p>Necesito orientacion.</p>",
                   "attachments": []
+                }
+                """;
+    }
+
+    private String mailerSendInboundPayload() {
+        return """
+                {
+                  "type": "inbound.message",
+                  "data": {
+                    "from": {
+                      "email": "maria@example.com",
+                      "name": "Maria Perez"
+                    },
+                    "recipients": [
+                      {
+                        "email": "firma-demo@intake.legal-gate.co",
+                        "name": "LegalGate"
+                      }
+                    ],
+                    "subject": "Consulta familia",
+                    "message_id": "ms-message-123",
+                    "text": {
+                      "plain": "Necesito orientacion por custodia.",
+                      "html": "<p>Necesito orientacion por custodia.</p>"
+                    }
+                  }
                 }
                 """;
     }

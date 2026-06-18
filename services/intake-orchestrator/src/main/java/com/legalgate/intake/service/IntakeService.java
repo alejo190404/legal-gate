@@ -5,6 +5,7 @@ import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.CreateConsultationRequest;
 import com.legalgate.intake.model.NotificationStatus;
+import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.TenantSettingsResponse;
@@ -39,9 +40,11 @@ public class IntakeService {
     );
 
     private final IntakeRepository intakeRepository;
+    private final IntakeProperties intakeProperties;
 
-    public IntakeService(IntakeRepository intakeRepository) {
+    public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties) {
         this.intakeRepository = intakeRepository;
+        this.intakeProperties = intakeProperties;
     }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
@@ -52,7 +55,7 @@ public class IntakeService {
                 primaryRule.urgentKeywords(),
                 primaryRule.consultationWindows(),
                 primaryRule.destinationEmail(),
-                sanitizeEmail(request.intakeEmail()),
+                intakeProperties.canonicalIntakeEmail(tenantId),
                 routingRules
         );
         return intakeRepository.saveSettings(tenantId, settings);
@@ -107,10 +110,25 @@ public class IntakeService {
                 DEFAULT_SETTINGS.urgentKeywords(),
                 DEFAULT_SETTINGS.consultationWindows(),
                 DEFAULT_SETTINGS.destinationEmail(),
-                DEFAULT_SETTINGS.intakeEmail(),
+                intakeProperties.canonicalIntakeEmail(tenantId),
                 DEFAULT_SETTINGS.routingRules()
         );
-        return intakeRepository.settingsFor(tenantId, defaults);
+        TenantSettingsResponse settings = intakeRepository.settingsFor(tenantId, defaults);
+        String canonicalIntakeEmail = intakeProperties.canonicalIntakeEmail(tenantId);
+        if (!canonicalIntakeEmail.equalsIgnoreCase(settings.intakeEmail())) {
+            TenantSettingsResponse healedSettings = new TenantSettingsResponse(
+                    settings.tenantId(),
+                    settings.urgentKeywords(),
+                    settings.consultationWindows(),
+                    settings.destinationEmail(),
+                    canonicalIntakeEmail,
+                    settings.routingRules()
+            );
+            // TODO(rollout): This GET intentionally mutates state to backfill canonical intake emails
+            // for tenants created before system-owned intake addresses existed.
+            return intakeRepository.saveSettings(tenantId, healedSettings);
+        }
+        return settings;
     }
 
     private List<TenantRoutingRule> routingRulesFrom(TenantSettingsRequest request) {
