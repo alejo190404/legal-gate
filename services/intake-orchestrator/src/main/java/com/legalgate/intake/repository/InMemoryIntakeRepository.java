@@ -54,6 +54,14 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     @Override
     public TenantSettingsResponse saveSettings(String tenantSlug, TenantSettingsResponse settings) {
+        if (settings.intakeEmail() != null) {
+            tenantSettings.forEach((existingTenantSlug, existingSettings) -> {
+                if (!tenantSlug.equals(existingTenantSlug)
+                        && settings.intakeEmail().equalsIgnoreCase(existingSettings.intakeEmail())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "intake_email_already_configured");
+                }
+            });
+        }
         tenantSettings.put(tenantSlug, settings);
         return settings;
     }
@@ -61,6 +69,18 @@ class InMemoryIntakeRepository implements IntakeRepository {
     @Override
     public TenantSettingsResponse settingsFor(String tenantSlug, TenantSettingsResponse defaultSettings) {
         return tenantSettings.getOrDefault(tenantSlug, defaultSettings);
+    }
+
+    @Override
+    public Optional<String> tenantSlugForIntakeEmail(String intakeEmail) {
+        if (intakeEmail == null || intakeEmail.isBlank()) {
+            return Optional.empty();
+        }
+        return tenantSettings.values().stream()
+                .filter(settings -> settings.intakeEmail() != null)
+                .filter(settings -> settings.intakeEmail().equalsIgnoreCase(intakeEmail.trim()))
+                .map(TenantSettingsResponse::tenantId)
+                .findFirst();
     }
 
     @Override

@@ -9,6 +9,7 @@ import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationStatus;
 import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.StoredUserCredentials;
+import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,6 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
 class JdbcIntakeRepository implements IntakeRepository {
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
+    private static final TypeReference<List<TenantRoutingRule>> ROUTING_RULE_LIST = new TypeReference<>() { };
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -85,20 +87,34 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     @Override
     public TenantSettingsResponse saveSettings(String tenantSlug, TenantSettingsResponse settings) {
-        return transactionTemplate.execute(status -> {
-            setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
-            jdbcTemplate.update("""
-                    insert into tenant_settings (tenant_id, urgent_keywords, consultation_windows, destination_email, updated_at)
-                    values (?, cast(? as jsonb), cast(? as jsonb), ?, now())
-                    on conflict (tenant_id) do update set
-                      urgent_keywords = excluded.urgent_keywords,
-                      consultation_windows = excluded.consultation_windows,
-                      destination_email = excluded.destination_email,
-                      updated_at = now()
-                    """, tenantId, toJson(settings.urgentKeywords()), toJson(settings.consultationWindows()), settings.destinationEmail());
-            return settings;
-        });
+        try {
+            return transactionTemplate.execute(status -> {
+                setTenantContext(tenantSlug);
+                UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+                jdbcTemplate.update("""
+                        insert into tenant_settings (
+                          tenant_id, urgent_keywords, consultation_windows, destination_email, intake_email, routing_rules, updated_at
+                        )
+                        values (?, cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), now())
+                        on conflict (tenant_id) do update set
+                          urgent_keywords = excluded.urgent_keywords,
+                          consultation_windows = excluded.consultation_windows,
+                          destination_email = excluded.destination_email,
+                          intake_email = excluded.intake_email,
+                          routing_rules = excluded.routing_rules,
+                          updated_at = now()
+                        """,
+                        tenantId,
+                        toJson(settings.urgentKeywords()),
+                        toJson(settings.consultationWindows()),
+                        settings.destinationEmail(),
+                        settings.intakeEmail(),
+                        toJson(settings.routingRules()));
+                return settings;
+            });
+        } catch (DuplicateKeyException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "intake_email_already_configured", ex);
+        }
     }
 
     @Override
@@ -107,13 +123,27 @@ class JdbcIntakeRepository implements IntakeRepository {
             setTenantContext(tenantSlug);
             ensureTenant(tenantSlug, displayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
-                    select t.slug, s.urgent_keywords, s.consultation_windows, s.destination_email
+                    select t.slug, s.urgent_keywords, s.consultation_windows, s.destination_email, s.intake_email,
+                           s.routing_rules
                     from tenants t
                     join tenant_settings s on s.tenant_id = t.id
                     where t.slug = ?
                     """, (rs, rowNum) -> mapSettings(rs), tenantSlug);
             return settings.isEmpty() ? defaultSettings : settings.get(0);
         });
+    }
+
+    @Override
+    public Optional<String> tenantSlugForIntakeEmail(String intakeEmail) {
+        if (intakeEmail == null || intakeEmail.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> jdbcTemplate.query("""
+                        select app_find_tenant_for_intake_email(?) as slug
+                        """, (rs, rowNum) -> rs.getString("slug"), intakeEmail.trim())
+                .stream()
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst());
     }
 
     @Override
@@ -178,7 +208,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("slug"),
                 fromJson(rs.getString("urgent_keywords"), STRING_LIST),
                 fromJson(rs.getString("consultation_windows"), STRING_LIST),
-                rs.getString("destination_email")
+                rs.getString("destination_email"),
+                rs.getString("intake_email"),
+                fromJson(rs.getString("routing_rules"), ROUTING_RULE_LIST)
         );
     }
 

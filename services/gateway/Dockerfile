@@ -4,6 +4,7 @@ WORKDIR /workspace
 COPY pom.xml ./pom.xml
 COPY services/gateway/pom.xml ./services/gateway/pom.xml
 COPY services/intake-orchestrator/pom.xml ./services/intake-orchestrator/pom.xml
+COPY services/mail-ingress/pom.xml ./services/mail-ingress/pom.xml
 RUN mvn -pl services/gateway -DskipTests dependency:go-offline
 
 COPY services/gateway/src ./services/gateway/src
