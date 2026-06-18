@@ -27,6 +27,8 @@ legalgate:
     basic-auth:
       username: ${LEGALGATE_CLOUDMAILIN_USERNAME:cloudmailin-local}
       password: ${LEGALGATE_CLOUDMAILIN_PASSWORD:cloudmailin-local-password}
+    mailersend:
+      webhook-secret: ${LEGALGATE_MAILERSEND_WEBHOOK_SECRET:}
     exchange: ${LEGALGATE_MAIL_EXCHANGE:legalgate.mail}
     routing-key: ${LEGALGATE_MAIL_ROUTING_KEY:mail.inbound.received}
 

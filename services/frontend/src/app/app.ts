@@ -73,7 +73,6 @@ interface RegisterForm {
 }
 
 interface TenantSettingsForm {
-  intakeEmail: string;
   routingRules: TenantRoutingRuleForm[];
 }
 
@@ -109,10 +108,13 @@ export class App {
   readonly sessionEmail = signal('');
   readonly consultations = signal<Consultation[]>([]);
   readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
+  readonly settingsLoaded = signal(false);
   readonly activeConsoleSection = signal<ConsoleSection>('dashboard');
   readonly isConsoleMenuOpen = signal(false);
+  readonly isTutorialOpen = signal(false);
   readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
+  readonly copyStatus = signal('');
   readonly statusMessage = signal('Listo para iniciar sesion.');
   readonly errorMessage = signal('');
   readonly consultationsErrorMessage = signal('');
@@ -137,7 +139,6 @@ export class App {
   };
 
   readonly settingsForm: TenantSettingsForm = {
-    intakeEmail: '',
     routingRules: [
       {
         name: 'Default intake route',
@@ -158,8 +159,14 @@ export class App {
   );
   readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
   readonly configuredIntakeEmail = computed(
-    () => this.tenantSettings()?.intakeEmail || 'Sin configurar',
+    () => {
+      if (!this.settingsLoaded()) {
+        return 'Cargando...';
+      }
+      return this.tenantSettings()?.intakeEmail || 'No disponible';
+    },
   );
+  readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
   readonly consoleSections: ReadonlyArray<{ id: ConsoleSection; label: string }> = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'consultas', label: 'Consultas' },
@@ -274,6 +281,9 @@ export class App {
     this.tenantId.set('');
     this.consultations.set([]);
     this.tenantSettings.set(null);
+    this.settingsLoaded.set(false);
+    this.isTutorialOpen.set(false);
+    this.copyStatus.set('');
     this.isConsoleMenuOpen.set(false);
     this.clearConsoleErrors();
     this.showLanding();
@@ -312,6 +322,11 @@ export class App {
     this.activeConsoleSection.set(visibleSection);
   }
 
+  @HostListener('window:keydown.escape')
+  closeTutorialWithEscape(): void {
+    this.closeTutorial();
+  }
+
   loadConsultations(): void {
     this.isLoading.set(true);
     this.consultationsErrorMessage.set('');
@@ -339,6 +354,7 @@ export class App {
     }
 
     this.settingsErrorMessage.set('');
+    this.settingsLoaded.set(false);
     this.http
       .get<TenantSettingsResponse>(
         this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`),
@@ -346,17 +362,17 @@ export class App {
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
-          this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
+          this.settingsLoaded.set(true);
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
         },
         error: () => {
+          this.settingsLoaded.set(true);
           this.settingsErrorMessage.set('No se pudo cargar la configuracion de intake.');
         },
       });
   }
 
   saveSettings(): void {
-    const intakeEmail = this.settingsForm.intakeEmail.trim().toLowerCase();
     const routingRules = this.settingsForm.routingRules.map((rule, index) => ({
       name: rule.name.trim() || `Route ${index + 1}`,
       urgentKeywords: this.csvValues(rule.urgentKeywords),
@@ -364,8 +380,8 @@ export class App {
       destinationEmail: rule.destinationEmail.trim().toLowerCase(),
     }));
 
-    if (!this.isValidEmail(intakeEmail)) {
-      this.settingsErrorMessage.set('Ingresa un email de intake valido.');
+    if (!this.settingsLoaded() || !this.hasCanonicalIntakeEmail()) {
+      this.settingsErrorMessage.set('Espera a que cargue el email LegalGate de intake.');
       return;
     }
 
@@ -381,13 +397,11 @@ export class App {
     this.settingsErrorMessage.set('');
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
-        intakeEmail,
         routingRules,
       })
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
-          this.settingsForm.intakeEmail = settings.intakeEmail ?? '';
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
           this.settingsErrorMessage.set('');
           this.statusMessage.set('Reglas de enrutamiento actualizadas.');
@@ -402,6 +416,31 @@ export class App {
           this.isSubmitting.set(false);
         },
       });
+  }
+
+  copyIntakeEmail(): void {
+    const intakeEmail = this.tenantSettings()?.intakeEmail;
+    if (!intakeEmail) {
+      this.copyStatus.set('No disponible');
+      return;
+    }
+
+    navigator.clipboard?.writeText(intakeEmail)
+      .then(() => {
+        this.copyStatus.set('Copiado');
+        window.setTimeout(() => this.copyStatus.set(''), 1800);
+      })
+      .catch(() => {
+        this.copyStatus.set('No se pudo copiar');
+      }) ?? this.copyStatus.set('No se pudo copiar');
+  }
+
+  openTutorial(): void {
+    this.isTutorialOpen.set(true);
+  }
+
+  closeTutorial(): void {
+    this.isTutorialOpen.set(false);
   }
 
   addRoutingRule(): void {

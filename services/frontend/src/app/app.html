@@ -288,15 +288,34 @@
             </div>
 
             <form class="settings-form" (submit)="saveSettings(); $event.preventDefault()">
-              <label for="intakeEmail">Email de entrada</label>
-              <input
-                id="intakeEmail"
-                name="intakeEmail"
-                [(ngModel)]="settingsForm.intakeEmail"
-                type="email"
-                autocomplete="email"
-                placeholder="consultas@firma.com"
-              />
+              <div class="readonly-intake-email" aria-live="polite">
+                <span>Email LegalGate de intake</span>
+                <strong>{{ configuredIntakeEmail() }}</strong>
+                <div class="icon-actions">
+                  <button
+                    class="icon-button"
+                    type="button"
+                    aria-label="Copiar email LegalGate de intake"
+                    title="Copiar"
+                    [disabled]="!hasCanonicalIntakeEmail()"
+                    (click)="copyIntakeEmail()"
+                  >
+                    <span aria-hidden="true">⧉</span>
+                  </button>
+                  <button
+                    class="icon-button"
+                    type="button"
+                    aria-label="Abrir tutorial para reenviar correo personal"
+                    title="Tutorial"
+                    (click)="openTutorial()"
+                  >
+                    <span aria-hidden="true">✎</span>
+                  </button>
+                </div>
+                @if (copyStatus()) {
+                  <em>{{ copyStatus() }}</em>
+                }
+              </div>
 
               <div class="routing-rules">
                 @for (rule of settingsForm.routingRules; track $index; let index = $index) {
@@ -351,7 +370,7 @@
 
               <div class="settings-actions">
                 <button class="btn btn-secondary" type="button" (click)="addRoutingRule()">Agregar regla</button>
-                <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
+                <button class="btn btn-primary" type="submit" [disabled]="isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()">
                   {{ isSubmitting() ? 'Guardando...' : 'Guardar configuracion' }}
                 </button>
               </div>
@@ -359,6 +378,46 @@
           </section>
         </div>
       </section>
+
+      @if (isTutorialOpen()) {
+        <div class="modal-backdrop" role="presentation" (click)="closeTutorial()"></div>
+        <section
+          class="tutorial-modal pixel-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tutorial-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Reenviar o enrutar</p>
+              <h2 id="tutorial-title">Conecta tu correo personal</h2>
+            </div>
+            <button class="icon-button" type="button" aria-label="Cerrar tutorial" title="Cerrar" (click)="closeTutorial()">×</button>
+          </header>
+          <p>
+            En tu proveedor de correo, crea una regla de reenvio o enrutamiento para enviar los mensajes de tu direccion personal al email LegalGate de intake. Usa filtros por destinatario, asunto o alias si tu proveedor los ofrece.
+          </p>
+          <p>
+            Cuando sea posible, activa la opcion para preservar el remitente original. Asi LegalGate recibira el correo como una solicitud del cliente y no como una copia enviada por tu cuenta.
+          </p>
+          <div class="modal-email-row">
+            <span>{{ configuredIntakeEmail() }}</span>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Copiar email LegalGate desde tutorial"
+              title="Copiar"
+              [disabled]="!hasCanonicalIntakeEmail()"
+              (click)="copyIntakeEmail()"
+            >
+              <span aria-hidden="true">⧉</span>
+            </button>
+          </div>
+          @if (copyStatus()) {
+            <small>{{ copyStatus() }}</small>
+          }
+        </section>
+      }
     </main>
   }
 }

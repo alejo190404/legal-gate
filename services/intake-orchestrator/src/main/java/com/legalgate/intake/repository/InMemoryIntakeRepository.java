@@ -23,10 +23,21 @@ class InMemoryIntakeRepository implements IntakeRepository {
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Boolean> tenantsBySlug = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Instant> lastLoginAtByEmail = new ConcurrentHashMap<>();
 
     @Override
-    public RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role) {
+    public RegistrationResponse registerFirmOwner(
+            String firmSlug,
+            String firmName,
+            String email,
+            String hashedPassword,
+            String role,
+            String intakeEmail
+    ) {
+        if (tenantsBySlug.putIfAbsent(firmSlug, Boolean.TRUE) != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "tenant_slug_already_registered");
+        }
         StoredUserCredentials user = new StoredUserCredentials(
                 email,
                 firmSlug,
@@ -36,8 +47,17 @@ class InMemoryIntakeRepository implements IntakeRepository {
         );
         StoredUserCredentials existing = usersByEmail.putIfAbsent(email, user);
         if (existing != null) {
+            tenantsBySlug.remove(firmSlug);
             throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered");
         }
+        tenantSettings.put(firmSlug, new TenantSettingsResponse(
+                firmSlug,
+                List.of("audiencia", "captura", "tutela", "vencimiento"),
+                List.of(),
+                null,
+                intakeEmail,
+                List.of()
+        ));
         consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
         return user.toSession();
     }

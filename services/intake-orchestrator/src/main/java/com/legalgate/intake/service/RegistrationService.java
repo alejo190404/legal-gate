@@ -2,6 +2,7 @@ package com.legalgate.intake.service;
 
 import com.legalgate.intake.model.RegisterRequest;
 import com.legalgate.intake.model.RegistrationResponse;
+import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.text.Normalizer;
 import java.util.Locale;
@@ -17,10 +18,16 @@ public class RegistrationService {
 
     private final IntakeRepository intakeRepository;
     private final PasswordHasher passwordHasher;
+    private final IntakeProperties intakeProperties;
 
-    public RegistrationService(IntakeRepository intakeRepository, PasswordHasher passwordHasher) {
+    public RegistrationService(
+            IntakeRepository intakeRepository,
+            PasswordHasher passwordHasher,
+            IntakeProperties intakeProperties
+    ) {
         this.intakeRepository = intakeRepository;
         this.passwordHasher = passwordHasher;
+        this.intakeProperties = intakeProperties;
     }
 
     public RegistrationResponse registerFirmOwner(RegisterRequest request) {
@@ -31,7 +38,14 @@ public class RegistrationService {
 
         // Users are firm owner/admin accounts. They are intentionally separate from Lawyer,
         // which the ERD models as a business entity that can later be associated to a user.
-        return intakeRepository.registerFirmOwner(firmSlug, firmName, email, passwordHash, FIRM_ADMIN_ROLE);
+        return intakeRepository.registerFirmOwner(
+                firmSlug,
+                firmName,
+                email,
+                passwordHash,
+                FIRM_ADMIN_ROLE,
+                intakeProperties.canonicalIntakeEmail(firmSlug)
+        );
     }
 
     private String slugify(String value) {

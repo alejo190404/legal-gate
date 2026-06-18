@@ -5,7 +5,7 @@ This guide describes the first production-like LegalGate deployment slice:
 - Angular frontend on Vercel.
 - Spring Boot gateway on Render as the only browser-facing API facade.
 - Spring Boot intake-orchestrator on Render for intake persistence.
-- Spring Boot mail-ingress on Render as the CloudMailin-facing webhook adapter.
+- Spring Boot mail-ingress on Render as the CloudMailin and MailerSend webhook adapter.
 - RabbitMQ on Render private networking for inbound email events.
 - Supabase Postgres accessed from the intake service through JDBC/Flyway.
 
@@ -18,8 +18,8 @@ The frontend must call only the gateway. It must not call intake-orchestrator or
 3. Angular calls `https://legal-gate-gateway.onrender.com/api/backend/...`.
 4. Gateway applies CORS and temporary public-prototype route policy.
 5. Gateway proxies to `LEGALGATE_BACKEND_URL` (the Render intake-orchestrator service).
-6. Intake persists tenant intake email, routing rules, and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
-7. CloudMailin posts inbound email webhooks to mail-ingress, which publishes durable events to private RabbitMQ.
+6. Intake persists each tenant's canonical LegalGate intake email, routing rules, and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
+7. CloudMailin or MailerSend posts inbound email webhooks to mail-ingress, which publishes durable events to private RabbitMQ.
 8. Intake consumes RabbitMQ events asynchronously. This milestone logs/acks them without creating consultations.
 
 The gateway should return `503 service_unavailable` only when the intake service is unreachable or `LEGALGATE_BACKEND_URL` is missing. If intake responds with `400`, `409`, or `500`, the gateway should pass that downstream status/body through so Render/Supabase failures are visible during diagnosis.
@@ -52,8 +52,9 @@ Use the Supabase pooler connection currently configured for Render:
 - `SPRING_DATASOURCE_PASSWORD=<supabase-db-password>`
 - `SPRING_DATASOURCE_MAX_POOL_SIZE=5`
 - `SPRING_FLYWAY_ENABLED=true`
-- `SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS=*:missing`
+- `SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false`
 - `LEGALGATE_SEED_DEMO_DATA=false`
+- `LEGALGATE_INTAKE_EMAIL_DOMAIN=intake.legal-gate.co`
 - `LEGALGATE_MAIL_ENABLED=true`
 - `SPRING_RABBITMQ_HOST=<rabbitmq-private-host>`
 - `SPRING_RABBITMQ_PORT=5672`
@@ -89,10 +90,13 @@ Deploy `services/mail-ingress/Dockerfile` as a public Render web service and con
 - `SPRING_RABBITMQ_PASSWORD=<rabbitmq-password>`
 - `LEGALGATE_CLOUDMAILIN_USERNAME=<cloudmailin-basic-auth-user>`
 - `LEGALGATE_CLOUDMAILIN_PASSWORD=<cloudmailin-basic-auth-password>`
+- `LEGALGATE_MAILERSEND_WEBHOOK_SECRET=<mailersend-webhook-secret>`
 - `LEGALGATE_MAIL_EXCHANGE=legalgate.mail`
 - `LEGALGATE_MAIL_ROUTING_KEY=mail.inbound.received`
 
 In CloudMailin, set the target URL to `https://<user>:<password>@<mail-ingress-render-host>/webhooks/cloudmailin` and choose the Normalized JSON format.
+
+In MailerSend, configure an inbound route for `*@intake.legal-gate.co`, set the MX target to `inbound.mailersend.net`, and forward webhooks to `https://<mail-ingress-render-host>/webhooks/mailersend`. Use the same value in MailerSend and Render for `LEGALGATE_MAILERSEND_WEBHOOK_SECRET`.
 
 ## Troubleshooting registration `503`
 
@@ -104,7 +108,7 @@ If `POST https://legal-gate-gateway.onrender.com/api/backend/api/auth/register` 
    - `LEGALGATE_INTAKE_PERSISTENCE=jdbc`
    - `SPRING_FLYWAY_ENABLED=true`
    - a valid Supabase pooler `SPRING_DATASOURCE_URL`
-  - `SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS=*:missing` for compatibility with the earlier `V1`/`V2` migration consolidation
+  - `SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false` for OSS-safe compatibility with the earlier `V1`/`V2` migration consolidation
   - no stale Flyway bootstrap overrides such as `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` or `SPRING_FLYWAY_VERSION=0` unless you intentionally need them
 4. If intake starts but registration fails, inspect the intake logs for Flyway migration failures, Postgres authentication errors, or missing-table errors such as `relation "users" does not exist`.
 
@@ -140,6 +144,8 @@ Flyway migrations create and evolve:
 RLS is enabled and forced on tenant-scoped tables. The JDBC repository sets `app.tenant_slug` inside each transaction before reads/writes so policies enforce tenant isolation as a defense-in-depth layer.
 
 `V6__add_routing_rules_to_tenant_settings.sql` adds the production-safe routing model. Existing flat settings rows are backfilled into a single `Default intake route`, preserving the old `urgent_keywords`, `consultation_windows`, and `destination_email` columns for compatibility while new clients use `routing_rules`.
+
+Canonical intake addresses are system-owned and stored in `tenant_settings.intake_email` as `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}`. For production, use `intake.legal-gate.co`; local Docker defaults to `intake.legal-gate.local`. During rollout, `GET /api/tenants/{tenantId}/settings` intentionally self-heals missing or manual intake emails to the canonical value, which is technical debt to backfill old tenants without a one-off migration.
 
 ## WorkOS seam
 

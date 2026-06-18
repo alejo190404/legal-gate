@@ -8,12 +8,13 @@ spring:
       maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:5}
   flyway:
     enabled: ${SPRING_FLYWAY_ENABLED:false}
-    ignore-migration-patterns: ${SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS:*:missing}
+    validate-on-migrate: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:false}
 
 legalgate:
   intake:
     persistence: ${LEGALGATE_INTAKE_PERSISTENCE:memory}
     seed-demo-data: ${LEGALGATE_SEED_DEMO_DATA:false}
+    email-domain: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:intake.legal-gate.local}
     mail:
       enabled: ${LEGALGATE_MAIL_ENABLED:false}
       exchange: ${LEGALGATE_MAIL_EXCHANGE:legalgate.mail}

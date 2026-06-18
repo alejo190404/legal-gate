@@ -46,7 +46,7 @@ const demoSettings = {
   urgentKeywords: ['audiencia', 'captura'],
   consultationWindows: ['LUN-VIE 09:00-13:00'],
   destinationEmail: 'notificaciones@firma.test',
-  intakeEmail: 'consultas@firma.test',
+  intakeEmail: 'firma-demo@intake.legal-gate.local',
   routingRules: [
     {
       name: 'Default intake route',
@@ -60,6 +60,12 @@ const demoSettings = {
 describe('App landing to login to consultation inbox flow', () => {
   beforeEach(async () => {
     Element.prototype.scrollIntoView = vi.fn();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
 
     await TestBed.configureTestingModule({
       imports: [App],
@@ -176,7 +182,7 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Sesi');
     expect(compiled.textContent).toContain('Maria Perez');
     expect(compiled.textContent).toContain('audiencia');
-    expect(compiled.textContent).toContain('consultas@firma.test');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
     expect(compiled.textContent).toContain('1 consultas');
     expect(compiled.textContent).not.toContain('API proxy');
     expect(compiled.textContent).not.toContain('intake-orchestrator local');
@@ -261,7 +267,7 @@ describe('App landing to login to consultation inbox flow', () => {
     ).flush(demoSettings);
   });
 
-  it('lets an admin configure the main intake email for the active tenant', () => {
+  it('shows the read-only LegalGate intake email and saves routing rules without intakeEmail', () => {
     const { fixture, http, compiled } = create();
 
     fixture.componentInstance.showLogin();
@@ -271,16 +277,13 @@ describe('App landing to login to consultation inbox flow', () => {
 
     http.expectOne('/api/auth/login').flush(loginResponse);
     http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
-    http.expectOne('/api/tenants/firma-demo/settings').flush({
-      ...demoSettings,
-      intakeEmail: null,
-    });
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
     fixture.detectChanges();
 
     expect(compiled.textContent).toContain('Configuracion');
-    expect(compiled.textContent).toContain('Sin configurar');
+    expect(compiled.textContent).toContain('Email LegalGate de intake');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
 
-    fixture.componentInstance.settingsForm.intakeEmail = 'Consultas@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'Notificaciones@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
     fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
@@ -294,7 +297,6 @@ describe('App landing to login to consultation inbox flow', () => {
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.method).toBe('PUT');
     expect(settingsRequest.request.body).toEqual({
-      intakeEmail: 'consultas@firma.test',
       routingRules: [
         {
           name: 'Default intake route',
@@ -315,7 +317,7 @@ describe('App landing to login to consultation inbox flow', () => {
       urgentKeywords: ['audiencia', 'tutela'],
       consultationWindows: ['LUN-VIE 09:00-13:00'],
       destinationEmail: 'notificaciones@firma.test',
-      intakeEmail: 'consultas@firma.test',
+      intakeEmail: 'firma-demo@intake.legal-gate.local',
       routingRules: [
         {
           name: 'Default intake route',
@@ -333,7 +335,7 @@ describe('App landing to login to consultation inbox flow', () => {
     });
     fixture.detectChanges();
 
-    expect(compiled.textContent).toContain('consultas@firma.test');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
   });
 
   it('shows configuration validation errors inside the configuration panel', () => {
@@ -349,15 +351,74 @@ describe('App landing to login to consultation inbox flow', () => {
     http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
     fixture.detectChanges();
 
-    fixture.componentInstance.settingsForm.intakeEmail = 'bad-email';
+    fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'bad-email';
     fixture.componentInstance.saveSettings();
     fixture.detectChanges();
 
     const settingsPanel = compiled.querySelector('#configuracion');
     const casesPanel = compiled.querySelector('#consultas');
-    expect(settingsPanel?.textContent).toContain('Ingresa un email de intake valido');
-    expect(casesPanel?.textContent).not.toContain('Ingresa un email de intake valido');
+    expect(settingsPanel?.textContent).toContain('Cada regla necesita un email de destino valido');
+    expect(casesPanel?.textContent).not.toContain('Cada regla necesita un email de destino valido');
     expect(compiled.querySelector('.workspace > .status-banner.has-error')).toBeFalsy();
+  });
+
+  it('copies the read-only intake email with temporary feedback', async () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    fixture.componentInstance.copyIntakeEmail();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(vi.mocked(navigator.clipboard.writeText)).toHaveBeenCalledWith(
+      'firma-demo@intake.legal-gate.local',
+    );
+    expect(compiled.textContent).toContain('Copiado');
+  });
+
+  it('opens the forwarding tutorial modal and closes it by button, Escape, and backdrop', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    fixture.componentInstance.openTutorial();
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="dialog"]')?.textContent).toContain('Reenviar o enrutar');
+    expect(compiled.querySelector('[role="dialog"]')?.textContent).toContain(
+      'firma-demo@intake.legal-gate.local',
+    );
+
+    compiled.querySelector<HTMLButtonElement>('[aria-label="Cerrar tutorial"]')?.click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="dialog"]')).toBeFalsy();
+
+    fixture.componentInstance.openTutorial();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="dialog"]')).toBeFalsy();
+
+    fixture.componentInstance.openTutorial();
+    fixture.detectChanges();
+    compiled.querySelector<HTMLDivElement>('.modal-backdrop')?.click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="dialog"]')).toBeFalsy();
   });
 
   it('shows consultation inbox errors inside the consultations panel', () => {
