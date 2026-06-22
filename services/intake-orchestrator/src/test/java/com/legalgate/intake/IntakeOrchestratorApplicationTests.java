@@ -1,6 +1,9 @@
 package com.legalgate.intake;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -8,11 +11,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.legalgate.intake.classifier.ClassifierUnavailableException;
+import com.legalgate.intake.classifier.ConsultationClassifierClient;
+import com.legalgate.intake.classifier.ConsultationClassifierResponse;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -30,6 +38,14 @@ class IntakeOrchestratorApplicationTests {
 
     @Autowired
     private IntakeRepository intakeRepository;
+
+    @MockBean
+    private ConsultationClassifierClient consultationClassifierClient;
+
+    @BeforeEach
+    void resetClassifier() {
+        reset(consultationClassifierClient);
+    }
 
     @Test
     void statusEndpointDescribesReadyIntakeService() throws Exception {
@@ -179,6 +195,8 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
                 .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
                 .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
+                .andExpect(jsonPath("$.urgencyLevels[0]").value("NORMAL"))
+                .andExpect(jsonPath("$.urgencyLevels[1]").value("URGENT"))
                 .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.co"))
                 .andExpect(jsonPath("$.routingRules", hasSize(1)))
                 .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("consultas@firma.test"));
@@ -195,6 +213,7 @@ class IntakeOrchestratorApplicationTests {
                 "missing-email",
                 List.of("captura"),
                 List.of(),
+                List.of("NORMAL", "URGENT"),
                 "notificaciones@firma.test",
                 null,
                 List.of()
@@ -215,6 +234,7 @@ class IntakeOrchestratorApplicationTests {
                 "manual-email",
                 List.of("captura"),
                 List.of(),
+                List.of("NORMAL", "URGENT"),
                 "notificaciones@firma.test",
                 "manual-email@intake.legal-gate.co",
                 List.of()
@@ -267,6 +287,234 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.classification.matchedUrgentKeywords[0]").value("penalties"))
                 .andExpect(jsonPath("$.notifications.destinationEmail").value("laboral@firma.test"))
                 .andExpect(jsonPath("$.notifications.preferredWindow").value("MAR 09:00-12:00"));
+    }
+
+    @Test
+    void inboundEmailCreatesConsultationThroughMockedClassifier() throws Exception {
+        mockMvc.perform(put("/api/tenants/inbound-legal/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgencyLevels": ["BAJA", "MEDIA", "ALTA"],
+                                  "routingRules": [
+                                    {
+                                      "name": "Civil",
+                                      "urgentKeywords": ["contrato"],
+                                      "consultationWindows": ["LUN 08:00-10:00"],
+                                      "destinationEmail": "civil@firma.test"
+                                    },
+                                    {
+                                      "name": "Laboral",
+                                      "urgentKeywords": ["despido"],
+                                      "consultationWindows": ["MAR 09:00-12:00", "JUE 09:00-12:00"],
+                                      "destinationEmail": "laboral@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+        when(consultationClassifierClient.classify(any())).thenReturn(new ConsultationClassifierResponse(
+                1,
+                "ignored freeform type",
+                "ALTA",
+                "Terminacion laboral",
+                "Cliente solicita asesoria por despido.",
+                "Ana Diaz",
+                "El texto menciona despido, que corresponde a la ruta laboral.",
+                0.94
+        ));
+
+        mockMvc.perform(post("/api/internal/inbound-emails")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "eventId": "evt-1",
+                                  "tenantId": "inbound-legal",
+                                  "envelopeFrom": "ana@example.com",
+                                  "headerFrom": "Ana Diaz <ana@example.com>",
+                                  "recipients": ["inbound-legal@intake.legal-gate.co"],
+                                  "subject": "Consulta por despido",
+                                  "messageId": "<msg-1@example.com>",
+                                  "plain": "Fui despedida y necesito asesoria."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("created"))
+                .andExpect(jsonPath("$.consultationId").exists());
+
+        mockMvc.perform(get("/api/admin/tenants/inbound-legal/consultations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consultations", hasSize(1)))
+                .andExpect(jsonPath("$.consultations[0].clientEmail").value("ana@example.com"))
+                .andExpect(jsonPath("$.consultations[0].clientName").value("Ana Diaz"))
+                .andExpect(jsonPath("$.consultations[0].urgency").value("ALTA"))
+                .andExpect(jsonPath("$.consultations[0].consultationType").value("Laboral"))
+                .andExpect(jsonPath("$.consultations[0].assignedLawyerEmail").value("laboral@firma.test"))
+                .andExpect(jsonPath("$.consultations[0].preferredWindow").value("MAR 09:00-12:00"))
+                .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_CLASSIFIED"))
+                .andExpect(jsonPath("$.consultations[0].classification.concept").value("Terminacion laboral"))
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false))
+                .andExpect(jsonPath("$.consultations[0].sourceEventId").value("evt-1"))
+                .andExpect(jsonPath("$.consultations[0].sourceMessageId").value("<msg-1@example.com>"));
+    }
+
+    @Test
+    void invalidClassifierRouteOrUrgencyFallsBackToManualReview() throws Exception {
+        mockMvc.perform(put("/api/tenants/invalid-classifier/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgencyLevels": ["NORMAL", "URGENT"],
+                                  "routingRules": [
+                                    {
+                                      "name": "Primary",
+                                      "urgentKeywords": [],
+                                      "consultationWindows": ["LUN 08:00-10:00"],
+                                      "destinationEmail": "primary@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+        when(consultationClassifierClient.classify(any())).thenReturn(new ConsultationClassifierResponse(
+                7,
+                "Primary",
+                "CRITICAL",
+                "General",
+                "Summary",
+                "Client",
+                "Invalid values",
+                0.7
+        ));
+
+        mockMvc.perform(post("/api/internal/inbound-emails")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "eventId": "evt-invalid",
+                                  "tenantId": "invalid-classifier",
+                                  "envelopeFrom": "client@example.com",
+                                  "subject": "Consulta",
+                                  "messageId": "<invalid-response@example.com>",
+                                  "plain": "Necesito asesoria."
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/tenants/invalid-classifier/consultations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consultations[0].urgency").value("NORMAL"))
+                .andExpect(jsonPath("$.consultations[0].consultationType").value("Primary"))
+                .andExpect(jsonPath("$.consultations[0].assignedLawyerEmail").value("primary@firma.test"))
+                .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_INVALID_RESPONSE"))
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false));
+    }
+
+    @Test
+    void classifierTimeoutCreatesFallbackWithoutQueuedSideEffects() throws Exception {
+        when(consultationClassifierClient.classify(any()))
+                .thenThrow(new ClassifierUnavailableException("timeout"));
+
+        mockMvc.perform(post("/api/internal/inbound-emails")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "eventId": "evt-timeout",
+                                  "tenantId": "timeout-legal",
+                                  "envelopeFrom": "cliente@example.com",
+                                  "headerFrom": "Cliente <cliente@example.com>",
+                                  "subject": "Consulta",
+                                  "messageId": "<timeout@example.com>",
+                                  "plain": "Necesito asesoria urgente."
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/tenants/timeout-legal/consultations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consultations", hasSize(1)))
+                .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_FAILED"))
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false));
+    }
+
+    @Test
+    void duplicateSourceMessageIdDoesNotCreateDuplicateConsultations() throws Exception {
+        when(consultationClassifierClient.classify(any())).thenReturn(new ConsultationClassifierResponse(
+                0,
+                "Default intake route",
+                "NORMAL",
+                "General",
+                "Summary",
+                "Client",
+                "Route 0",
+                0.8
+        ));
+        String payload = """
+                {
+                  "eventId": "evt-duplicate",
+                  "tenantId": "duplicate-legal",
+                  "envelopeFrom": "client@example.com",
+                  "subject": "Consulta",
+                  "messageId": "<duplicate@example.com>",
+                  "plain": "Necesito asesoria."
+                }
+                """;
+
+        mockMvc.perform(post("/api/internal/inbound-emails")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/internal/inbound-emails")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/tenants/duplicate-legal/consultations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consultations", hasSize(1)));
+    }
+
+    @Test
+    void settingsValidationAcceptsTenantUrgencyEnumsAndRejectsBlankOrDuplicateLists() throws Exception {
+        mockMvc.perform(put("/api/tenants/custom-urgency/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgencyLevels": ["BAJA", "MEDIA", "ALTA"],
+                                  "routingRules": [
+                                    {
+                                      "name": "General",
+                                      "urgentKeywords": [],
+                                      "consultationWindows": [],
+                                      "destinationEmail": "general@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.urgencyLevels[0]").value("BAJA"))
+                .andExpect(jsonPath("$.urgencyLevels[2]").value("ALTA"));
+
+        mockMvc.perform(put("/api/tenants/custom-urgency/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgencyLevels": ["BAJA", "BAJA"],
+                                  "routingRules": [
+                                    {
+                                      "name": "General",
+                                      "urgentKeywords": [],
+                                      "consultationWindows": [],
+                                      "destinationEmail": "general@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_urgency_levels"));
     }
 
     @Test

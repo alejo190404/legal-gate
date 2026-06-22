@@ -237,7 +237,7 @@
 
         <section id="dashboard" class="metric-grid" aria-label="Resumen del intake">
           <article class="metric-card"><span>Total</span><strong>{{ totalConsultations() }}</strong><small>{{ totalConsultations() }} consultas cargadas</small></article>
-          <article class="metric-card is-urgent"><span>Urgentes</span><strong>{{ urgentConsultations() }}</strong><small>Por palabras clave del tenant</small></article>
+          <article class="metric-card is-urgent"><span>Urgentes</span><strong>{{ urgentConsultations() }}</strong><small>Ultimo nivel configurado</small></article>
           <article class="metric-card"><span>Email intake</span><strong>{{ configuredIntakeEmail() }}</strong><small>Entrada principal</small></article>
           <article class="metric-card"><span>Último caso</span>@if (latestConsultation(); as latest) {<strong>{{ latest.clientName }}</strong><small>{{ formatDate(latest.createdAt) }}</small>} @else {<strong>—</strong><small>Sin consultas</small>}</article>
         </section>
@@ -258,11 +258,14 @@
             } @else {
               <div class="case-list">
                 @for (consultation of consultations(); track consultation.id) {
-                  <article class="case-card" [class.is-urgent]="consultation.urgency === 'URGENT'">
+                  <article class="case-card" [class.is-urgent]="isHighestUrgency(consultation)">
                     <header><div><strong>{{ consultation.clientName }}</strong><span>{{ consultation.clientEmail }}</span></div><em>{{ consultation.urgency }}</em></header>
                     <p>{{ consultation.summary }}</p>
                     <dl>
                       <div><dt>Estado</dt><dd>{{ consultation.status }}</dd></div>
+                      <div><dt>Tipo</dt><dd>{{ consultation.consultationType || 'Por definir' }}</dd></div>
+                      <div><dt>Abogado</dt><dd>{{ consultation.assignedLawyerEmail || 'Por definir' }}</dd></div>
+                      <div><dt>Concepto</dt><dd>{{ consultation.classification.concept || 'Por definir' }}</dd></div>
                       <div><dt>Clasificación</dt><dd>{{ consultation.classification.label }}</dd></div>
                       <div><dt>Ventana</dt><dd>{{ consultation.preferredWindow || 'Por definir' }}</dd></div>
                       <div><dt>Creada</dt><dd>{{ formatDate(consultation.createdAt) }}</dd></div>
@@ -315,6 +318,16 @@
                 @if (copyStatus()) {
                   <em>{{ copyStatus() }}</em>
                 }
+              </div>
+
+              <div class="urgency-levels-editor">
+                <label for="urgencyLevels">Niveles de urgencia</label>
+                <input
+                  id="urgencyLevels"
+                  name="urgencyLevels"
+                  [(ngModel)]="settingsForm.urgencyLevels"
+                  placeholder="NORMAL, URGENT"
+                />
               </div>
 
               <div class="routing-rules">

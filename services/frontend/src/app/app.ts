@@ -9,7 +9,9 @@ type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion';
 interface ClassificationResult {
   label: string;
   matchedUrgentKeywords: string[];
+  concept: string | null;
   explanation: string;
+  confidence: number | null;
 }
 
 interface NotificationStatus {
@@ -28,8 +30,12 @@ interface Consultation {
   preferredWindow: string | null;
   status: string;
   urgency: 'NORMAL' | 'URGENT' | string;
+  consultationType: string | null;
+  assignedLawyerEmail: string | null;
   classification: ClassificationResult;
   notifications: NotificationStatus;
+  sourceEventId: string | null;
+  sourceMessageId: string | null;
   createdAt: string;
 }
 
@@ -42,6 +48,7 @@ interface TenantSettingsResponse {
   tenantId: string;
   urgentKeywords: string[];
   consultationWindows: string[];
+  urgencyLevels: string[];
   destinationEmail: string | null;
   intakeEmail: string | null;
   routingRules: TenantRoutingRule[];
@@ -73,6 +80,7 @@ interface RegisterForm {
 }
 
 interface TenantSettingsForm {
+  urgencyLevels: string;
   routingRules: TenantRoutingRuleForm[];
 }
 
@@ -139,6 +147,7 @@ export class App {
   };
 
   readonly settingsForm: TenantSettingsForm = {
+    urgencyLevels: 'NORMAL, URGENT',
     routingRules: [
       {
         name: 'Default intake route',
@@ -151,7 +160,7 @@ export class App {
 
   readonly totalConsultations = computed(() => this.consultations().length);
   readonly urgentConsultations = computed(
-    () => this.consultations().filter((consultation) => consultation.urgency === 'URGENT').length,
+    () => this.consultations().filter((consultation) => this.isHighestUrgency(consultation)).length,
   );
   readonly queuedNotifications = computed(
     () =>
@@ -379,9 +388,15 @@ export class App {
       consultationWindows: this.csvValues(rule.consultationWindows),
       destinationEmail: rule.destinationEmail.trim().toLowerCase(),
     }));
+    const urgencyLevels = this.csvValues(this.settingsForm.urgencyLevels);
 
     if (!this.settingsLoaded() || !this.hasCanonicalIntakeEmail()) {
       this.settingsErrorMessage.set('Espera a que cargue el email LegalGate de intake.');
+      return;
+    }
+
+    if (!urgencyLevels.length || urgencyLevels.length !== new Set(urgencyLevels).size) {
+      this.settingsErrorMessage.set('Configura niveles de urgencia sin vacios ni duplicados.');
       return;
     }
 
@@ -397,6 +412,7 @@ export class App {
     this.settingsErrorMessage.set('');
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
+        urgencyLevels,
         routingRules,
       })
       .subscribe({
@@ -504,7 +520,12 @@ export class App {
   }
 
   urgencyLabel(consultation: Consultation): string {
-    return consultation.urgency === 'URGENT' ? 'Urgente' : 'Normal';
+    return consultation.urgency;
+  }
+
+  isHighestUrgency(consultation: Consultation): boolean {
+    const levels = this.tenantSettings()?.urgencyLevels ?? ['NORMAL', 'URGENT'];
+    return consultation.urgency === levels[levels.length - 1];
   }
 
   formatDate(value: string): string {
@@ -531,6 +552,11 @@ export class App {
   }
 
   private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
+    this.settingsForm.urgencyLevels = (settings.urgencyLevels?.length
+      ? settings.urgencyLevels
+      : ['NORMAL', 'URGENT']
+    ).join(', ');
+
     const rules =
       settings.routingRules?.length
         ? settings.routingRules

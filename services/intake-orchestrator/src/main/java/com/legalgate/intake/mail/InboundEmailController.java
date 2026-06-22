@@ -1,5 +1,7 @@
 package com.legalgate.intake.mail;
 
+import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.service.IntakeService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -18,6 +20,12 @@ class InboundEmailController {
 
     private static final Logger log = LoggerFactory.getLogger(InboundEmailController.class);
 
+    private final IntakeService intakeService;
+
+    InboundEmailController(IntakeService intakeService) {
+        this.intakeService = intakeService;
+    }
+
     @PostMapping
     ResponseEntity<Map<String, Object>> receive(@RequestBody InboundEmailReceived event) {
         validate(event);
@@ -28,11 +36,13 @@ class InboundEmailController {
                 event.envelopeFrom(),
                 event.subject()
         );
+        ConsultationResponse consultation = intakeService.createConsultationFromInboundEmail(event);
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", "received");
+        response.put("status", "created");
         response.put("eventId", event.eventId());
         response.put("tenantId", event.tenantId());
+        response.put("consultationId", consultation.id());
         return ResponseEntity.ok(response);
     }
 

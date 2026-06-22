@@ -15,6 +15,10 @@ legalgate:
     persistence: ${LEGALGATE_INTAKE_PERSISTENCE:memory}
     seed-demo-data: ${LEGALGATE_SEED_DEMO_DATA:false}
     email-domain: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:intake.legal-gate.co}
+    consultation-classifier-url: ${LEGALGATE_CONSULTATION_CLASSIFIER_URL:}
+    consultation-classifier-timeout: ${LEGALGATE_CONSULTATION_CLASSIFIER_TIMEOUT:3s}
+    consultation-classifier-prompt-version: ${LEGALGATE_CONSULTATION_CLASSIFIER_PROMPT_VERSION:consultation-classifier-v1}
+    consultation-classifier-system-prompt: ${LEGALGATE_CONSULTATION_CLASSIFIER_SYSTEM_PROMPT:You classify inbound legal consultation emails for a Colombian law firm. Select exactly one provided routeIndex and exactly one tenant urgency level. Keep summaries concise, extract a short legal concept, and explain the routing decision.}
 
 server:
   port: ${PORT:8081}

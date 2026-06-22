@@ -1,11 +1,16 @@
 package com.legalgate.intake.service;
 
+import com.legalgate.intake.classifier.ClassifierUnavailableException;
+import com.legalgate.intake.classifier.ConsultationClassifierClient;
+import com.legalgate.intake.classifier.ConsultationClassifierRequest;
+import com.legalgate.intake.classifier.ConsultationClassifierResponse;
 import com.legalgate.intake.model.ClassificationResult;
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.CreateConsultationRequest;
 import com.legalgate.intake.model.NotificationStatus;
 import com.legalgate.intake.config.IntakeProperties;
+import com.legalgate.intake.mail.InboundEmailReceived;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.TenantSettingsResponse;
@@ -13,9 +18,14 @@ import com.legalgate.intake.repository.IntakeRepository;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -29,11 +39,15 @@ public class IntakeService {
             List.of(),
             null
     );
+    private static final List<String> DEFAULT_URGENCY_LEVELS = List.of("NORMAL", "URGENT");
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
 
     private static final TenantSettingsResponse DEFAULT_SETTINGS = new TenantSettingsResponse(
             "default",
             DEFAULT_ROUTING_RULE.urgentKeywords(),
             DEFAULT_ROUTING_RULE.consultationWindows(),
+            DEFAULT_URGENCY_LEVELS,
             DEFAULT_ROUTING_RULE.destinationEmail(),
             null,
             List.of(DEFAULT_ROUTING_RULE)
@@ -41,19 +55,27 @@ public class IntakeService {
 
     private final IntakeRepository intakeRepository;
     private final IntakeProperties intakeProperties;
+    private final ConsultationClassifierClient consultationClassifierClient;
 
-    public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties) {
+    public IntakeService(
+            IntakeRepository intakeRepository,
+            IntakeProperties intakeProperties,
+            ConsultationClassifierClient consultationClassifierClient
+    ) {
         this.intakeRepository = intakeRepository;
         this.intakeProperties = intakeProperties;
+        this.consultationClassifierClient = consultationClassifierClient;
     }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
         List<TenantRoutingRule> routingRules = routingRulesFrom(request);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
+        List<String> urgencyLevels = sanitizeUrgencyLevels(request.urgencyLevels());
         TenantSettingsResponse settings = new TenantSettingsResponse(
                 tenantId,
                 primaryRule.urgentKeywords(),
                 primaryRule.consultationWindows(),
+                urgencyLevels,
                 primaryRule.destinationEmail(),
                 intakeProperties.canonicalIntakeEmail(tenantId),
                 routingRules
@@ -70,11 +92,14 @@ public class IntakeService {
         TenantRoutingRule routingRule = routingRuleForSummary(request.summary(), routingRulesFor(settings));
         List<String> matchedKeywords = matchUrgentKeywords(request.summary(), routingRule.urgentKeywords());
         String preferredWindow = preferredWindowFor(request.preferredWindow(), routingRule.consultationWindows());
-        String urgency = matchedKeywords.isEmpty() ? "NORMAL" : "URGENT";
+        List<String> urgencyLevels = urgencyLevelsFor(settings);
+        String urgency = matchedKeywords.isEmpty() ? urgencyLevels.get(0) : urgencyLevels.get(urgencyLevels.size() - 1);
         ClassificationResult classification = new ClassificationResult(
                 "MANUAL_REVIEW",
                 matchedKeywords,
-                "Pending LLM classification; routed to " + routingRule.name() + " for lawyer review."
+                null,
+                "Pending LLM classification; routed to " + routingRule.name() + " for lawyer review.",
+                null
         );
         NotificationStatus notifications = new NotificationStatus(
                 true,
@@ -91,11 +116,71 @@ public class IntakeService {
                 preferredWindow,
                 "RECEIVED",
                 urgency,
+                routingRule.name(),
+                routingRule.destinationEmail(),
                 classification,
                 notifications,
+                null,
+                null,
                 Instant.now()
         );
         return intakeRepository.saveConsultation(tenantId, consultation);
+    }
+
+    public ConsultationResponse createConsultationFromInboundEmail(InboundEmailReceived event) {
+        String sourceMessageId = sanitizeTraceValue(event.messageId());
+        if (sourceMessageId != null) {
+            Optional<ConsultationResponse> existing =
+                    intakeRepository.consultationForSourceMessageId(event.tenantId(), sourceMessageId);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+        }
+
+        TenantSettingsResponse settings = settingsFor(event.tenantId());
+        List<TenantRoutingRule> routingRules = routingRulesFor(settings);
+        List<String> urgencyLevels = urgencyLevelsFor(settings);
+        ConsultationClassifierResponse classifierResponse;
+        try {
+            classifierResponse = consultationClassifierClient.classify(
+                    classifierRequestFor(event, routingRules, urgencyLevels)
+            );
+        } catch (ClassifierUnavailableException ex) {
+            return saveFallbackInboundConsultation(event, routingRules, urgencyLevels, "LLM_FAILED");
+        }
+
+        if (!isValidClassifierResponse(classifierResponse, routingRules, urgencyLevels)) {
+            return saveFallbackInboundConsultation(event, routingRules, urgencyLevels, "LLM_INVALID_RESPONSE");
+        }
+
+        TenantRoutingRule selectedRoute = routingRules.get(classifierResponse.routeIndex());
+        String summary = firstNonBlank(classifierResponse.summary(), event.plain(), event.subject(), "Inbound email received.");
+        String clientName = firstNonBlank(classifierResponse.clientName(), senderDisplayName(event.headerFrom()), "Unknown client");
+        String preferredWindow = firstConfiguredWindow(selectedRoute.consultationWindows());
+        ClassificationResult classification = new ClassificationResult(
+                "LLM_CLASSIFIED",
+                List.of(),
+                sanitizeNullable(classifierResponse.concept()),
+                sanitizeNullable(classifierResponse.explanation()),
+                classifierResponse.confidence()
+        );
+        return intakeRepository.saveConsultation(event.tenantId(), new ConsultationResponse(
+                UUID.randomUUID().toString(),
+                event.tenantId(),
+                clientName,
+                clientEmailFor(event),
+                summary.trim(),
+                preferredWindow,
+                "RECEIVED",
+                classifierResponse.urgency().trim(),
+                selectedRoute.name(),
+                selectedRoute.destinationEmail(),
+                classification,
+                new NotificationStatus(false, false, selectedRoute.destinationEmail(), preferredWindow),
+                sanitizeTraceValue(event.eventId()),
+                sourceMessageId,
+                Instant.now()
+        ));
     }
 
     public ConsultationListResponse consultationsForTenant(String tenantId) {
@@ -104,21 +189,106 @@ public class IntakeService {
         return intakeRepository.consultationsForTenant(tenantId);
     }
 
+    private ConsultationResponse saveFallbackInboundConsultation(
+            InboundEmailReceived event,
+            List<TenantRoutingRule> routingRules,
+            List<String> urgencyLevels,
+            String label
+    ) {
+        TenantRoutingRule primaryRoute = primaryRoutingRule(routingRules);
+        String preferredWindow = firstConfiguredWindow(primaryRoute.consultationWindows());
+        String summary = firstNonBlank(event.plain(), event.subject(), event.html(), "Inbound email received.");
+        ClassificationResult classification = new ClassificationResult(
+                label,
+                List.of(),
+                null,
+                "Gemini classification was not available or could not be validated; routed to primary route for manual review.",
+                null
+        );
+        return intakeRepository.saveConsultation(event.tenantId(), new ConsultationResponse(
+                UUID.randomUUID().toString(),
+                event.tenantId(),
+                firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
+                clientEmailFor(event),
+                summary.trim(),
+                preferredWindow,
+                "RECEIVED",
+                urgencyLevels.get(0),
+                primaryRoute.name(),
+                primaryRoute.destinationEmail(),
+                classification,
+                new NotificationStatus(false, false, primaryRoute.destinationEmail(), preferredWindow),
+                sanitizeTraceValue(event.eventId()),
+                sanitizeTraceValue(event.messageId()),
+                Instant.now()
+        ));
+    }
+
+    private ConsultationClassifierRequest classifierRequestFor(
+            InboundEmailReceived event,
+            List<TenantRoutingRule> routingRules,
+            List<String> urgencyLevels
+    ) {
+        List<ConsultationClassifierRequest.Route> routes = new ArrayList<>();
+        for (int index = 0; index < routingRules.size(); index++) {
+            TenantRoutingRule rule = routingRules.get(index);
+            routes.add(new ConsultationClassifierRequest.Route(
+                    index,
+                    rule.name(),
+                    rule.destinationEmail(),
+                    rule.urgentKeywords(),
+                    rule.consultationWindows()
+            ));
+        }
+        return new ConsultationClassifierRequest(
+                new ConsultationClassifierRequest.InboundEmail(
+                        event.subject(),
+                        event.plain(),
+                        event.html(),
+                        firstNonBlank(event.headerFrom(), event.envelopeFrom(), clientEmailFor(event)),
+                        event.recipients() == null ? List.of() : event.recipients(),
+                        event.messageId()
+                ),
+                routes,
+                urgencyLevels,
+                intakeProperties.consultationClassifierSystemPrompt(),
+                intakeProperties.consultationClassifierPromptVersion()
+        );
+    }
+
+    private boolean isValidClassifierResponse(
+            ConsultationClassifierResponse response,
+            List<TenantRoutingRule> routingRules,
+            List<String> urgencyLevels
+    ) {
+        if (response == null || response.routeIndex() == null || response.urgency() == null) {
+            return false;
+        }
+        return response.routeIndex() >= 0
+                && response.routeIndex() < routingRules.size()
+                && urgencyLevels.contains(response.urgency().trim());
+    }
+
     private TenantSettingsResponse settingsFor(String tenantId) {
         TenantSettingsResponse defaults = new TenantSettingsResponse(
                 tenantId,
                 DEFAULT_SETTINGS.urgentKeywords(),
                 DEFAULT_SETTINGS.consultationWindows(),
+                DEFAULT_SETTINGS.urgencyLevels(),
                 DEFAULT_SETTINGS.destinationEmail(),
                 intakeProperties.canonicalIntakeEmail(tenantId),
                 DEFAULT_SETTINGS.routingRules()
         );
         TenantSettingsResponse settings = intakeRepository.settingsFor(tenantId, defaults);
-        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
+        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()
+                || settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()) {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(),
                     settings.urgentKeywords(),
                     settings.consultationWindows(),
+                    settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()
+                            ? DEFAULT_URGENCY_LEVELS
+                            : settings.urgencyLevels(),
                     settings.destinationEmail(),
                     intakeProperties.canonicalIntakeEmail(tenantId),
                     settings.routingRules()
@@ -189,10 +359,21 @@ public class IntakeService {
         ));
     }
 
+    private List<String> urgencyLevelsFor(TenantSettingsResponse settings) {
+        if (settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()) {
+            return DEFAULT_URGENCY_LEVELS;
+        }
+        return settings.urgencyLevels();
+    }
+
     private String preferredWindowFor(String requestedWindow, List<String> configuredWindows) {
         if (requestedWindow != null && !requestedWindow.isBlank()) {
             return requestedWindow.trim();
         }
+        return configuredWindows == null || configuredWindows.isEmpty() ? null : configuredWindows.get(0);
+    }
+
+    private String firstConfiguredWindow(List<String> configuredWindows) {
         return configuredWindows == null || configuredWindows.isEmpty() ? null : configuredWindows.get(0);
     }
 
@@ -230,6 +411,71 @@ public class IntakeService {
                 .filter(value -> !value.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private List<String> sanitizeUrgencyLevels(List<String> values) {
+        if (values == null) {
+            return DEFAULT_URGENCY_LEVELS;
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value == null || value.trim().isBlank() || !seen.add(value.trim())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_urgency_levels");
+            }
+        }
+        if (seen.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_urgency_levels");
+        }
+        return List.copyOf(seen);
+    }
+
+    private String clientEmailFor(InboundEmailReceived event) {
+        return firstEmail(event.headerFrom())
+                .or(() -> firstEmail(event.envelopeFrom()))
+                .orElse("unknown@example.invalid")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private Optional<String> firstEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        Matcher matcher = EMAIL_PATTERN.matcher(value);
+        if (matcher.find()) {
+            return Optional.of(matcher.group().trim());
+        }
+        return Optional.empty();
+    }
+
+    private String senderDisplayName(String headerFrom) {
+        if (headerFrom == null || headerFrom.isBlank()) {
+            return null;
+        }
+        String withoutEmail = headerFrom.replaceAll("<[^>]+>", "").trim();
+        if (withoutEmail.isBlank() || withoutEmail.contains("@")) {
+            return null;
+        }
+        return withoutEmail.replaceAll("^\"|\"$", "").trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String sanitizeTraceValue(String value) {
+        return sanitizeNullable(value);
+    }
+
+    private String sanitizeNullable(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private String normalize(String value) {

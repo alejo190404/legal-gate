@@ -2,7 +2,14 @@ package com.legalgate.intake.mail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.legalgate.intake.model.ClassificationResult;
+import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.NotificationStatus;
+import com.legalgate.intake.service.IntakeService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 class InboundEmailControllerTests {
 
-    private final InboundEmailController controller = new InboundEmailController();
+    private final IntakeService intakeService = mock(IntakeService.class);
+    private final InboundEmailController controller = new InboundEmailController(intakeService);
 
     @Test
     void acceptsValidInboundEmailEvents() {
@@ -30,14 +38,33 @@ class InboundEmailControllerTests {
                 "<p>Necesito orientacion.</p>",
                 Instant.now()
         );
+        when(intakeService.createConsultationFromInboundEmail(event)).thenReturn(new ConsultationResponse(
+                "consultation-1",
+                "firma-demo",
+                "Client",
+                "client@example.com",
+                "Necesito orientacion.",
+                null,
+                "RECEIVED",
+                "NORMAL",
+                "Default intake route",
+                "intake@firma.test",
+                new ClassificationResult("LLM_CLASSIFIED", List.of(), "General", "Routed.", 0.8),
+                new NotificationStatus(false, false, "intake@firma.test", null),
+                "event-1",
+                "<message@example.com>",
+                Instant.now()
+        ));
 
         ResponseEntity<Map<String, Object>> response = controller.receive(event);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody())
-                .containsEntry("status", "received")
+                .containsEntry("status", "created")
                 .containsEntry("eventId", "event-1")
-                .containsEntry("tenantId", "firma-demo");
+                .containsEntry("tenantId", "firma-demo")
+                .containsEntry("consultationId", "consultation-1");
+        verify(intakeService).createConsultationFromInboundEmail(event);
     }
 
     @Test

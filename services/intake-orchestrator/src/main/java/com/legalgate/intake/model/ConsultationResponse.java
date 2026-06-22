@@ -11,8 +11,12 @@ public record ConsultationResponse(
         String preferredWindow,
         String status,
         String urgency,
+        String consultationType,
+        String assignedLawyerEmail,
         ClassificationResult classification,
         NotificationStatus notifications,
+        String sourceEventId,
+        String sourceMessageId,
         Instant createdAt
 ) {
 }

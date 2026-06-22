@@ -33,13 +33,34 @@ services:
       SPRING_FLYWAY_ENABLED: ${SPRING_FLYWAY_ENABLED:-true}
       SPRING_FLYWAY_VALIDATE_ON_MIGRATE: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:-false}
       LEGALGATE_INTAKE_EMAIL_DOMAIN: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:-intake.legal-gate.co}
+      LEGALGATE_CONSULTATION_CLASSIFIER_URL: ${LEGALGATE_CONSULTATION_CLASSIFIER_URL:-http://consultation-classifier:8083}
+      LEGALGATE_CONSULTATION_CLASSIFIER_TIMEOUT: ${LEGALGATE_CONSULTATION_CLASSIFIER_TIMEOUT:-3s}
     ports:
       - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
+      consultation-classifier:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  consultation-classifier:
+    build:
+      context: .
+      dockerfile: services/consultation-classifier/Dockerfile
+    environment:
+      PORT: 8083
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.2}
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health', timeout=2).read()"]
       interval: 10s
       timeout: 3s
       retries: 5

@@ -9,7 +9,15 @@ class IntakePropertiesTests {
 
     @Test
     void canonicalIntakeEmailUsesNormalizedConfiguredDomain() {
-        IntakeProperties properties = new IntakeProperties("memory", false, " Intake.Legal-Gate.CO ");
+        IntakeProperties properties = new IntakeProperties(
+                "memory",
+                false,
+                " Intake.Legal-Gate.CO ",
+                null,
+                null,
+                null,
+                null
+        );
 
         assertThat(properties.canonicalIntakeEmail("firma-demo"))
                 .isEqualTo("firma-demo@intake.legal-gate.co");
@@ -17,7 +25,15 @@ class IntakePropertiesTests {
 
     @Test
     void rejectsLocalIntakeEmailDomain() {
-        assertThatThrownBy(() -> new IntakeProperties("memory", false, "intake.legal-gate.local"))
+        assertThatThrownBy(() -> new IntakeProperties(
+                "memory",
+                false,
+                "intake.legal-gate.local",
+                null,
+                null,
+                null,
+                null
+        ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("must not use .local");
     }

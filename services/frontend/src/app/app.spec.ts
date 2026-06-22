@@ -17,11 +17,15 @@ const demoResponse = {
       preferredWindow: 'Jueves 2:00 p. m.',
       status: 'RECEIVED',
       urgency: 'URGENT',
+      consultationType: 'Laboral',
+      assignedLawyerEmail: 'laboral@firma.test',
       classification: {
         label: 'MANUAL_REVIEW',
         matchedUrgentKeywords: ['audiencia'],
+        concept: 'Audiencia laboral',
         explanation:
           'Pending LLM classification; plain-language consultation accepted for lawyer review.',
+        confidence: null,
       },
       notifications: {
         emailQueued: true,
@@ -29,6 +33,8 @@ const demoResponse = {
         destinationEmail: 'intake@firma.test',
         preferredWindow: 'Jueves 2:00 p. m.',
       },
+      sourceEventId: null,
+      sourceMessageId: null,
       createdAt: '2026-06-03T15:00:00Z',
     },
   ],
@@ -45,6 +51,7 @@ const demoSettings = {
   tenantId: 'firma-demo',
   urgentKeywords: ['audiencia', 'captura'],
   consultationWindows: ['LUN-VIE 09:00-13:00'],
+  urgencyLevels: ['NORMAL', 'URGENT'],
   destinationEmail: 'notificaciones@firma.test',
   intakeEmail: 'firma-demo@intake.legal-gate.co',
   routingRules: [
@@ -182,6 +189,9 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Sesi');
     expect(compiled.textContent).toContain('Maria Perez');
     expect(compiled.textContent).toContain('audiencia');
+    expect(compiled.textContent).toContain('Laboral');
+    expect(compiled.textContent).toContain('laboral@firma.test');
+    expect(compiled.textContent).toContain('Audiencia laboral');
     expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
     expect(compiled.textContent).toContain('1 consultas');
     expect(compiled.textContent).not.toContain('API proxy');
@@ -287,6 +297,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'Notificaciones@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
     fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
+    fixture.componentInstance.settingsForm.urgencyLevels = 'NORMAL, URGENT, CRITICA';
     fixture.componentInstance.addRoutingRule();
     fixture.componentInstance.settingsForm.routingRules[1].name = 'Labor penalties';
     fixture.componentInstance.settingsForm.routingRules[1].destinationEmail = 'Laboral@Firma.test ';
@@ -297,6 +308,7 @@ describe('App landing to login to consultation inbox flow', () => {
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.method).toBe('PUT');
     expect(settingsRequest.request.body).toEqual({
+      urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
       routingRules: [
         {
           name: 'Default intake route',
@@ -316,6 +328,7 @@ describe('App landing to login to consultation inbox flow', () => {
       ...demoSettings,
       urgentKeywords: ['audiencia', 'tutela'],
       consultationWindows: ['LUN-VIE 09:00-13:00'],
+      urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
       destinationEmail: 'notificaciones@firma.test',
       intakeEmail: 'firma-demo@intake.legal-gate.co',
       routingRules: [
