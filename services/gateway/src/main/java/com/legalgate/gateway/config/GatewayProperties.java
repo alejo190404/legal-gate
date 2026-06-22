@@ -1,10 +1,12 @@
 package com.legalgate.gateway.config;
 
-import com.legalgate.gateway.auth.AuthMode;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import com.legalgate.gateway.auth.AuthMode;
 
 @ConfigurationProperties(prefix = "legalgate.gateway")
 public class GatewayProperties {
@@ -96,7 +98,7 @@ public class GatewayProperties {
          */
         private List<String> allowedOriginPatterns = new ArrayList<>(List.of(
                 "https://*.vercel.app",
-                "https://*.ngrok-free.dev"
+                "https://*.legal-gate.co"
         ));
 
         public List<String> getAllowedOrigins() {
