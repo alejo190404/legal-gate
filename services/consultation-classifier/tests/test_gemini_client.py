@@ -110,6 +110,28 @@ def test_models_api_uses_configured_temperature(monkeypatch: pytest.MonkeyPatch)
     assert fake_client.models.last_config.temperature == 0.05
 
 
+def test_models_api_strips_unsupported_schema_fields() -> None:
+    payload = {
+        "routeIndex": 0,
+        "consultationType": "Laboral",
+        "urgency": "NORMAL",
+        "concept": "Contrato",
+        "summary": "Cliente necesita revisar un contrato.",
+        "clientName": "Ana",
+        "explanation": "La ruta laboral es la mejor coincidencia.",
+        "confidence": 0.82,
+    }
+    fake_client = FakeModelsClient(json.dumps(payload))
+    classifier = GeminiConsultationClassifier()
+    classifier.client = fake_client
+
+    classifier.classify(request())
+
+    schema = fake_client.models.last_config.response_schema
+    assert "additionalProperties" not in json.dumps(schema)
+    assert "additional_properties" not in json.dumps(schema)
+
+
 def test_logs_model_call_and_success(caplog: pytest.LogCaptureFixture) -> None:
     payload = {
         "routeIndex": 0,

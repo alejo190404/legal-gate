@@ -141,7 +141,7 @@ class GeminiConsultationClassifier:
             return json.dumps(result)
 
     def _generate_structured_content(self, prompt: str) -> Any:
-        schema = ConsultationClassificationResponse.model_json_schema()
+        schema = self._gemini_response_schema()
         if hasattr(self.client, "interactions"):
             return self.client.interactions.create(
                 model=self.model,
@@ -158,6 +158,30 @@ class GeminiConsultationClassifier:
                 temperature=self.temperature,
             ),
         )
+
+    def _gemini_response_schema(self) -> dict[str, Any]:
+        return self._remove_unsupported_schema_fields(
+            ConsultationClassificationResponse.model_json_schema()
+        )
+
+    def _remove_unsupported_schema_fields(self, value: Any) -> Any:
+        unsupported_keys = {
+            "$defs",
+            "$schema",
+            "additionalProperties",
+            "default",
+            "examples",
+            "title",
+        }
+        if isinstance(value, dict):
+            return {
+                key: self._remove_unsupported_schema_fields(item)
+                for key, item in value.items()
+                if key not in unsupported_keys
+            }
+        if isinstance(value, list):
+            return [self._remove_unsupported_schema_fields(item) for item in value]
+        return value
 
     def _temperature_from_env(self) -> float:
         raw_value = os.getenv("GEMINI_TEMPERATURE", "0.2")
