@@ -70,10 +70,12 @@ Deploy `services/consultation-classifier/Dockerfile` as a private/internal Rende
 - `GEMINI_API_KEY=<google-ai-api-key>`
 - `GEMINI_MODEL=gemini-3.5-flash`
 - `GEMINI_TEMPERATURE=0.2`
+- `CLASSIFIER_LOG_PAYLOADS=false`
+- `CLASSIFIER_LOG_PREVIEW_CHARS=500`
 
 Health check path: `/health`.
 
-The service returns typed `503 gemini_unavailable` or `502 gemini_invalid_response` responses. Intake treats those as fallback conditions and still creates a manual-review consultation.
+The service logs every Gemini call attempt with model, temperature, prompt version, message id, sender, recipients, subject preview, body lengths, urgency levels, and route configuration. Set `CLASSIFIER_LOG_PAYLOADS=true` only when you intentionally want prompt and raw model response previews in logs; keep it `false` for production unless you are debugging sensitive intake content. The service returns typed `503 gemini_unavailable` or `502 gemini_invalid_response` responses. Intake treats those as fallback conditions and still creates a manual-review consultation.
 
 ### Render mail-ingress
 

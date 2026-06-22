@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pytest
 from google.genai import types
@@ -107,6 +108,28 @@ def test_models_api_uses_configured_temperature(monkeypatch: pytest.MonkeyPatch)
 
     assert isinstance(fake_client.models.last_config, types.GenerateContentConfig)
     assert fake_client.models.last_config.temperature == 0.05
+
+
+def test_logs_model_call_and_success(caplog: pytest.LogCaptureFixture) -> None:
+    payload = {
+        "routeIndex": 0,
+        "consultationType": "Laboral",
+        "urgency": "NORMAL",
+        "concept": "Contrato",
+        "summary": "Cliente necesita revisar un contrato.",
+        "clientName": "Ana",
+        "explanation": "La ruta laboral es la mejor coincidencia.",
+        "confidence": 0.82,
+    }
+    classifier = GeminiConsultationClassifier()
+    classifier.client = FakeModelsClient(json.dumps(payload))
+
+    with caplog.at_level(logging.INFO, logger="legalgate.consultation_classifier"):
+        classifier.classify(request())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Gemini classification call starting" in message for message in messages)
+    assert any("Gemini classification succeeded" in message for message in messages)
 
 
 def test_invalid_model_output_surfaces_typed_error() -> None:
