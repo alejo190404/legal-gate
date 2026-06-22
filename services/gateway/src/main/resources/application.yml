@@ -25,7 +25,7 @@ legalgate:
     request-timeout: ${GATEWAY_REQUEST_TIMEOUT:3s}
     auth-mode: ${LEGALGATE_AUTH_MODE:PUBLIC_PROTOTYPE}
     cors:
-      allowed-origins: ${LEGALGATE_CORS_ALLOWED_ORIGINS:http://localhost:4200}
+      allowed-origins: ${LEGALGATE_CORS_ALLOWED_ORIGINS:http://localhost:4200,https://www.legal-gate.co}
       allowed-origin-patterns: ${LEGALGATE_CORS_ALLOWED_ORIGIN_PATTERNS:https://*.vercel.app,https://www.legal-gate.co}
     backend:
       base-url: ${LEGALGATE_BACKEND_URL:}
