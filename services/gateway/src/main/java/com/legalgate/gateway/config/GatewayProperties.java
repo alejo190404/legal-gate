@@ -98,7 +98,7 @@ public class GatewayProperties {
          */
         private List<String> allowedOriginPatterns = new ArrayList<>(List.of(
                 "https://*.vercel.app",
-                "https://*.legal-gate.co"
+                "https://www.legal-gate.co"
         ));
 
         public List<String> getAllowedOrigins() {
