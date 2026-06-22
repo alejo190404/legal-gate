@@ -42,4 +42,4 @@ Smoke-test the service:
 
 The inbound email endpoint currently logs validated events only. It does not create consultations yet.
 
-Tenant settings use one tenant-wide system-owned `intakeEmail` and a `routingRules` array. The canonical address is `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}` and defaults locally to `intake.legal-gate.local`. Production should use `intake.legal-gate.co`. Each rule groups the content keywords, destination email, and consultation windows for a lawyer or team. The service still accepts the earlier flat settings payload and converts it into one default routing rule, but `PUT /settings` rejects any payload containing `intakeEmail`.
+Tenant settings use one tenant-wide system-owned `intakeEmail` and a `routingRules` array. The canonical address is `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}` and defaults to `intake.legal-gate.co`. Each rule groups the content keywords, destination email, and consultation windows for a lawyer or team. The service still accepts the earlier flat settings payload and converts it into one default routing rule, but `PUT /settings` rejects any payload containing `intakeEmail`.

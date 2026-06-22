@@ -46,7 +46,7 @@ const demoSettings = {
   urgentKeywords: ['audiencia', 'captura'],
   consultationWindows: ['LUN-VIE 09:00-13:00'],
   destinationEmail: 'notificaciones@firma.test',
-  intakeEmail: 'firma-demo@intake.legal-gate.local',
+  intakeEmail: 'firma-demo@intake.legal-gate.co',
   routingRules: [
     {
       name: 'Default intake route',
@@ -182,7 +182,7 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(compiled.textContent).toContain('Sesi');
     expect(compiled.textContent).toContain('Maria Perez');
     expect(compiled.textContent).toContain('audiencia');
-    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
     expect(compiled.textContent).toContain('1 consultas');
     expect(compiled.textContent).not.toContain('API proxy');
     expect(compiled.textContent).not.toContain('intake-orchestrator local');
@@ -282,7 +282,7 @@ describe('App landing to login to consultation inbox flow', () => {
 
     expect(compiled.textContent).toContain('Configuracion');
     expect(compiled.textContent).toContain('Email LegalGate de intake');
-    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
 
     fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'Notificaciones@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
@@ -317,7 +317,7 @@ describe('App landing to login to consultation inbox flow', () => {
       urgentKeywords: ['audiencia', 'tutela'],
       consultationWindows: ['LUN-VIE 09:00-13:00'],
       destinationEmail: 'notificaciones@firma.test',
-      intakeEmail: 'firma-demo@intake.legal-gate.local',
+      intakeEmail: 'firma-demo@intake.legal-gate.co',
       routingRules: [
         {
           name: 'Default intake route',
@@ -335,7 +335,7 @@ describe('App landing to login to consultation inbox flow', () => {
     });
     fixture.detectChanges();
 
-    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.local');
+    expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
   });
 
   it('shows configuration validation errors inside the configuration panel', () => {
@@ -380,7 +380,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.detectChanges();
 
     expect(vi.mocked(navigator.clipboard.writeText)).toHaveBeenCalledWith(
-      'firma-demo@intake.legal-gate.local',
+      'firma-demo@intake.legal-gate.co',
     );
     expect(compiled.textContent).toContain('Copiado');
   });
@@ -402,7 +402,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.detectChanges();
     expect(compiled.querySelector('[role="dialog"]')?.textContent).toContain('Reenviar o enrutar');
     expect(compiled.querySelector('[role="dialog"]')?.textContent).toContain(
-      'firma-demo@intake.legal-gate.local',
+      'firma-demo@intake.legal-gate.co',
     );
 
     compiled.querySelector<HTMLButtonElement>('[aria-label="Cerrar tutorial"]')?.click();

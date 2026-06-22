@@ -68,7 +68,7 @@ class IntakeOrchestratorApplicationTests {
 
         mockMvc.perform(get("/api/tenants/barragan-legal/settings"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.intakeEmail").value("barragan-legal@intake.legal-gate.local"));
+                .andExpect(jsonPath("$.intakeEmail").value("barragan-legal@intake.legal-gate.co"));
     }
 
     @Test
@@ -179,14 +179,14 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
                 .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
                 .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
-                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.local"))
+                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.co"))
                 .andExpect(jsonPath("$.routingRules", hasSize(1)))
                 .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("consultas@firma.test"));
 
         mockMvc.perform(get("/api/tenants/bogota-legal/settings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
-                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.local"));
+                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.co"));
     }
 
     @Test
@@ -202,11 +202,11 @@ class IntakeOrchestratorApplicationTests {
 
         mockMvc.perform(get("/api/tenants/manual-email/settings"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.local"));
+                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.co"));
 
         mockMvc.perform(get("/api/tenants/manual-email/settings"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.local"));
+                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.co"));
     }
 
     @Test

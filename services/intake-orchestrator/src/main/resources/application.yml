@@ -14,7 +14,7 @@ legalgate:
   intake:
     persistence: ${LEGALGATE_INTAKE_PERSISTENCE:memory}
     seed-demo-data: ${LEGALGATE_SEED_DEMO_DATA:false}
-    email-domain: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:intake.legal-gate.local}
+    email-domain: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:intake.legal-gate.co}
 
 server:
   port: ${PORT:8081}

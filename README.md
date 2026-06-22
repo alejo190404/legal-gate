@@ -117,7 +117,7 @@ curl -fsS -X PUT -H 'Content-Type: application/json' \
 
 curl -i -u cloudmailin-local:cloudmailin-local-password \
   -H 'Content-Type: application/json' \
-  -d '{"headers":{"from":"Cliente <cliente@example.com>","subject":"Consulta","message_id":"<local@example.com>"},"envelope":{"to":"firma-demo@intake.legal-gate.local","recipients":["firma-demo@intake.legal-gate.local"],"from":"cliente@example.com"},"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>","attachments":[]}' \
+  -d '{"headers":{"from":"Cliente <cliente@example.com>","subject":"Consulta","message_id":"<local@example.com>"},"envelope":{"to":"firma-demo@intake.legal-gate.co","recipients":["firma-demo@intake.legal-gate.co"],"from":"cliente@example.com"},"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>","attachments":[]}' \
   http://localhost:8082/webhooks/cloudmailin
 ```
 
@@ -126,7 +126,7 @@ Local MailerSend-style webhook smoke test:
 ```bash
 curl -i -H 'Content-Type: application/json' \
   -H 'X-MailerSend-Webhook-Secret: mailersend-local-secret' \
-  -d '{"type":"inbound.message","data":{"from":{"email":"cliente@example.com","name":"Cliente"},"recipients":[{"email":"firma-demo@intake.legal-gate.local"}],"subject":"Consulta","message_id":"<local-mailersend@example.com>","text":{"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>"}}}' \
+  -d '{"type":"inbound.message","data":{"from":{"email":"cliente@example.com","name":"Cliente"},"recipients":[{"email":"firma-demo@intake.legal-gate.co"}],"subject":"Consulta","message_id":"<local-mailersend@example.com>","text":{"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>"}}}' \
   http://localhost:8082/webhooks/mailersend
 ```
 
