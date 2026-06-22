@@ -190,19 +190,35 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
-    void settingsGetSelfHealsMissingOrManualIntakeEmail() throws Exception {
+    void settingsGetBackfillsMissingIntakeEmail() throws Exception {
+        intakeRepository.saveSettings("missing-email", new TenantSettingsResponse(
+                "missing-email",
+                List.of("captura"),
+                List.of(),
+                "notificaciones@firma.test",
+                null,
+                List.of()
+        ));
+
+        mockMvc.perform(get("/api/tenants/missing-email/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intakeEmail").value("missing-email@intake.legal-gate.co"));
+
+        mockMvc.perform(get("/api/tenants/missing-email/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intakeEmail").value("missing-email@intake.legal-gate.co"));
+    }
+
+    @Test
+    void settingsGetPreservesExistingIntakeEmail() throws Exception {
         intakeRepository.saveSettings("manual-email", new TenantSettingsResponse(
                 "manual-email",
                 List.of("captura"),
                 List.of(),
                 "notificaciones@firma.test",
-                "manual@firma.test",
+                "manual-email@intake.legal-gate.co",
                 List.of()
         ));
-
-        mockMvc.perform(get("/api/tenants/manual-email/settings"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.intakeEmail").value("manual-email@intake.legal-gate.co"));
 
         mockMvc.perform(get("/api/tenants/manual-email/settings"))
                 .andExpect(status().isOk())

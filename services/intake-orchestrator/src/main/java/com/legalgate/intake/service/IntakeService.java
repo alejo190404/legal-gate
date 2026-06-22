@@ -114,17 +114,16 @@ public class IntakeService {
                 DEFAULT_SETTINGS.routingRules()
         );
         TenantSettingsResponse settings = intakeRepository.settingsFor(tenantId, defaults);
-        String canonicalIntakeEmail = intakeProperties.canonicalIntakeEmail(tenantId);
-        if (!canonicalIntakeEmail.equalsIgnoreCase(settings.intakeEmail())) {
+        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(),
                     settings.urgentKeywords(),
                     settings.consultationWindows(),
                     settings.destinationEmail(),
-                    canonicalIntakeEmail,
+                    intakeProperties.canonicalIntakeEmail(tenantId),
                     settings.routingRules()
             );
-            // TODO(rollout): This GET intentionally mutates state to backfill canonical intake emails
+            // TODO(rollout): This GET mutates state only to backfill missing intake emails
             // for tenants created before system-owned intake addresses existed.
             return intakeRepository.saveSettings(tenantId, healedSettings);
         }

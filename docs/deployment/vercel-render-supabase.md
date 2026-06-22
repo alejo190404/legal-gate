@@ -119,7 +119,7 @@ RLS is enabled and forced on tenant-scoped tables. The JDBC repository sets `app
 
 `V6__add_routing_rules_to_tenant_settings.sql` adds the production-safe routing model. Existing flat settings rows are backfilled into a single `Default intake route`, preserving the old `urgent_keywords`, `consultation_windows`, and `destination_email` columns for compatibility while new clients use `routing_rules`.
 
-Canonical intake addresses are system-owned and stored in `tenant_settings.intake_email` as `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}`. The project default is `intake.legal-gate.co` so registrations match the production intake domain. During rollout, `GET /api/tenants/{tenantId}/settings` intentionally self-heals missing or manual intake emails to the canonical value, which is technical debt to backfill old tenants without a one-off migration.
+Canonical intake addresses are system-owned and stored in `tenant_settings.intake_email` as `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}`. The project default is `intake.legal-gate.co` so registrations match the production intake domain. During rollout, `GET /api/tenants/{tenantId}/settings` backfills missing intake emails to the canonical value without overwriting an existing stored address.
 
 ## WorkOS seam
 
