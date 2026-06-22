@@ -6,6 +6,7 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 
 - `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
 - `services/intake-orchestrator`: Spring Boot consultation intake service for tenant routing-rule settings, plain-language consultation creation, urgency pre-classification, and admin review.
+- `services/consultation-classifier`: Python FastAPI Gemini sidecar for structured inbound email consultation classification.
 - `services/mail-ingress`: Spring Boot CloudMailin and MailerSend webhook adapter that sends inbound email events synchronously to Intake Orchestrator over HTTP.
 - `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
 
@@ -100,11 +101,12 @@ Build and run services locally:
 
 ```bash
 cp .env.example .env
-docker compose up --build postgres intake-orchestrator mail-ingress gateway frontend
+docker compose up --build postgres consultation-classifier intake-orchestrator mail-ingress gateway frontend
 ```
 
 - Gateway: `http://localhost:8080/api/status`
 - Intake orchestrator: `http://localhost:8081/api/status`
+- Consultation classifier: `http://localhost:8083/health`
 - Mail ingress: `http://localhost:8082/actuator/health`
 - Frontend: `http://localhost:4200`
 

@@ -27,6 +27,8 @@ public interface IntakeRepository {
 
     Optional<String> tenantSlugForIntakeEmail(String intakeEmail);
 
+    Optional<ConsultationResponse> consultationForSourceMessageId(String tenantSlug, String sourceMessageId);
+
     ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation);
 
     ConsultationListResponse consultationsForTenant(String tenantSlug);

@@ -1,13 +1,18 @@
 package com.legalgate.intake.config;
 
 import java.util.Locale;
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "legalgate.intake")
 public record IntakeProperties(
         String persistence,
         boolean seedDemoData,
-        String emailDomain
+        String emailDomain,
+        String consultationClassifierUrl,
+        Duration consultationClassifierTimeout,
+        String consultationClassifierPromptVersion,
+        String consultationClassifierSystemPrompt
 ) {
     public IntakeProperties {
         if (emailDomain == null || emailDomain.isBlank()) {
@@ -18,6 +23,24 @@ public record IntakeProperties(
             throw new IllegalStateException(
                     "legalgate.intake.email-domain must not use .local; set LEGALGATE_INTAKE_EMAIL_DOMAIN=intake.legal-gate.co."
             );
+        }
+        if (consultationClassifierTimeout == null || consultationClassifierTimeout.isNegative()
+                || consultationClassifierTimeout.isZero()) {
+            consultationClassifierTimeout = Duration.ofSeconds(3);
+        }
+        if (consultationClassifierPromptVersion == null || consultationClassifierPromptVersion.isBlank()) {
+            consultationClassifierPromptVersion = "consultation-classifier-v1";
+        } else {
+            consultationClassifierPromptVersion = consultationClassifierPromptVersion.trim();
+        }
+        if (consultationClassifierSystemPrompt == null || consultationClassifierSystemPrompt.isBlank()) {
+            consultationClassifierSystemPrompt = """
+                    You classify inbound legal consultation emails for a Colombian law firm.
+                    Select exactly one provided routeIndex and exactly one tenant urgency level.
+                    Keep summaries concise, extract a short legal concept, and explain the routing decision.
+                    """.strip();
+        } else {
+            consultationClassifierSystemPrompt = consultationClassifierSystemPrompt.trim();
         }
     }
 

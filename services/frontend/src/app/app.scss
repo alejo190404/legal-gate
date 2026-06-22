@@ -1036,6 +1036,14 @@
   gap: 16px;
 }
 
+.urgency-levels-editor {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+
 .routing-rule {
   display: grid;
   gap: 12px;
@@ -1110,7 +1118,7 @@
   }
 
   dl {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin: 16px 0;
   }
@@ -1125,6 +1133,7 @@
     margin: 4px 0 0;
     font-size: 13px;
     font-weight: 700;
+    overflow-wrap: anywhere;
   }
 
   footer {

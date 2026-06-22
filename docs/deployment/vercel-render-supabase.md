@@ -5,6 +5,7 @@ This guide describes the first production-like LegalGate deployment slice:
 - Angular frontend on Vercel.
 - Spring Boot gateway on Render as the only browser-facing API facade.
 - Spring Boot intake-orchestrator on Render for intake persistence.
+- Python FastAPI consultation-classifier on Render for Gemini-based inbound email classification.
 - Spring Boot mail-ingress on Render as the CloudMailin and MailerSend webhook adapter that calls intake-orchestrator over HTTP.
 - Supabase Postgres accessed from the intake service through JDBC/Flyway.
 
@@ -17,9 +18,10 @@ The frontend must call only the gateway. It must not call intake-orchestrator or
 3. Angular calls `https://legal-gate-gateway.onrender.com/api/backend/...`.
 4. Gateway applies CORS and temporary public-prototype route policy.
 5. Gateway proxies to `LEGALGATE_BACKEND_URL` (the Render intake-orchestrator service).
-6. Intake persists each tenant's canonical LegalGate intake email, routing rules, and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
+6. Intake persists each tenant's canonical LegalGate intake email, routing rules, tenant urgency levels, and consultations in Supabase Postgres with Flyway-managed schema and RLS enabled.
 7. CloudMailin or MailerSend posts inbound email webhooks to mail-ingress.
-8. Mail-ingress resolves the tenant and synchronously posts normalized inbound-email JSON to intake-orchestrator at `/api/internal/inbound-emails`. This milestone logs received email events without creating consultations.
+8. Mail-ingress resolves the tenant and synchronously posts normalized inbound-email JSON to intake-orchestrator at `/api/internal/inbound-emails`.
+9. Intake calls consultation-classifier with the normalized email, tenant routes, urgency levels, and system prompt. Intake validates the model response, stores the selected route name as `consultationType`, stores the selected destination email as `assignedLawyerEmail`, and creates the consultation. If Gemini is unavailable or invalid, intake creates a fallback consultation for manual review without queuing email or calendar work.
 
 The gateway should return `503 service_unavailable` only when the intake service is unreachable or `LEGALGATE_BACKEND_URL` is missing. If intake responds with `400`, `409`, or `500`, the gateway should pass that downstream status/body through so Render/Supabase failures are visible during diagnosis.
 
@@ -54,8 +56,24 @@ Use the Supabase pooler connection currently configured for Render:
 - `SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false`
 - `LEGALGATE_SEED_DEMO_DATA=false`
 - `LEGALGATE_INTAKE_EMAIL_DOMAIN=intake.legal-gate.co`
+- `LEGALGATE_CONSULTATION_CLASSIFIER_URL=https://<consultation-classifier-render-service>.onrender.com`
+- `LEGALGATE_CONSULTATION_CLASSIFIER_TIMEOUT=3s`
+- `LEGALGATE_CONSULTATION_CLASSIFIER_PROMPT_VERSION=consultation-classifier-v1`
 
 Keep real Supabase credentials only in Render environment variables. Do not store them in Vercel or committed files.
+
+### Render consultation-classifier
+
+Deploy `services/consultation-classifier/Dockerfile` as a private/internal Render web service when possible, or as a public service restricted by network policy if private service-to-service routing is not available. Configure:
+
+- `PORT`: provided by Render.
+- `GEMINI_API_KEY=<google-ai-api-key>`
+- `GEMINI_MODEL=gemini-3.5-flash`
+- `GEMINI_TEMPERATURE=0.2`
+
+Health check path: `/health`.
+
+The service returns typed `503 gemini_unavailable` or `502 gemini_invalid_response` responses. Intake treats those as fallback conditions and still creates a manual-review consultation.
 
 ### Render mail-ingress
 
@@ -95,7 +113,7 @@ With the current gateway behavior, downstream intake errors should remain visibl
 
 ```bash
 cp .env.example .env
-docker compose up --build postgres intake-orchestrator mail-ingress gateway frontend
+docker compose up --build postgres consultation-classifier intake-orchestrator mail-ingress gateway frontend
 ```
 
 Local endpoints:
@@ -105,6 +123,7 @@ Local endpoints:
 - Gateway proxy status: `http://localhost:8080/api/backend/api/status`
 - Intake health: `http://localhost:8081/actuator/health`
 - Mail ingress health: `http://localhost:8082/actuator/health`
+- Consultation classifier health: `http://localhost:8083/health`
 - Frontend: `http://localhost:4200`
 
 ## Supabase schema and RLS
@@ -112,12 +131,14 @@ Local endpoints:
 Flyway migrations create and evolve:
 
 - `tenants`
-- `tenant_settings` with tenant-wide `intake_email` and JSON `routing_rules`
-- `consultations`
+- `tenant_settings` with tenant-wide `intake_email`, JSON `routing_rules`, and JSON `urgency_levels`
+- `consultations` with selected `consultation_type`, `assigned_lawyer_email`, and inbound `source_event_id` / `source_message_id` trace fields
 
 RLS is enabled and forced on tenant-scoped tables. The JDBC repository sets `app.tenant_slug` inside each transaction before reads/writes so policies enforce tenant isolation as a defense-in-depth layer.
 
 `V6__add_routing_rules_to_tenant_settings.sql` adds the production-safe routing model. Existing flat settings rows are backfilled into a single `Default intake route`, preserving the old `urgent_keywords`, `consultation_windows`, and `destination_email` columns for compatibility while new clients use `routing_rules`.
+
+`V7__add_gemini_consultation_classification_fields.sql` adds tenant urgency levels, consultation route/type and assignee columns, inbound trace fields, and a partial unique index on `(tenant_id, source_message_id)` so webhook retries do not duplicate consultations.
 
 Canonical intake addresses are system-owned and stored in `tenant_settings.intake_email` as `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}`. The project default is `intake.legal-gate.co` so registrations match the production intake domain. During rollout, `GET /api/tenants/{tenantId}/settings` backfills missing intake emails to the canonical value without overwriting an existing stored address.
 

@@ -104,12 +104,14 @@ class JdbcIntakeRepository implements IntakeRepository {
                 UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
                 jdbcTemplate.update("""
                         insert into tenant_settings (
-                          tenant_id, urgent_keywords, consultation_windows, destination_email, intake_email, routing_rules, updated_at
+                          tenant_id, urgent_keywords, consultation_windows, urgency_levels,
+                          destination_email, intake_email, routing_rules, updated_at
                         )
-                        values (?, cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), now())
+                        values (?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), now())
                         on conflict (tenant_id) do update set
                           urgent_keywords = excluded.urgent_keywords,
                           consultation_windows = excluded.consultation_windows,
+                          urgency_levels = excluded.urgency_levels,
                           destination_email = excluded.destination_email,
                           intake_email = excluded.intake_email,
                           routing_rules = excluded.routing_rules,
@@ -118,6 +120,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                         tenantId,
                         toJson(settings.urgentKeywords()),
                         toJson(settings.consultationWindows()),
+                        toJson(settings.urgencyLevels()),
                         settings.destinationEmail(),
                         settings.intakeEmail(),
                         toJson(settings.routingRules()));
@@ -134,8 +137,8 @@ class JdbcIntakeRepository implements IntakeRepository {
             setTenantContext(tenantSlug);
             ensureTenant(tenantSlug, displayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
-                    select t.slug, s.urgent_keywords, s.consultation_windows, s.destination_email, s.intake_email,
-                           s.routing_rules
+                    select t.slug, s.urgent_keywords, s.consultation_windows, s.urgency_levels,
+                           s.destination_email, s.intake_email, s.routing_rules
                     from tenants t
                     join tenant_settings s on s.tenant_id = t.id
                     where t.slug = ?
@@ -158,29 +161,61 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
+    public Optional<ConsultationResponse> consultationForSourceMessageId(String tenantSlug, String sourceMessageId) {
+        if (sourceMessageId == null || sourceMessageId.isBlank()) {
+            return Optional.empty();
+        }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
-            jdbcTemplate.update("""
-                    insert into consultations (
-                      id, tenant_id, client_name, client_email, summary, preferred_window, status, urgency,
-                      classification, notifications, created_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), ?)
-                    """,
-                    UUID.fromString(consultation.id()),
-                    tenantId,
-                    consultation.clientName(),
-                    consultation.clientEmail(),
-                    consultation.summary(),
-                    consultation.preferredWindow(),
-                    consultation.status(),
-                    consultation.urgency(),
-                    toJson(consultation.classification()),
-                    toJson(consultation.notifications()),
-                    Timestamp.from(consultation.createdAt()));
-            return consultation;
+            ensureTenant(tenantSlug, displayName(tenantSlug));
+            return jdbcTemplate.query("""
+                            select c.id, t.slug as tenant_slug, c.client_name, c.client_email, c.summary,
+                                   c.preferred_window, c.status, c.urgency, c.consultation_type,
+                                   c.assigned_lawyer_email, c.classification, c.notifications,
+                                   c.source_event_id, c.source_message_id, c.created_at
+                            from consultations c
+                            join tenants t on t.id = c.tenant_id
+                            where t.slug = ? and c.source_message_id = ?
+                            """, (rs, rowNum) -> mapConsultation(rs), tenantSlug, sourceMessageId)
+                    .stream()
+                    .findFirst();
         });
+    }
+
+    @Override
+    public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
+        try {
+            return transactionTemplate.execute(status -> {
+                setTenantContext(tenantSlug);
+                UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+                jdbcTemplate.update("""
+                        insert into consultations (
+                          id, tenant_id, client_name, client_email, summary, preferred_window, status, urgency,
+                          consultation_type, assigned_lawyer_email, classification, notifications,
+                          source_event_id, source_message_id, created_at
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), ?, ?, ?)
+                        """,
+                        UUID.fromString(consultation.id()),
+                        tenantId,
+                        consultation.clientName(),
+                        consultation.clientEmail(),
+                        consultation.summary(),
+                        consultation.preferredWindow(),
+                        consultation.status(),
+                        consultation.urgency(),
+                        consultation.consultationType(),
+                        consultation.assignedLawyerEmail(),
+                        toJson(consultation.classification()),
+                        toJson(consultation.notifications()),
+                        consultation.sourceEventId(),
+                        consultation.sourceMessageId(),
+                        Timestamp.from(consultation.createdAt()));
+                return consultation;
+            });
+        } catch (DuplicateKeyException ex) {
+            return consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId())
+                    .orElseThrow(() -> ex);
+        }
     }
 
     @Override
@@ -190,7 +225,9 @@ class JdbcIntakeRepository implements IntakeRepository {
             ensureTenant(tenantSlug, displayName(tenantSlug));
             List<ConsultationResponse> consultations = jdbcTemplate.query("""
                     select c.id, t.slug as tenant_slug, c.client_name, c.client_email, c.summary,
-                           c.preferred_window, c.status, c.urgency, c.classification, c.notifications, c.created_at
+                           c.preferred_window, c.status, c.urgency, c.consultation_type,
+                           c.assigned_lawyer_email, c.classification, c.notifications,
+                           c.source_event_id, c.source_message_id, c.created_at
                     from consultations c
                     join tenants t on t.id = c.tenant_id
                     where t.slug = ?
@@ -228,6 +265,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("slug"),
                 fromJson(rs.getString("urgent_keywords"), STRING_LIST),
                 fromJson(rs.getString("consultation_windows"), STRING_LIST),
+                fromJson(rs.getString("urgency_levels"), STRING_LIST),
                 rs.getString("destination_email"),
                 rs.getString("intake_email"),
                 fromJson(rs.getString("routing_rules"), ROUTING_RULE_LIST)
@@ -244,8 +282,12 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("preferred_window"),
                 rs.getString("status"),
                 rs.getString("urgency"),
+                rs.getString("consultation_type"),
+                rs.getString("assigned_lawyer_email"),
                 fromJson(rs.getString("classification"), ClassificationResult.class),
                 fromJson(rs.getString("notifications"), NotificationStatus.class),
+                rs.getString("source_event_id"),
+                rs.getString("source_message_id"),
                 rs.getTimestamp("created_at").toInstant()
         );
     }

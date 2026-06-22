@@ -1,0 +1,4 @@
+fastapi==0.115.6
+google-genai==1.53.0
+pydantic==2.12.4
+uvicorn[standard]==0.34.0

@@ -54,6 +54,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 firmSlug,
                 List.of("audiencia", "captura", "tutela", "vencimiento"),
                 List.of(),
+                List.of("NORMAL", "URGENT"),
                 null,
                 intakeEmail,
                 List.of()
@@ -104,7 +105,22 @@ class InMemoryIntakeRepository implements IntakeRepository {
     }
 
     @Override
+    public Optional<ConsultationResponse> consultationForSourceMessageId(String tenantSlug, String sourceMessageId) {
+        if (sourceMessageId == null || sourceMessageId.isBlank()) {
+            return Optional.empty();
+        }
+        return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+                .filter(consultation -> sourceMessageId.equals(consultation.sourceMessageId()))
+                .findFirst();
+    }
+
+    @Override
     public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
+        Optional<ConsultationResponse> existing =
+                consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
         consultationsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>()).add(consultation);
         return consultation;
     }
