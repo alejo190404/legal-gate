@@ -49,8 +49,8 @@ class MailerSendWebhookController {
         }
 
         InboundEmailReceived event = mailerSendIngestionService.ingest(webhook);
-        return ResponseEntity.accepted().body(Map.of(
-                "status", "queued",
+        return ResponseEntity.ok(Map.of(
+                "status", "received",
                 "eventId", event.eventId(),
                 "tenantId", event.tenantId()
         ));

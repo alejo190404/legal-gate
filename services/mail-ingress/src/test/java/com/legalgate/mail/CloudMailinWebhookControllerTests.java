@@ -12,15 +12,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.legalgate.mail.model.InboundEmailReceived;
-import com.legalgate.mail.service.InboundEmailPublisher;
+import com.legalgate.mail.service.InboundEmailClient;
 import com.legalgate.mail.service.TenantLookupService;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.amqp.AmqpConnectException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.client.RestClientException;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -44,7 +44,7 @@ class CloudMailinWebhookControllerTests {
     private TenantLookupService tenantLookupService;
 
     @MockBean
-    private InboundEmailPublisher inboundEmailPublisher;
+    private InboundEmailClient inboundEmailClient;
 
     @Test
     void rejectsRequestsWithoutBasicAuth() throws Exception {
@@ -55,11 +55,11 @@ class CloudMailinWebhookControllerTests {
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"LegalGate CloudMailin\""))
                 .andExpect(jsonPath("$.error").value("unauthorized"));
 
-        verify(inboundEmailPublisher, never()).publish(any());
+        verify(inboundEmailClient, never()).send(any());
     }
 
     @Test
-    void publishesCloudMailinMessageForKnownRecipient() throws Exception {
+    void sendsCloudMailinMessageForKnownRecipient() throws Exception {
         when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
                 .thenReturn(Optional.of("firma-demo"));
 
@@ -67,13 +67,13 @@ class CloudMailinWebhookControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, basicAuth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(samplePayload()))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("queued"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("received"))
                 .andExpect(jsonPath("$.tenantId").value("firma-demo"))
                 .andExpect(jsonPath("$.eventId").isNotEmpty());
 
         ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
-        verify(inboundEmailPublisher).publish(eventCaptor.capture());
+        verify(inboundEmailClient).send(eventCaptor.capture());
         InboundEmailReceived event = eventCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(event.tenantId()).isEqualTo("firma-demo");
         org.assertj.core.api.Assertions.assertThat(event.recipients()).contains("intake@firma.test");
@@ -82,7 +82,7 @@ class CloudMailinWebhookControllerTests {
     }
 
     @Test
-    void returnsNotFoundForUnknownRecipientWithoutPublishing() throws Exception {
+    void returnsNotFoundForUnknownRecipientWithoutSending() throws Exception {
         when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
                 .thenReturn(Optional.empty());
 
@@ -93,23 +93,23 @@ class CloudMailinWebhookControllerTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("unknown_intake_recipient"));
 
-        verify(inboundEmailPublisher, never()).publish(any());
+        verify(inboundEmailClient, never()).send(any());
     }
 
     @Test
-    void returnsRetryableStatusWhenRabbitPublishFails() throws Exception {
+    void returnsRetryableStatusWhenIntakeIsUnavailable() throws Exception {
         when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
                 .thenReturn(Optional.of("firma-demo"));
-        doThrow(new AmqpConnectException(new RuntimeException("broker unavailable")))
-                .when(inboundEmailPublisher)
-                .publish(any());
+        doThrow(new RestClientException("intake unavailable"))
+                .when(inboundEmailClient)
+                .send(any());
 
         mockMvc.perform(post("/webhooks/cloudmailin")
                         .header(HttpHeaders.AUTHORIZATION, basicAuth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(samplePayload()))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("rabbitmq_publish_failed"));
+                .andExpect(jsonPath("$.error").value("intake_orchestrator_unavailable"));
     }
 
     @Test
@@ -126,7 +126,7 @@ class CloudMailinWebhookControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));
 
-        verify(inboundEmailPublisher, never()).publish(any());
+        verify(inboundEmailClient, never()).send(any());
     }
 
     @Test
@@ -138,11 +138,11 @@ class CloudMailinWebhookControllerTests {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("invalid_mailersend_signature"));
 
-        verify(inboundEmailPublisher, never()).publish(any());
+        verify(inboundEmailClient, never()).send(any());
     }
 
     @Test
-    void publishesMailerSendInboundMessageForKnownRecipient() throws Exception {
+    void sendsMailerSendInboundMessageForKnownRecipient() throws Exception {
         when(tenantLookupService.tenantForIntakeEmail(eq("firma-demo@intake.legal-gate.co")))
                 .thenReturn(Optional.of("firma-demo"));
 
@@ -150,13 +150,13 @@ class CloudMailinWebhookControllerTests {
                         .header("X-MailerSend-Webhook-Secret", "mailersend-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mailerSendInboundPayload()))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("queued"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("received"))
                 .andExpect(jsonPath("$.tenantId").value("firma-demo"))
                 .andExpect(jsonPath("$.eventId").isNotEmpty());
 
         ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
-        verify(inboundEmailPublisher).publish(eventCaptor.capture());
+        verify(inboundEmailClient).send(eventCaptor.capture());
         InboundEmailReceived event = eventCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(event.tenantId()).isEqualTo("firma-demo");
         org.assertj.core.api.Assertions.assertThat(event.envelopeTo()).isEqualTo("firma-demo@intake.legal-gate.co");

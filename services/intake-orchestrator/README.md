@@ -9,7 +9,7 @@ Spring Boot service for the first LegalGate consultation-intake slice from the c
 - Consultant submits plain-language case information without needing legal terminology.
 - Admin reviews consultations stored for a tenant.
 - Service returns queued side-effect flags for email notification and calendar update orchestration.
-- Service can consume inbound email events from RabbitMQ when `LEGALGATE_MAIL_ENABLED=true`.
+- Service accepts normalized inbound email events from Mail Ingress at `POST /api/internal/inbound-emails`.
 
 ## Local commands
 
@@ -38,7 +38,8 @@ Smoke-test the service:
 - `PUT /api/tenants/{tenantId}/settings`
 - `POST /api/tenants/{tenantId}/consultations`
 - `GET /api/admin/tenants/{tenantId}/consultations`
+- `POST /api/internal/inbound-emails`
 
-The inbound email consumer currently logs and acknowledges validated events only. It does not create consultations yet.
+The inbound email endpoint currently logs validated events only. It does not create consultations yet.
 
 Tenant settings use one tenant-wide system-owned `intakeEmail` and a `routingRules` array. The canonical address is `{tenantId}@${LEGALGATE_INTAKE_EMAIL_DOMAIN}` and defaults locally to `intake.legal-gate.local`. Production should use `intake.legal-gate.co`. Each rule groups the content keywords, destination email, and consultation windows for a lawyer or team. The service still accepts the earlier flat settings payload and converts it into one default routing rule, but `PUT /settings` rejects any payload containing `intakeEmail`.

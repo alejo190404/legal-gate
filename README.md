@@ -6,7 +6,7 @@ LegalGate is a SaaS platform for automating legal consultation intake, classific
 
 - `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
 - `services/intake-orchestrator`: Spring Boot consultation intake service for tenant routing-rule settings, plain-language consultation creation, urgency pre-classification, and admin review.
-- `services/mail-ingress`: Spring Boot CloudMailin and MailerSend webhook adapter that publishes inbound email events to RabbitMQ.
+- `services/mail-ingress`: Spring Boot CloudMailin and MailerSend webhook adapter that sends inbound email events synchronously to Intake Orchestrator over HTTP.
 - `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
 
 ## Gateway quick start
@@ -100,13 +100,12 @@ Build and run services locally:
 
 ```bash
 cp .env.example .env
-docker compose up --build postgres rabbitmq intake-orchestrator mail-ingress gateway frontend
+docker compose up --build postgres intake-orchestrator mail-ingress gateway frontend
 ```
 
 - Gateway: `http://localhost:8080/api/status`
 - Intake orchestrator: `http://localhost:8081/api/status`
 - Mail ingress: `http://localhost:8082/actuator/health`
-- RabbitMQ management: `http://localhost:15672` using the local `SPRING_RABBITMQ_USERNAME` / `SPRING_RABBITMQ_PASSWORD`
 - Frontend: `http://localhost:4200`
 
 Local CloudMailin-style webhook smoke test:

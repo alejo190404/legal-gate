@@ -4,23 +4,24 @@ import com.legalgate.mail.model.InboundEmailReceived;
 import com.legalgate.mail.model.NormalizedInboundEmail;
 import java.time.Instant;
 import java.util.UUID;
-import org.springframework.amqp.AmqpException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class InboundEmailIngestionService {
 
     private final TenantLookupService tenantLookupService;
-    private final InboundEmailPublisher inboundEmailPublisher;
+    private final InboundEmailClient inboundEmailClient;
 
     public InboundEmailIngestionService(
             TenantLookupService tenantLookupService,
-            InboundEmailPublisher inboundEmailPublisher
+            InboundEmailClient inboundEmailClient
     ) {
         this.tenantLookupService = tenantLookupService;
-        this.inboundEmailPublisher = inboundEmailPublisher;
+        this.inboundEmailClient = inboundEmailClient;
     }
 
     public InboundEmailReceived ingest(NormalizedInboundEmail email) {
@@ -49,9 +50,11 @@ public class InboundEmailIngestionService {
         );
 
         try {
-            inboundEmailPublisher.publish(event);
-        } catch (AmqpException ex) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "rabbitmq_publish_failed", ex);
+            inboundEmailClient.send(event);
+        } catch (RestClientResponseException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "intake_orchestrator_request_failed", ex);
+        } catch (RestClientException ex) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "intake_orchestrator_unavailable", ex);
         }
 
         return event;

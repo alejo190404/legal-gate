@@ -42,8 +42,8 @@ class CloudMailinWebhookController {
         }
 
         InboundEmailReceived event = cloudMailinIngestionService.ingest(message);
-        return ResponseEntity.accepted().body(Map.of(
-                "status", "queued",
+        return ResponseEntity.ok(Map.of(
+                "status", "received",
                 "eventId", event.eventId(),
                 "tenantId", event.tenantId()
         ));

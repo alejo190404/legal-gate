@@ -33,22 +33,10 @@ services:
       SPRING_FLYWAY_ENABLED: ${SPRING_FLYWAY_ENABLED:-true}
       SPRING_FLYWAY_VALIDATE_ON_MIGRATE: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:-false}
       LEGALGATE_INTAKE_EMAIL_DOMAIN: ${LEGALGATE_INTAKE_EMAIL_DOMAIN:-intake.legal-gate.local}
-      LEGALGATE_MAIL_ENABLED: ${LEGALGATE_MAIL_ENABLED:-true}
-      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
-      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
-      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-legalgate}
-      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-legalgate_rabbitmq_dev_password}
-      LEGALGATE_MAIL_EXCHANGE: ${LEGALGATE_MAIL_EXCHANGE:-legalgate.mail}
-      LEGALGATE_MAIL_INCOMING_QUEUE: ${LEGALGATE_MAIL_INCOMING_QUEUE:-legalgate.mail.incoming}
-      LEGALGATE_MAIL_DEAD_LETTER_QUEUE: ${LEGALGATE_MAIL_DEAD_LETTER_QUEUE:-legalgate.mail.incoming.dlq}
-      LEGALGATE_MAIL_ROUTING_KEY: ${LEGALGATE_MAIL_ROUTING_KEY:-mail.inbound.received}
-      LEGALGATE_MAIL_DEAD_LETTER_ROUTING_KEY: ${LEGALGATE_MAIL_DEAD_LETTER_ROUTING_KEY:-mail.inbound.dead}
     ports:
       - "8081:8081"
     depends_on:
       postgres:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
@@ -66,21 +54,14 @@ services:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-legalgate}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-legalgate_dev_password}
       SPRING_DATASOURCE_MAX_POOL_SIZE: ${SPRING_DATASOURCE_MAX_POOL_SIZE:-5}
-      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
-      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
-      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-legalgate}
-      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-legalgate_rabbitmq_dev_password}
       LEGALGATE_CLOUDMAILIN_USERNAME: ${LEGALGATE_CLOUDMAILIN_USERNAME:-cloudmailin-local}
       LEGALGATE_CLOUDMAILIN_PASSWORD: ${LEGALGATE_CLOUDMAILIN_PASSWORD:-cloudmailin-local-password}
       LEGALGATE_MAILERSEND_WEBHOOK_SECRET: ${LEGALGATE_MAILERSEND_WEBHOOK_SECRET:-mailersend-local-secret}
-      LEGALGATE_MAIL_EXCHANGE: ${LEGALGATE_MAIL_EXCHANGE:-legalgate.mail}
-      LEGALGATE_MAIL_ROUTING_KEY: ${LEGALGATE_MAIL_ROUTING_KEY:-mail.inbound.received}
+      LEGALGATE_INTAKE_ORCHESTRATOR_URL: ${LEGALGATE_INTAKE_ORCHESTRATOR_URL:-http://intake-orchestrator:8081}
     ports:
       - "8082:8082"
     depends_on:
       postgres:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
       intake-orchestrator:
         condition: service_healthy
@@ -123,22 +104,5 @@ services:
       timeout: 3s
       retries: 5
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    environment:
-      RABBITMQ_DEFAULT_USER: ${SPRING_RABBITMQ_USERNAME:-legalgate}
-      RABBITMQ_DEFAULT_PASS: ${SPRING_RABBITMQ_PASSWORD:-legalgate_rabbitmq_dev_password}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - legalgate-rabbitmq-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
   legalgate-postgres-data:
-  legalgate-rabbitmq-data:
