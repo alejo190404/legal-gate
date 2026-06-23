@@ -2,9 +2,14 @@ package com.legalgate.intake.repository;
 
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.EventResponse;
+import com.legalgate.intake.model.LawyerAvailabilityWindow;
+import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.StoredUserCredentials;
+import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsResponse;
+import com.legalgate.intake.model.UrgencyDefinition;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +27,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ConcurrentMap<String, EventResponse>> eventsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Boolean> tenantsBySlug = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Instant> lastLoginAtByEmail = new ConcurrentHashMap<>();
@@ -38,35 +44,45 @@ class InMemoryIntakeRepository implements IntakeRepository {
         if (tenantsBySlug.putIfAbsent(firmSlug, Boolean.TRUE) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "tenant_slug_already_registered");
         }
-        StoredUserCredentials user = new StoredUserCredentials(
-                email,
-                firmSlug,
-                firmName + " admin",
-                role,
-                hashedPassword
-        );
+        StoredUserCredentials user = new StoredUserCredentials(email, firmSlug, firmName + " admin", role, hashedPassword);
         StoredUserCredentials existing = usersByEmail.putIfAbsent(email, user);
         if (existing != null) {
             tenantsBySlug.remove(firmSlug);
             throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered");
         }
-        tenantSettings.put(firmSlug, new TenantSettingsResponse(
-                firmSlug,
+        LawyerProfile lawyer = new LawyerProfile(
+                java.util.UUID.nameUUIDFromBytes(("lawyer:" + firmSlug + ":" + email).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(),
+                firmName + " abogado",
+                email,
+                true,
+                60,
+                defaultAvailability()
+        );
+        TenantRoutingRule rule = new TenantRoutingRule(
+                "Default intake route",
+                null,
                 List.of("audiencia", "captura", "tutela", "vencimiento"),
                 List.of(),
                 List.of("NORMAL", "URGENT"),
-                null,
+                lawyer.id(),
+                List.of(
+                        new UrgencyDefinition("NORMAL", 1, 5, true),
+                        new UrgencyDefinition("URGENT", 2, 1, true)
+                ),
+                email
+        );
+        tenantSettings.put(firmSlug, new TenantSettingsResponse(
+                firmSlug,
+                rule.urgentKeywords(),
+                rule.consultationWindows(),
+                rule.urgencyLevels(),
+                rule.destinationEmail(),
                 intakeEmail,
-                List.of(new com.legalgate.intake.model.TenantRoutingRule(
-                        "Default intake route",
-                        null,
-                        List.of("audiencia", "captura", "tutela", "vencimiento"),
-                        List.of(),
-                        List.of("NORMAL", "URGENT"),
-                        null
-                ))
+                List.of(rule),
+                List.of(lawyer)
         ));
         consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
+        eventsByTenant.putIfAbsent(firmSlug, new ConcurrentHashMap<>());
         return user.toSession();
     }
 
@@ -123,19 +139,57 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     @Override
     public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
-        Optional<ConsultationResponse> existing =
-                consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId());
+        Optional<ConsultationResponse> existing = consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId());
         if (existing.isPresent()) {
             return existing.get();
         }
         consultationsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>()).add(consultation);
+        if (consultation.event() != null) {
+            eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>())
+                    .putIfAbsent(consultation.event().id(), consultation.event());
+        }
         return consultation;
     }
 
     @Override
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
-        List<ConsultationResponse> consultations = consultationsByTenant.getOrDefault(tenantSlug, List.of());
-        return new ConsultationListResponse(tenantSlug, List.copyOf(consultations));
+        return new ConsultationListResponse(tenantSlug, List.copyOf(consultationsByTenant.getOrDefault(tenantSlug, List.of())));
+    }
+
+    @Override
+    public List<LawyerProfile> lawyersForTenant(String tenantSlug) {
+        TenantSettingsResponse settings = tenantSettings.get(tenantSlug);
+        return settings == null || settings.lawyers() == null ? List.of() : settings.lawyers();
+    }
+
+    @Override
+    public List<EventResponse> eventsForLawyer(String tenantSlug, String lawyerId) {
+        ConcurrentMap<String, EventResponse> events = eventsByTenant.get(tenantSlug);
+        if (events == null) {
+            return List.of();
+        }
+        return events.values().stream()
+                .filter(event -> lawyerId != null && lawyerId.equals(event.lawyerId()))
+                .toList();
+    }
+
+    @Override
+    public void updateEvents(String tenantSlug, List<EventResponse> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        ConcurrentMap<String, EventResponse> stored = eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>());
+        for (EventResponse event : events) {
+            stored.computeIfPresent(event.id(), (ignored, existing) -> event);
+        }
+    }
+
+    private List<LawyerAvailabilityWindow> defaultAvailability() {
+        List<LawyerAvailabilityWindow> windows = new ArrayList<>();
+        for (int day = 1; day <= 5; day++) {
+            windows.add(new LawyerAvailabilityWindow(day, "09:00", "17:00", "America/Bogota"));
+        }
+        return List.copyOf(windows);
     }
 }
 

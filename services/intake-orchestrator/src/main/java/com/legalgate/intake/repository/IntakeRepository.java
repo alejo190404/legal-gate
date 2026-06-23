@@ -2,9 +2,12 @@ package com.legalgate.intake.repository;
 
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.EventResponse;
+import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.StoredUserCredentials;
 import com.legalgate.intake.model.TenantSettingsResponse;
+import java.util.List;
 import java.util.Optional;
 
 public interface IntakeRepository {
@@ -32,4 +35,10 @@ public interface IntakeRepository {
     ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation);
 
     ConsultationListResponse consultationsForTenant(String tenantSlug);
+
+    List<LawyerProfile> lawyersForTenant(String tenantSlug);
+
+    List<EventResponse> eventsForLawyer(String tenantSlug, String lawyerId);
+
+    void updateEvents(String tenantSlug, List<EventResponse> events);
 }

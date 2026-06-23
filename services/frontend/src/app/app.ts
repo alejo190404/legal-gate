@@ -21,6 +21,22 @@ interface NotificationStatus {
   preferredWindow: string | null;
 }
 
+interface EventDetails {
+  id: string;
+  lawyerId: string | null;
+  lawyerDisplayName: string | null;
+  lawyerEmail: string | null;
+  routeName: string | null;
+  urgencyName: string;
+  slaDays: number;
+  slaDeadline: string;
+  priorityScore: number;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  status: string;
+  source: string;
+}
+
 interface Consultation {
   id: string;
   tenantId: string;
@@ -37,11 +53,36 @@ interface Consultation {
   sourceEventId: string | null;
   sourceMessageId: string | null;
   createdAt: string;
+  eventId: string | null;
+  event: EventDetails | null;
 }
 
 interface ConsultationListResponse {
   tenantId: string;
   consultations: Consultation[];
+}
+
+interface UrgencyDefinition {
+  name: string;
+  rank: number;
+  slaDays: number;
+  active: boolean;
+}
+
+interface LawyerAvailabilityWindow {
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  timezone: string;
+}
+
+interface LawyerProfile {
+  id: string | null;
+  displayName: string;
+  email: string;
+  active: boolean;
+  defaultEventDurationMinutes: number;
+  availabilityWindows: LawyerAvailabilityWindow[];
 }
 
 interface TenantSettingsResponse {
@@ -52,6 +93,7 @@ interface TenantSettingsResponse {
   destinationEmail: string | null;
   intakeEmail: string | null;
   routingRules: TenantRoutingRule[];
+  lawyers: LawyerProfile[];
 }
 
 interface TenantRoutingRule {
@@ -60,6 +102,8 @@ interface TenantRoutingRule {
   urgentKeywords: string[];
   consultationWindows: string[];
   urgencyLevels: string[];
+  lawyerId: string | null;
+  urgencyDefinitions: UrgencyDefinition[];
   destinationEmail: string | null;
 }
 
@@ -82,18 +126,29 @@ interface RegisterForm {
 }
 
 interface TenantSettingsForm {
+  lawyers: LawyerForm[];
   routingRules: TenantRoutingRuleForm[];
+}
+
+interface LawyerForm {
+  id: string | null;
+  displayName: string;
+  email: string;
+  active: boolean;
+  defaultEventDurationMinutes: number;
+  availabilityWindows: LawyerAvailabilityWindow[];
 }
 
 interface TenantRoutingRuleForm {
   name: string;
   description: string;
+  lawyerId: string | null;
   destinationEmail: string;
   urgentKeywords: string;
   consultationWindows: string;
   urgencyLevels: string;
+  urgencyDefinitions: UrgencyDefinition[];
 }
-
 interface SessionResponse {
   email: string;
   tenantId: string;
@@ -150,14 +205,20 @@ export class App {
   };
 
   readonly settingsForm: TenantSettingsForm = {
+    lawyers: [this.blankLawyer()],
     routingRules: [
       {
         name: 'Default intake route',
         description: '',
+        lawyerId: null,
         destinationEmail: '',
         urgentKeywords: 'audiencia, captura, tutela, vencimiento',
         consultationWindows: '',
         urgencyLevels: 'NORMAL, URGENT',
+        urgencyDefinitions: [
+          { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+          { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+        ],
       },
     ],
   };
@@ -376,6 +437,7 @@ export class App {
         next: (settings) => {
           this.tenantSettings.set(settings);
           this.settingsLoaded.set(true);
+          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
         },
         error: () => {
@@ -386,33 +448,61 @@ export class App {
   }
 
   saveSettings(): void {
-    const routingRules = this.settingsForm.routingRules.map((rule, index) => ({
-      name: rule.name.trim() || `Route ${index + 1}`,
-      description: rule.description.trim() || null,
-      urgentKeywords: this.csvValues(rule.urgentKeywords),
-      consultationWindows: this.csvValues(rule.consultationWindows),
-      urgencyLevels: this.csvValues(rule.urgencyLevels),
-      destinationEmail: rule.destinationEmail.trim().toLowerCase(),
+    const lawyers = this.settingsForm.lawyers.map((lawyer) => ({
+      id: lawyer.id,
+      displayName: lawyer.displayName.trim(),
+      email: lawyer.email.trim().toLowerCase(),
+      active: lawyer.active,
+      defaultEventDurationMinutes: Number(lawyer.defaultEventDurationMinutes),
+      availabilityWindows: lawyer.availabilityWindows.map((window) => ({
+        weekday: Number(window.weekday),
+        startTime: window.startTime,
+        endTime: window.endTime,
+        timezone: window.timezone || 'America/Bogota',
+      })),
     }));
+
+    const primaryLawyerId = lawyers[0]?.id ?? null;
+    const routingRules = this.settingsForm.routingRules.map((rule, index) => {
+      const lawyer = lawyers.find((item) => item.id === rule.lawyerId) ?? lawyers[0];
+      return {
+        name: rule.name.trim() || `Route ${index + 1}`,
+        description: rule.description.trim() || null,
+        urgentKeywords: this.csvValues(rule.urgentKeywords),
+        consultationWindows: this.csvValues(rule.consultationWindows),
+        urgencyLevels: this.definitionsForSave(rule).filter((item) => item.active).sort((a, b) => a.rank - b.rank).map((item) => item.name.trim()),
+        lawyerId: rule.lawyerId || primaryLawyerId,
+        urgencyDefinitions: this.definitionsForSave(rule).map((item) => ({
+          name: item.name.trim(),
+          rank: Number(item.rank),
+          slaDays: Number(item.slaDays),
+          active: Boolean(item.active),
+        })),
+        destinationEmail: (lawyer?.email || rule.destinationEmail).trim().toLowerCase(),
+      };
+    });
 
     if (!this.settingsLoaded() || !this.hasCanonicalIntakeEmail()) {
       this.settingsErrorMessage.set('Espera a que cargue el email LegalGate de intake.');
       return;
     }
 
-    if (
-      !routingRules.length ||
-      routingRules.some((rule) => !this.isValidEmail(rule.destinationEmail))
-    ) {
-      this.settingsErrorMessage.set('Cada regla necesita un email de destino valido.');
+    if (!lawyers.length || !lawyers.some((lawyer) => lawyer.active) || lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))) {
+      this.settingsErrorMessage.set('Configura al menos un abogado activo con nombre y email valido.');
       return;
     }
 
-    if (
-      routingRules.some(
-        (rule) => !rule.urgencyLevels.length || rule.urgencyLevels.length !== new Set(rule.urgencyLevels).size,
-      )
-    ) {
+    if (lawyers.some((lawyer) => !lawyer.defaultEventDurationMinutes || lawyer.defaultEventDurationMinutes < 15)) {
+      this.settingsErrorMessage.set('La duracion por defecto debe ser de al menos 15 minutos.');
+      return;
+    }
+
+    if (!routingRules.length || routingRules.some((rule) => !rule.lawyerId || !this.isValidEmail(rule.destinationEmail))) {
+      this.settingsErrorMessage.set('Cada regla necesita un abogado asignado.');
+      return;
+    }
+
+    if (routingRules.some((rule) => !this.hasValidUrgencyDefinitions(rule.urgencyDefinitions))) {
       this.settingsErrorMessage.set('Configura niveles de urgencia por regla sin vacios ni duplicados.');
       return;
     }
@@ -421,27 +511,28 @@ export class App {
     this.settingsErrorMessage.set('');
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
+        lawyers,
         routingRules,
       })
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
+          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
           this.settingsErrorMessage.set('');
-          this.statusMessage.set('Reglas de enrutamiento actualizadas.');
+          this.statusMessage.set('Reglas, abogados y SLA actualizados.');
           this.isSubmitting.set(false);
         },
         error: (error: HttpErrorResponse) => {
           this.settingsErrorMessage.set(
             error.status === 409
-              ? 'Ese email de intake ya esta configurado para otra firma.'
+              ? 'Ese email ya esta configurado para otra firma.'
               : 'No se pudo guardar la configuracion. Intenta nuevamente.',
           );
           this.isSubmitting.set(false);
         },
       });
   }
-
   copyIntakeEmail(): void {
     const intakeEmail = this.tenantSettings()?.intakeEmail;
     if (!intakeEmail) {
@@ -468,15 +559,21 @@ export class App {
   }
 
   addRoutingRule(): void {
+    const lawyer = this.settingsForm.lawyers[0] ?? this.blankLawyer();
     this.settingsForm.routingRules = [
       ...this.settingsForm.routingRules,
       {
         name: `Route ${this.settingsForm.routingRules.length + 1}`,
         description: '',
-        destinationEmail: this.sessionEmail(),
+        lawyerId: lawyer.id,
+        destinationEmail: lawyer.email || this.sessionEmail(),
         urgentKeywords: '',
         consultationWindows: '',
         urgencyLevels: 'NORMAL, URGENT',
+        urgencyDefinitions: [
+          { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+          { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+        ],
       },
     ];
   }
@@ -487,11 +584,68 @@ export class App {
       return;
     }
     this.settingsErrorMessage.set('');
-    this.settingsForm.routingRules = this.settingsForm.routingRules.filter(
-      (_, itemIndex) => itemIndex !== index,
+    this.settingsForm.routingRules = this.settingsForm.routingRules.filter((_, itemIndex) => itemIndex !== index);
+  }
+
+  addLawyer(): void {
+    this.settingsForm.lawyers = [...this.settingsForm.lawyers, this.blankLawyer()];
+  }
+
+  removeLawyer(index: number): void {
+    if (this.settingsForm.lawyers.length === 1) {
+      this.settingsErrorMessage.set('Manten al menos un abogado.');
+      return;
+    }
+    const removed = this.settingsForm.lawyers[index];
+    this.settingsForm.lawyers = this.settingsForm.lawyers.filter((_, itemIndex) => itemIndex !== index);
+    const fallback = this.settingsForm.lawyers[0];
+    this.settingsForm.routingRules = this.settingsForm.routingRules.map((rule) =>
+      rule.lawyerId === removed.id ? { ...rule, lawyerId: fallback.id, destinationEmail: fallback.email } : rule,
     );
   }
 
+  addAvailabilityWindow(lawyer: LawyerForm): void {
+    lawyer.availabilityWindows = [
+      ...lawyer.availabilityWindows,
+      { weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' },
+    ];
+  }
+
+  removeAvailabilityWindow(lawyer: LawyerForm, index: number): void {
+    lawyer.availabilityWindows = lawyer.availabilityWindows.filter((_, itemIndex) => itemIndex !== index);
+  }
+
+  addUrgencyDefinition(rule: TenantRoutingRuleForm): void {
+    const nextRank = rule.urgencyDefinitions.length + 1;
+    rule.urgencyDefinitions = [
+      ...rule.urgencyDefinitions,
+      { name: `NIVEL ${nextRank}`, rank: nextRank, slaDays: 5, active: true },
+    ];
+  }
+
+  removeUrgencyDefinition(rule: TenantRoutingRuleForm, index: number): void {
+    if (rule.urgencyDefinitions.length === 1) {
+      this.settingsErrorMessage.set('Manten al menos una urgencia por regla.');
+      return;
+    }
+    rule.urgencyDefinitions = rule.urgencyDefinitions.filter((_, itemIndex) => itemIndex !== index);
+  }
+
+  lawyerSummary(lawyerId: string | null): string {
+    const lawyer = this.settingsForm.lawyers.find((item) => item.id === lawyerId);
+    if (!lawyer) {
+      return 'Sin abogado asignado';
+    }
+    const windows = lawyer.availabilityWindows.length;
+    return `${lawyer.displayName || lawyer.email} - ${windows} ventanas - ${lawyer.defaultEventDurationMinutes || 60} min`;
+  }
+
+  syncRouteLawyer(rule: TenantRoutingRuleForm): void {
+    const lawyer = this.settingsForm.lawyers.find((item) => item.id === rule.lawyerId);
+    if (lawyer) {
+      rule.destinationEmail = lawyer.email;
+    }
+  }
   createConsultation(): void {
     if (
       !this.form.clientName.trim() ||
@@ -530,16 +684,35 @@ export class App {
   }
 
   urgencyLabel(consultation: Consultation): string {
-    return consultation.urgency;
+    return consultation.event?.urgencyName ?? consultation.urgency;
   }
 
   isHighestUrgency(consultation: Consultation): boolean {
     const settings = this.tenantSettings();
     const matchedRule = settings?.routingRules?.find((rule) => rule.name === consultation.consultationType);
+    const definitions = matchedRule?.urgencyDefinitions?.filter((definition) => definition.active) ?? [];
+    if (definitions.length) {
+      const highest = [...definitions].sort((a, b) => a.rank - b.rank).at(-1);
+      return consultation.urgency === highest?.name;
+    }
     const levels = matchedRule?.urgencyLevels?.length
       ? matchedRule.urgencyLevels
       : (settings?.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT']);
     return consultation.urgency === levels[levels.length - 1];
+  }
+
+  priorityLabel(consultation: Consultation): string {
+    return consultation.event ? `P${consultation.event.priorityScore}` : 'Sin prioridad';
+  }
+
+  eventScheduleLabel(consultation: Consultation): string {
+    if (!consultation.event) {
+      return 'Sin evento';
+    }
+    if (!consultation.event.scheduledStart || !consultation.event.scheduledEnd) {
+      return 'Requiere agenda manual';
+    }
+    return `${this.formatDate(consultation.event.scheduledStart)} - ${this.formatTime(consultation.event.scheduledEnd)}`;
   }
 
   formatDate(value: string): string {
@@ -549,11 +722,133 @@ export class App {
     }).format(new Date(value));
   }
 
+  formatTime(value: string): string {
+    return new Intl.DateTimeFormat('es-CO', { timeStyle: 'short' }).format(new Date(value));
+  }
+
+  private blankLawyer(): LawyerForm {
+    const id = this.cryptoId();
+    return {
+      id,
+      displayName: '',
+      email: this.sessionEmail(),
+      active: true,
+      defaultEventDurationMinutes: 60,
+      availabilityWindows: this.defaultAvailability(),
+    };
+  }
+
+  private defaultAvailability(): LawyerAvailabilityWindow[] {
+    return [1, 2, 3, 4, 5].map((weekday) => ({
+      weekday,
+      startTime: '09:00',
+      endTime: '17:00',
+      timezone: 'America/Bogota',
+    }));
+  }
+
+  private lawyerFormsFrom(settings: TenantSettingsResponse): LawyerForm[] {
+    const lawyers = settings.lawyers?.length
+      ? settings.lawyers
+      : [{
+          id: this.cryptoId(),
+          displayName: 'Abogado principal',
+          email: settings.destinationEmail ?? this.sessionEmail(),
+          active: true,
+          defaultEventDurationMinutes: 60,
+          availabilityWindows: this.defaultAvailability(),
+        }];
+
+    return lawyers.map((lawyer) => ({
+      id: lawyer.id ?? this.cryptoId(),
+      displayName: lawyer.displayName ?? '',
+      email: lawyer.email ?? '',
+      active: lawyer.active ?? true,
+      defaultEventDurationMinutes: lawyer.defaultEventDurationMinutes ?? 60,
+      availabilityWindows: lawyer.availabilityWindows?.length ? lawyer.availabilityWindows : this.defaultAvailability(),
+    }));
+  }
+
+  private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
+    const lawyers = this.settingsForm.lawyers.length ? this.settingsForm.lawyers : this.lawyerFormsFrom(settings);
+    const fallbackLawyerId = lawyers[0]?.id ?? null;
+    const rules = settings.routingRules?.length
+      ? settings.routingRules
+      : [{
+          name: 'Default intake route',
+          description: null,
+          urgentKeywords: settings.urgentKeywords ?? [],
+          consultationWindows: settings.consultationWindows ?? [],
+          urgencyLevels: settings.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT'],
+          lawyerId: fallbackLawyerId,
+          urgencyDefinitions: this.urgencyDefinitionsFromLevels(settings.urgencyLevels),
+          destinationEmail: settings.destinationEmail,
+        }];
+
+    return rules.map((rule, index) => {
+      const lawyerId = rule.lawyerId ?? this.lawyerIdForEmail(lawyers, rule.destinationEmail) ?? fallbackLawyerId;
+      const lawyer = lawyers.find((item) => item.id === lawyerId);
+      return {
+        name: rule.name || `Route ${index + 1}`,
+        description: rule.description ?? '',
+        lawyerId,
+        destinationEmail: rule.destinationEmail ?? lawyer?.email ?? this.sessionEmail(),
+        urgentKeywords: (rule.urgentKeywords ?? []).join(', '),
+        consultationWindows: (rule.consultationWindows ?? []).join(', '),
+        urgencyLevels: (rule.urgencyLevels?.length ? rule.urgencyLevels : this.activeUrgencyNames(rule.urgencyDefinitions)).join(', '),
+        urgencyDefinitions: rule.urgencyDefinitions?.length
+          ? rule.urgencyDefinitions.map((item) => ({ ...item }))
+          : this.urgencyDefinitionsFromLevels(rule.urgencyLevels),
+      };
+    });
+  }
+
+  private definitionsForSave(rule: TenantRoutingRuleForm): UrgencyDefinition[] {
+    return rule.urgencyDefinitions;
+  }
+
+  private activeUrgencyNames(definitions: UrgencyDefinition[] | undefined): string[] {
+    return (definitions ?? [])
+      .filter((definition) => definition.active)
+      .sort((a, b) => a.rank - b.rank)
+      .map((definition) => definition.name);
+  }
+
+  private urgencyDefinitionsFromLevels(levels: string[] | undefined): UrgencyDefinition[] {
+    const names = levels?.length ? levels : ['NORMAL', 'URGENT'];
+    return names.map((name, index) => ({
+      name,
+      rank: index + 1,
+      slaDays: name.toUpperCase() === 'URGENT' ? 1 : 5,
+      active: true,
+    }));
+  }
+
+  private lawyerIdForEmail(lawyers: LawyerForm[], email: string | null): string | null {
+    if (!email) {
+      return null;
+    }
+    return lawyers.find((lawyer) => lawyer.email.toLowerCase() === email.toLowerCase())?.id ?? null;
+  }
+
+  private hasValidUrgencyDefinitions(definitions: UrgencyDefinition[]): boolean {
+    const active = definitions.filter((definition) => definition.active);
+    const names = definitions.map((definition) => definition.name.trim().toLowerCase()).filter(Boolean);
+    return Boolean(active.length)
+      && names.length === definitions.length
+      && names.length === new Set(names).size
+      && definitions.every((definition) => Number(definition.rank) > 0 && Number(definition.slaDays) >= 0);
+  }
+
   private csvValues(value: string): string[] {
     return value
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  private cryptoId(): string {
+    return crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
   }
 
   private isValidEmail(value: string): boolean {
@@ -564,32 +859,4 @@ export class App {
     this.consultationsErrorMessage.set('');
     this.settingsErrorMessage.set('');
   }
-
-  private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
-    const rules =
-      settings.routingRules?.length
-        ? settings.routingRules
-        : [
-            {
-              name: 'Default intake route',
-              description: null,
-              urgentKeywords: settings.urgentKeywords ?? [],
-              consultationWindows: settings.consultationWindows ?? [],
-              urgencyLevels: settings.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT'],
-              destinationEmail: settings.destinationEmail,
-            },
-          ];
-
-    return rules.map((rule, index) => ({
-      name: rule.name || `Route ${index + 1}`,
-      description: rule.description ?? '',
-      destinationEmail: rule.destinationEmail ?? this.sessionEmail(),
-      urgentKeywords: (rule.urgentKeywords ?? []).join(', '),
-      consultationWindows: (rule.consultationWindows ?? []).join(', '),
-      urgencyLevels: (rule.urgencyLevels?.length ? rule.urgencyLevels : ['NORMAL', 'URGENT']).join(', '),
-    }));
-  }
 }
-
-
-

@@ -17,6 +17,28 @@ public record ConsultationResponse(
         NotificationStatus notifications,
         String sourceEventId,
         String sourceMessageId,
-        Instant createdAt
+        Instant createdAt,
+        String eventId,
+        EventResponse event
 ) {
+    public ConsultationResponse(
+            String id,
+            String tenantId,
+            String clientName,
+            String clientEmail,
+            String summary,
+            String preferredWindow,
+            String status,
+            String urgency,
+            String consultationType,
+            String assignedLawyerEmail,
+            ClassificationResult classification,
+            NotificationStatus notifications,
+            String sourceEventId,
+            String sourceMessageId,
+            Instant createdAt
+    ) {
+        this(id, tenantId, clientName, clientEmail, summary, preferredWindow, status, urgency, consultationType,
+                assignedLawyerEmail, classification, notifications, sourceEventId, sourceMessageId, createdAt, null, null);
+    }
 }
