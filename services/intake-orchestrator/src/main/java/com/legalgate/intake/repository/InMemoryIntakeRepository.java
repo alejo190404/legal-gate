@@ -57,7 +57,14 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 List.of("NORMAL", "URGENT"),
                 null,
                 intakeEmail,
-                List.of()
+                List.of(new com.legalgate.intake.model.TenantRoutingRule(
+                        "Default intake route",
+                        null,
+                        List.of("audiencia", "captura", "tutela", "vencimiento"),
+                        List.of(),
+                        List.of("NORMAL", "URGENT"),
+                        null
+                ))
         ));
         consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
         return user.toSession();
@@ -131,3 +138,4 @@ class InMemoryIntakeRepository implements IntakeRepository {
         return new ConsultationListResponse(tenantSlug, List.copyOf(consultations));
     }
 }
+

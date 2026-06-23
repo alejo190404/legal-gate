@@ -56,8 +56,10 @@ interface TenantSettingsResponse {
 
 interface TenantRoutingRule {
   name: string;
+  description: string | null;
   urgentKeywords: string[];
   consultationWindows: string[];
+  urgencyLevels: string[];
   destinationEmail: string | null;
 }
 
@@ -80,15 +82,16 @@ interface RegisterForm {
 }
 
 interface TenantSettingsForm {
-  urgencyLevels: string;
   routingRules: TenantRoutingRuleForm[];
 }
 
 interface TenantRoutingRuleForm {
   name: string;
+  description: string;
   destinationEmail: string;
   urgentKeywords: string;
   consultationWindows: string;
+  urgencyLevels: string;
 }
 
 interface SessionResponse {
@@ -147,13 +150,14 @@ export class App {
   };
 
   readonly settingsForm: TenantSettingsForm = {
-    urgencyLevels: 'NORMAL, URGENT',
     routingRules: [
       {
         name: 'Default intake route',
+        description: '',
         destinationEmail: '',
         urgentKeywords: 'audiencia, captura, tutela, vencimiento',
         consultationWindows: '',
+        urgencyLevels: 'NORMAL, URGENT',
       },
     ],
   };
@@ -384,19 +388,15 @@ export class App {
   saveSettings(): void {
     const routingRules = this.settingsForm.routingRules.map((rule, index) => ({
       name: rule.name.trim() || `Route ${index + 1}`,
+      description: rule.description.trim() || null,
       urgentKeywords: this.csvValues(rule.urgentKeywords),
       consultationWindows: this.csvValues(rule.consultationWindows),
+      urgencyLevels: this.csvValues(rule.urgencyLevels),
       destinationEmail: rule.destinationEmail.trim().toLowerCase(),
     }));
-    const urgencyLevels = this.csvValues(this.settingsForm.urgencyLevels);
 
     if (!this.settingsLoaded() || !this.hasCanonicalIntakeEmail()) {
       this.settingsErrorMessage.set('Espera a que cargue el email LegalGate de intake.');
-      return;
-    }
-
-    if (!urgencyLevels.length || urgencyLevels.length !== new Set(urgencyLevels).size) {
-      this.settingsErrorMessage.set('Configura niveles de urgencia sin vacios ni duplicados.');
       return;
     }
 
@@ -408,11 +408,19 @@ export class App {
       return;
     }
 
+    if (
+      routingRules.some(
+        (rule) => !rule.urgencyLevels.length || rule.urgencyLevels.length !== new Set(rule.urgencyLevels).size,
+      )
+    ) {
+      this.settingsErrorMessage.set('Configura niveles de urgencia por regla sin vacios ni duplicados.');
+      return;
+    }
+
     this.isSubmitting.set(true);
     this.settingsErrorMessage.set('');
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
-        urgencyLevels,
         routingRules,
       })
       .subscribe({
@@ -464,9 +472,11 @@ export class App {
       ...this.settingsForm.routingRules,
       {
         name: `Route ${this.settingsForm.routingRules.length + 1}`,
+        description: '',
         destinationEmail: this.sessionEmail(),
         urgentKeywords: '',
         consultationWindows: '',
+        urgencyLevels: 'NORMAL, URGENT',
       },
     ];
   }
@@ -524,7 +534,11 @@ export class App {
   }
 
   isHighestUrgency(consultation: Consultation): boolean {
-    const levels = this.tenantSettings()?.urgencyLevels ?? ['NORMAL', 'URGENT'];
+    const settings = this.tenantSettings();
+    const matchedRule = settings?.routingRules?.find((rule) => rule.name === consultation.consultationType);
+    const levels = matchedRule?.urgencyLevels?.length
+      ? matchedRule.urgencyLevels
+      : (settings?.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT']);
     return consultation.urgency === levels[levels.length - 1];
   }
 
@@ -552,28 +566,30 @@ export class App {
   }
 
   private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
-    this.settingsForm.urgencyLevels = (settings.urgencyLevels?.length
-      ? settings.urgencyLevels
-      : ['NORMAL', 'URGENT']
-    ).join(', ');
-
     const rules =
       settings.routingRules?.length
         ? settings.routingRules
         : [
             {
               name: 'Default intake route',
+              description: null,
               urgentKeywords: settings.urgentKeywords ?? [],
               consultationWindows: settings.consultationWindows ?? [],
+              urgencyLevels: settings.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT'],
               destinationEmail: settings.destinationEmail,
             },
           ];
 
     return rules.map((rule, index) => ({
       name: rule.name || `Route ${index + 1}`,
+      description: rule.description ?? '',
       destinationEmail: rule.destinationEmail ?? this.sessionEmail(),
       urgentKeywords: (rule.urgentKeywords ?? []).join(', '),
       consultationWindows: (rule.consultationWindows ?? []).join(', '),
+      urgencyLevels: (rule.urgencyLevels?.length ? rule.urgencyLevels : ['NORMAL', 'URGENT']).join(', '),
     }));
   }
 }
+
+
+

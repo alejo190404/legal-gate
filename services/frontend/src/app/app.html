@@ -320,16 +320,6 @@
                 }
               </div>
 
-              <div class="urgency-levels-editor">
-                <label for="urgencyLevels">Niveles de urgencia</label>
-                <input
-                  id="urgencyLevels"
-                  name="urgencyLevels"
-                  [(ngModel)]="settingsForm.urgencyLevels"
-                  placeholder="NORMAL, URGENT"
-                />
-              </div>
-
               <div class="routing-rules">
                 @for (rule of settingsForm.routingRules; track $index; let index = $index) {
                   <section class="routing-rule" aria-label="Regla de enrutamiento">
@@ -354,6 +344,22 @@
                       [(ngModel)]="rule.destinationEmail"
                       type="email"
                       autocomplete="email"
+                    />
+
+                    <label [for]="'routeDescription-' + index">Descripcion breve</label>
+                    <textarea
+                      [id]="'routeDescription-' + index"
+                      [name]="'routeDescription-' + index"
+                      [(ngModel)]="rule.description"
+                      rows="2"
+                    ></textarea>
+
+                    <label [for]="'routeUrgencyLevels-' + index">Niveles de urgencia</label>
+                    <input
+                      [id]="'routeUrgencyLevels-' + index"
+                      [name]="'routeUrgencyLevels-' + index"
+                      [(ngModel)]="rule.urgencyLevels"
+                      placeholder="NORMAL, URGENT"
                     />
 
                     <label [for]="'urgentKeywords-' + index">Palabras clave</label>
@@ -434,3 +440,4 @@
     </main>
   }
 }
+

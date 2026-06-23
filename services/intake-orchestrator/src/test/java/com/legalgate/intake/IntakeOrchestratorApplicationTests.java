@@ -180,7 +180,7 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
-    void lawyerCanConfigureUrgencyCriteriaWindowsAndDestinationEmail() throws Exception {
+    void settingsPutRejectsLegacyFlatRoutingFields() throws Exception {
         mockMvc.perform(put("/api/tenants/bogota-legal/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -190,21 +190,8 @@ class IntakeOrchestratorApplicationTests {
                                   "destinationEmail": "consultas@firma.test"
                                 }
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
-                .andExpect(jsonPath("$.urgentKeywords", hasSize(3)))
-                .andExpect(jsonPath("$.consultationWindows", hasSize(2)))
-                .andExpect(jsonPath("$.destinationEmail").value("consultas@firma.test"))
-                .andExpect(jsonPath("$.urgencyLevels[0]").value("NORMAL"))
-                .andExpect(jsonPath("$.urgencyLevels[1]").value("URGENT"))
-                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.co"))
-                .andExpect(jsonPath("$.routingRules", hasSize(1)))
-                .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("consultas@firma.test"));
-
-        mockMvc.perform(get("/api/tenants/bogota-legal/settings"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tenantId").value("bogota-legal"))
-                .andExpect(jsonPath("$.intakeEmail").value("bogota-legal@intake.legal-gate.co"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("legacy_flat_routing_settings_not_supported"));
     }
 
     @Test
@@ -254,14 +241,18 @@ class IntakeOrchestratorApplicationTests {
                                   "routingRules": [
                                     {
                                       "name": "Workspace incidents",
+                                      "description": "Incidentes de convivencia laboral",
                                       "urgentKeywords": ["harassment", "workspace incident"],
                                       "consultationWindows": ["LUN 08:00-10:00"],
+                                      "urgencyLevels": ["NORMAL", "URGENT"],
                                       "destinationEmail": "personal@firma.test"
                                     },
                                     {
                                       "name": "Labor penalties",
+                                      "description": "Sanciones y penalidades laborales",
                                       "urgentKeywords": ["penalties"],
                                       "consultationWindows": ["MAR 09:00-12:00", "JUE 09:00-12:00"],
+                                      "urgencyLevels": ["URGENT", "CRITICAL"],
                                       "destinationEmail": "laboral@firma.test"
                                     }
                                   ]
@@ -269,8 +260,13 @@ class IntakeOrchestratorApplicationTests {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value("laboral-legal"))
+                .andExpect(jsonPath("$.urgencyLevels[0]").value("NORMAL"))
+                .andExpect(jsonPath("$.urgencyLevels[1]").value("URGENT"))
+                .andExpect(jsonPath("$.urgencyLevels[2]").value("CRITICAL"))
                 .andExpect(jsonPath("$.routingRules", hasSize(2)))
+                .andExpect(jsonPath("$.routingRules[0].description").value("Incidentes de convivencia laboral"))
                 .andExpect(jsonPath("$.routingRules[0].destinationEmail").value("personal@firma.test"))
+                .andExpect(jsonPath("$.routingRules[1].urgencyLevels[1]").value("CRITICAL"))
                 .andExpect(jsonPath("$.routingRules[1].destinationEmail").value("laboral@firma.test"));
 
         mockMvc.perform(post("/api/tenants/laboral-legal/consultations")
@@ -283,7 +279,7 @@ class IntakeOrchestratorApplicationTests {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.urgency").value("URGENT"))
+                .andExpect(jsonPath("$.urgency").value("CRITICAL"))
                 .andExpect(jsonPath("$.classification.matchedUrgentKeywords[0]").value("penalties"))
                 .andExpect(jsonPath("$.notifications.destinationEmail").value("laboral@firma.test"))
                 .andExpect(jsonPath("$.notifications.preferredWindow").value("MAR 09:00-12:00"));
@@ -295,18 +291,21 @@ class IntakeOrchestratorApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgencyLevels": ["BAJA", "MEDIA", "ALTA"],
                                   "routingRules": [
                                     {
                                       "name": "Civil",
+                                      "description": "Contratos y asuntos civiles",
                                       "urgentKeywords": ["contrato"],
                                       "consultationWindows": ["LUN 08:00-10:00"],
+                                      "urgencyLevels": ["BAJA", "MEDIA"],
                                       "destinationEmail": "civil@firma.test"
                                     },
                                     {
                                       "name": "Laboral",
+                                      "description": "Despidos y relaciones laborales",
                                       "urgentKeywords": ["despido"],
                                       "consultationWindows": ["MAR 09:00-12:00", "JUE 09:00-12:00"],
+                                      "urgencyLevels": ["MEDIA", "ALTA"],
                                       "destinationEmail": "laboral@firma.test"
                                     }
                                   ]
@@ -365,12 +364,13 @@ class IntakeOrchestratorApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgencyLevels": ["NORMAL", "URGENT"],
                                   "routingRules": [
                                     {
                                       "name": "Primary",
+                                      "description": "Primary inbox",
                                       "urgentKeywords": [],
                                       "consultationWindows": ["LUN 08:00-10:00"],
+                                      "urgencyLevels": ["NORMAL", "URGENT"],
                                       "destinationEmail": "primary@firma.test"
                                     }
                                   ]
@@ -478,17 +478,18 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
-    void settingsValidationAcceptsTenantUrgencyEnumsAndRejectsBlankOrDuplicateLists() throws Exception {
+    void settingsValidationAcceptsPerRuleUrgencyEnumsAndRejectsBlankOrDuplicateLists() throws Exception {
         mockMvc.perform(put("/api/tenants/custom-urgency/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgencyLevels": ["BAJA", "MEDIA", "ALTA"],
                                   "routingRules": [
                                     {
                                       "name": "General",
+                                      "description": "Consultas generales",
                                       "urgentKeywords": [],
                                       "consultationWindows": [],
+                                      "urgencyLevels": ["BAJA", "MEDIA", "ALTA"],
                                       "destinationEmail": "general@firma.test"
                                     }
                                   ]
@@ -496,18 +497,19 @@ class IntakeOrchestratorApplicationTests {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.urgencyLevels[0]").value("BAJA"))
-                .andExpect(jsonPath("$.urgencyLevels[2]").value("ALTA"));
+                .andExpect(jsonPath("$.urgencyLevels[2]").value("ALTA"))
+                .andExpect(jsonPath("$.routingRules[0].urgencyLevels[1]").value("MEDIA"));
 
         mockMvc.perform(put("/api/tenants/custom-urgency/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgencyLevels": ["BAJA", "BAJA"],
                                   "routingRules": [
                                     {
                                       "name": "General",
                                       "urgentKeywords": [],
                                       "consultationWindows": [],
+                                      "urgencyLevels": ["BAJA", "BAJA"],
                                       "destinationEmail": "general@firma.test"
                                     }
                                   ]
@@ -515,6 +517,25 @@ class IntakeOrchestratorApplicationTests {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_urgency_levels"));
+
+        mockMvc.perform(put("/api/tenants/custom-urgency/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "urgencyLevels": ["BAJA", "ALTA"],
+                                  "routingRules": [
+                                    {
+                                      "name": "General",
+                                      "urgentKeywords": [],
+                                      "consultationWindows": [],
+                                      "urgencyLevels": ["BAJA", "ALTA"],
+                                      "destinationEmail": "general@firma.test"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("tenant_wide_urgency_levels_not_supported"));
     }
 
     @Test
@@ -569,9 +590,16 @@ class IntakeOrchestratorApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "urgentKeywords": ["audiencia", "captura"],
-                                  "consultationWindows": ["LUN-VIE 09:00-13:00"],
-                                  "destinationEmail": "intake@familia.test"
+                                  "routingRules": [
+                                    {
+                                      "name": "Familia",
+                                      "description": "Consultas de familia",
+                                      "urgentKeywords": ["audiencia", "captura"],
+                                      "consultationWindows": ["LUN-VIE 09:00-13:00"],
+                                      "urgencyLevels": ["NORMAL", "URGENT"],
+                                      "destinationEmail": "intake@familia.test"
+                                    }
+                                  ]
                                 }
                                 """))
                 .andExpect(status().isOk());
@@ -635,3 +663,5 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.fields.summary").exists());
     }
 }
+
+

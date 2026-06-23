@@ -46,6 +46,12 @@ public class TenantSettingsController {
         if (payload.has("intakeEmail")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "system_managed_intake_email");
         }
+        if (payload.has("urgencyLevels")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenant_wide_urgency_levels_not_supported");
+        }
+        if (payload.has("urgentKeywords") || payload.has("consultationWindows") || payload.has("destinationEmail")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "legacy_flat_routing_settings_not_supported");
+        }
         TenantSettingsRequest request = objectMapper.convertValue(payload, TenantSettingsRequest.class);
         Set<ConstraintViolation<TenantSettingsRequest>> violations = validator.validate(request);
         if (!violations.isEmpty()) {
@@ -57,3 +63,4 @@ public class TenantSettingsController {
         return intakeService.saveSettings(tenantId, request);
     }
 }
+

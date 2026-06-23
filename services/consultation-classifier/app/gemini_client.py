@@ -117,9 +117,7 @@ class GeminiConsultationClassifier:
             [
                 request.systemPrompt,
                 "Return only valid JSON matching the provided schema.",
-                "Tenant urgency levels, ordered low to high:",
-                json.dumps(request.urgencyLevels, ensure_ascii=False),
-                "Tenant routes:",
+                "Tenant routes. Each route defines its own urgencyLevels array ordered low to high and may include a short description:",
                 json.dumps(
                     [route.model_dump() for route in request.routes],
                     ensure_ascii=False,
@@ -211,15 +209,17 @@ class GeminiConsultationClassifier:
             {
                 "routeIndex": route.routeIndex,
                 "name": route.name,
+                "description": route.description,
                 "destinationEmail": route.destinationEmail,
                 "keywords": route.keywords,
                 "windows": route.windows,
+                "urgencyLevels": route.urgencyLevels,
             }
             for route in request.routes
         ]
         logger.info(
             "Gemini classification call starting request_id=%s model=%s temperature=%s promptVersion=%s "
-            "messageId=%s sender=%s recipients=%s subject=%s plainChars=%s htmlChars=%s urgencyLevels=%s routes=%s",
+            "messageId=%s sender=%s recipients=%s subject=%s plainChars=%s htmlChars=%s routes=%s",
             request_id,
             self.model,
             self.temperature,
@@ -230,7 +230,6 @@ class GeminiConsultationClassifier:
             self._truncate(email.subject or ""),
             len(email.plain or ""),
             len(email.html or ""),
-            request.urgencyLevels,
             routes,
         )
 
@@ -240,3 +239,4 @@ class GeminiConsultationClassifier:
         if len(value) <= self.log_preview_chars:
             return value
         return value[: self.log_preview_chars] + "...[truncated]"
+

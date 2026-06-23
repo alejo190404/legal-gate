@@ -5,7 +5,6 @@ import java.util.List;
 public record ConsultationClassifierRequest(
         InboundEmail email,
         List<Route> routes,
-        List<String> urgencyLevels,
         String systemPrompt,
         String promptVersion
 ) {
@@ -22,9 +21,12 @@ public record ConsultationClassifierRequest(
     public record Route(
             int routeIndex,
             String name,
+            String description,
             String destinationEmail,
             List<String> keywords,
-            List<String> windows
+            List<String> windows,
+            List<String> urgencyLevels
     ) {
     }
 }
+

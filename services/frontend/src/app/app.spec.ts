@@ -292,34 +292,41 @@ describe('App landing to login to consultation inbox flow', () => {
 
     expect(compiled.textContent).toContain('Configuracion');
     expect(compiled.textContent).toContain('Email LegalGate de intake');
+    expect(compiled.querySelector('#urgencyLevels')).toBeFalsy();
     expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
 
     fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'Notificaciones@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
     fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
-    fixture.componentInstance.settingsForm.urgencyLevels = 'NORMAL, URGENT, CRITICA';
+    fixture.componentInstance.settingsForm.routingRules[0].description = ' Ruta general ';
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, URGENT, CRITICA';
     fixture.componentInstance.addRoutingRule();
     fixture.componentInstance.settingsForm.routingRules[1].name = 'Labor penalties';
+    fixture.componentInstance.settingsForm.routingRules[1].description = 'Labor escalations';
     fixture.componentInstance.settingsForm.routingRules[1].destinationEmail = 'Laboral@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[1].urgentKeywords = 'penalties';
     fixture.componentInstance.settingsForm.routingRules[1].consultationWindows = 'MAR 09:00-12:00, JUE 09:00-12:00';
+    fixture.componentInstance.settingsForm.routingRules[1].urgencyLevels = 'URGENT, CRITICAL';
     fixture.componentInstance.saveSettings();
 
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.method).toBe('PUT');
     expect(settingsRequest.request.body).toEqual({
-      urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
       routingRules: [
         {
           name: 'Default intake route',
+          description: 'Ruta general',
           urgentKeywords: ['audiencia', 'tutela'],
           consultationWindows: ['LUN-VIE 09:00-13:00'],
+          urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
           destinationEmail: 'notificaciones@firma.test',
         },
         {
           name: 'Labor penalties',
+          description: 'Labor escalations',
           urgentKeywords: ['penalties'],
           consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
+          urgencyLevels: ['URGENT', 'CRITICAL'],
           destinationEmail: 'laboral@firma.test',
         },
       ],
@@ -328,20 +335,24 @@ describe('App landing to login to consultation inbox flow', () => {
       ...demoSettings,
       urgentKeywords: ['audiencia', 'tutela'],
       consultationWindows: ['LUN-VIE 09:00-13:00'],
-      urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
+      urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA', 'CRITICAL'],
       destinationEmail: 'notificaciones@firma.test',
       intakeEmail: 'firma-demo@intake.legal-gate.co',
       routingRules: [
         {
           name: 'Default intake route',
+          description: 'Ruta general',
           urgentKeywords: ['audiencia', 'tutela'],
           consultationWindows: ['LUN-VIE 09:00-13:00'],
+          urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
           destinationEmail: 'notificaciones@firma.test',
         },
         {
           name: 'Labor penalties',
+          description: 'Labor escalations',
           urgentKeywords: ['penalties'],
           consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
+          urgencyLevels: ['URGENT', 'CRITICAL'],
           destinationEmail: 'laboral@firma.test',
         },
       ],
@@ -373,6 +384,29 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(settingsPanel?.textContent).toContain('Cada regla necesita un email de destino valido');
     expect(casesPanel?.textContent).not.toContain('Cada regla necesita un email de destino valido');
     expect(compiled.querySelector('.workspace > .status-banner.has-error')).toBeFalsy();
+  });
+
+
+  it('shows validation errors for invalid per-rule urgency lists', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, NORMAL';
+    fixture.componentInstance.saveSettings();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('#configuracion')?.textContent).toContain(
+      'Configura niveles de urgencia por regla sin vacios ni duplicados',
+    );
   });
 
   it('copies the read-only intake email with temporary feedback', async () => {

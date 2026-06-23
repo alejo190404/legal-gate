@@ -40,8 +40,15 @@ def request() -> ConsultationClassificationRequest:
     return ConsultationClassificationRequest.model_validate(
         {
             "email": {"subject": "Consulta", "sender": "Ana <ana@example.com>"},
-            "routes": [{"routeIndex": 0, "name": "Laboral", "destinationEmail": "laboral@example.com"}],
-            "urgencyLevels": ["NORMAL", "URGENT"],
+            "routes": [
+                {
+                    "routeIndex": 0,
+                    "name": "Laboral",
+                    "description": "Despidos y contratos laborales",
+                    "destinationEmail": "laboral@example.com",
+                    "urgencyLevels": ["NORMAL", "URGENT"],
+                }
+            ],
             "systemPrompt": "Clasifica.",
         }
     )
@@ -162,3 +169,15 @@ def test_invalid_model_output_surfaces_typed_error() -> None:
         classifier.classify(request())
 
     assert error.value.error == "gemini_invalid_response"
+
+
+def test_prompt_uses_route_specific_urgency_levels_and_no_tenant_wide_section() -> None:
+    classifier = GeminiConsultationClassifier()
+
+    prompt = classifier._prompt_for(request())
+
+    assert "Tenant routes. Each route defines its own urgencyLevels array ordered low to high" in prompt
+    assert "Despidos y contratos laborales" in prompt
+    assert "urgencyLevels" in prompt
+    assert "Tenant urgency levels" not in prompt
+

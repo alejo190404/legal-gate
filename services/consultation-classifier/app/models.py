@@ -17,9 +17,11 @@ class InboundEmail(BaseModel):
 class TenantRoute(BaseModel):
     routeIndex: int = Field(ge=0)
     name: str = Field(min_length=1)
+    description: str | None = None
     destinationEmail: str | None = None
     keywords: list[str] = Field(default_factory=list)
     windows: list[str] = Field(default_factory=list)
+    urgencyLevels: list[str] = Field(min_length=1)
 
     @field_validator("name")
     @classmethod
@@ -29,13 +31,13 @@ class TenantRoute(BaseModel):
             raise ValueError("route name is required")
         return trimmed
 
-
-class ConsultationClassificationRequest(BaseModel):
-    email: InboundEmail
-    routes: list[TenantRoute] = Field(min_length=1)
-    urgencyLevels: list[str] = Field(min_length=1)
-    systemPrompt: str
-    promptVersion: str | None = None
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
 
     @field_validator("urgencyLevels")
     @classmethod
@@ -45,12 +47,19 @@ class ConsultationClassificationRequest(BaseModel):
         for value in values:
             item = value.strip()
             if not item:
-                raise ValueError("urgency levels cannot be blank")
+                raise ValueError("route urgency levels cannot be blank")
             if item in seen:
-                raise ValueError("urgency levels must be unique")
+                raise ValueError("route urgency levels must be unique")
             trimmed.append(item)
             seen.add(item)
         return trimmed
+
+
+class ConsultationClassificationRequest(BaseModel):
+    email: InboundEmail
+    routes: list[TenantRoute] = Field(min_length=1)
+    systemPrompt: str
+    promptVersion: str | None = None
 
     @field_validator("systemPrompt")
     @classmethod

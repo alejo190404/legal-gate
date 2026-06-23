@@ -33,13 +33,16 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class IntakeService {
 
+    private static final List<String> DEFAULT_URGENCY_LEVELS = List.of("NORMAL", "URGENT");
+
     private static final TenantRoutingRule DEFAULT_ROUTING_RULE = new TenantRoutingRule(
             "Default intake route",
+            null,
             List.of("audiencia", "captura", "tutela", "vencimiento"),
             List.of(),
+            DEFAULT_URGENCY_LEVELS,
             null
     );
-    private static final List<String> DEFAULT_URGENCY_LEVELS = List.of("NORMAL", "URGENT");
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
 
@@ -70,7 +73,7 @@ public class IntakeService {
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
         List<TenantRoutingRule> routingRules = routingRulesFrom(request);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
-        List<String> urgencyLevels = sanitizeUrgencyLevels(request.urgencyLevels());
+        List<String> urgencyLevels = derivedUrgencyLevels(routingRules);
         TenantSettingsResponse settings = new TenantSettingsResponse(
                 tenantId,
                 primaryRule.urgentKeywords(),
@@ -92,7 +95,7 @@ public class IntakeService {
         TenantRoutingRule routingRule = routingRuleForSummary(request.summary(), routingRulesFor(settings));
         List<String> matchedKeywords = matchUrgentKeywords(request.summary(), routingRule.urgentKeywords());
         String preferredWindow = preferredWindowFor(request.preferredWindow(), routingRule.consultationWindows());
-        List<String> urgencyLevels = urgencyLevelsFor(settings);
+        List<String> urgencyLevels = urgencyLevelsFor(routingRule);
         String urgency = matchedKeywords.isEmpty() ? urgencyLevels.get(0) : urgencyLevels.get(urgencyLevels.size() - 1);
         ClassificationResult classification = new ClassificationResult(
                 "MANUAL_REVIEW",
@@ -139,18 +142,17 @@ public class IntakeService {
 
         TenantSettingsResponse settings = settingsFor(event.tenantId());
         List<TenantRoutingRule> routingRules = routingRulesFor(settings);
-        List<String> urgencyLevels = urgencyLevelsFor(settings);
         ConsultationClassifierResponse classifierResponse;
         try {
             classifierResponse = consultationClassifierClient.classify(
-                    classifierRequestFor(event, routingRules, urgencyLevels)
+                    classifierRequestFor(event, routingRules)
             );
         } catch (ClassifierUnavailableException ex) {
-            return saveFallbackInboundConsultation(event, routingRules, urgencyLevels, "LLM_FAILED");
+            return saveFallbackInboundConsultation(event, routingRules, "LLM_FAILED");
         }
 
-        if (!isValidClassifierResponse(classifierResponse, routingRules, urgencyLevels)) {
-            return saveFallbackInboundConsultation(event, routingRules, urgencyLevels, "LLM_INVALID_RESPONSE");
+        if (!isValidClassifierResponse(classifierResponse, routingRules)) {
+            return saveFallbackInboundConsultation(event, routingRules, "LLM_INVALID_RESPONSE");
         }
 
         TenantRoutingRule selectedRoute = routingRules.get(classifierResponse.routeIndex());
@@ -192,7 +194,6 @@ public class IntakeService {
     private ConsultationResponse saveFallbackInboundConsultation(
             InboundEmailReceived event,
             List<TenantRoutingRule> routingRules,
-            List<String> urgencyLevels,
             String label
     ) {
         TenantRoutingRule primaryRoute = primaryRoutingRule(routingRules);
@@ -213,7 +214,7 @@ public class IntakeService {
                 summary.trim(),
                 preferredWindow,
                 "RECEIVED",
-                urgencyLevels.get(0),
+                urgencyLevelsFor(primaryRoute).get(0),
                 primaryRoute.name(),
                 primaryRoute.destinationEmail(),
                 classification,
@@ -226,8 +227,7 @@ public class IntakeService {
 
     private ConsultationClassifierRequest classifierRequestFor(
             InboundEmailReceived event,
-            List<TenantRoutingRule> routingRules,
-            List<String> urgencyLevels
+            List<TenantRoutingRule> routingRules
     ) {
         List<ConsultationClassifierRequest.Route> routes = new ArrayList<>();
         for (int index = 0; index < routingRules.size(); index++) {
@@ -235,9 +235,11 @@ public class IntakeService {
             routes.add(new ConsultationClassifierRequest.Route(
                     index,
                     rule.name(),
+                    rule.description(),
                     rule.destinationEmail(),
                     rule.urgentKeywords(),
-                    rule.consultationWindows()
+                    rule.consultationWindows(),
+                    rule.urgencyLevels()
             ));
         }
         return new ConsultationClassifierRequest(
@@ -250,7 +252,6 @@ public class IntakeService {
                         event.messageId()
                 ),
                 routes,
-                urgencyLevels,
                 intakeProperties.consultationClassifierSystemPrompt(),
                 intakeProperties.consultationClassifierPromptVersion()
         );
@@ -258,15 +259,16 @@ public class IntakeService {
 
     private boolean isValidClassifierResponse(
             ConsultationClassifierResponse response,
-            List<TenantRoutingRule> routingRules,
-            List<String> urgencyLevels
+            List<TenantRoutingRule> routingRules
     ) {
         if (response == null || response.routeIndex() == null || response.urgency() == null) {
             return false;
         }
-        return response.routeIndex() >= 0
-                && response.routeIndex() < routingRules.size()
-                && urgencyLevels.contains(response.urgency().trim());
+        if (response.routeIndex() < 0 || response.routeIndex() >= routingRules.size()) {
+            return false;
+        }
+        TenantRoutingRule selectedRoute = routingRules.get(response.routeIndex());
+        return urgencyLevelsFor(selectedRoute).contains(response.urgency().trim());
     }
 
     private TenantSettingsResponse settingsFor(String tenantId) {
@@ -279,16 +281,13 @@ public class IntakeService {
                 intakeProperties.canonicalIntakeEmail(tenantId),
                 DEFAULT_SETTINGS.routingRules()
         );
-        TenantSettingsResponse settings = intakeRepository.settingsFor(tenantId, defaults);
-        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()
-                || settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()) {
+        TenantSettingsResponse settings = normalizeSettings(intakeRepository.settingsFor(tenantId, defaults), tenantId);
+        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(),
                     settings.urgentKeywords(),
                     settings.consultationWindows(),
-                    settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()
-                            ? DEFAULT_URGENCY_LEVELS
-                            : settings.urgencyLevels(),
+                    settings.urgencyLevels(),
                     settings.destinationEmail(),
                     intakeProperties.canonicalIntakeEmail(tenantId),
                     settings.routingRules()
@@ -300,25 +299,29 @@ public class IntakeService {
         return settings;
     }
 
-    private List<TenantRoutingRule> routingRulesFrom(TenantSettingsRequest request) {
-        if (request.routingRules() != null && !request.routingRules().isEmpty()) {
-            List<TenantRoutingRule> rules = new ArrayList<>();
-            for (int index = 0; index < request.routingRules().size(); index++) {
-                rules.add(sanitizeRoutingRule(request.routingRules().get(index), index));
-            }
-            return List.copyOf(rules);
-        }
-
-        String destinationEmail = sanitizeRequiredEmail(
-                request.destinationEmail(),
-                "destination_email_required"
+    private TenantSettingsResponse normalizeSettings(TenantSettingsResponse settings, String tenantId) {
+        List<TenantRoutingRule> routingRules = routingRulesFor(settings);
+        TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
+        return new TenantSettingsResponse(
+                settings.tenantId() == null ? tenantId : settings.tenantId(),
+                primaryRule.urgentKeywords(),
+                primaryRule.consultationWindows(),
+                derivedUrgencyLevels(routingRules),
+                primaryRule.destinationEmail(),
+                settings.intakeEmail(),
+                routingRules
         );
-        return List.of(new TenantRoutingRule(
-                "Default intake route",
-                sanitize(request.urgentKeywords()),
-                sanitize(request.consultationWindows()),
-                destinationEmail
-        ));
+    }
+
+    private List<TenantRoutingRule> routingRulesFrom(TenantSettingsRequest request) {
+        if (request.routingRules() == null || request.routingRules().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "routing_rules_required");
+        }
+        List<TenantRoutingRule> rules = new ArrayList<>();
+        for (int index = 0; index < request.routingRules().size(); index++) {
+            rules.add(sanitizeRoutingRule(request.routingRules().get(index), index));
+        }
+        return List.copyOf(rules);
     }
 
     private TenantRoutingRule sanitizeRoutingRule(TenantRoutingRule rule, int index) {
@@ -330,8 +333,10 @@ public class IntakeService {
                 : rule.name().trim();
         return new TenantRoutingRule(
                 name,
+                sanitizeNullable(rule.description()),
                 sanitize(rule.urgentKeywords()),
                 sanitize(rule.consultationWindows()),
+                sanitizeUrgencyLevels(rule.urgencyLevels()),
                 sanitizeRequiredEmail(rule.destinationEmail(), "routing_rule_destination_email_required")
         );
     }
@@ -348,22 +353,55 @@ public class IntakeService {
     }
 
     private List<TenantRoutingRule> routingRulesFor(TenantSettingsResponse settings) {
+        List<String> fallbackUrgencyLevels = urgencyLevelsFor(settings);
         if (settings.routingRules() != null && !settings.routingRules().isEmpty()) {
-            return settings.routingRules();
+            List<TenantRoutingRule> rules = new ArrayList<>();
+            for (int index = 0; index < settings.routingRules().size(); index++) {
+                TenantRoutingRule rule = settings.routingRules().get(index);
+                List<String> ruleUrgencyLevels = rule.urgencyLevels() == null || rule.urgencyLevels().isEmpty()
+                        ? fallbackUrgencyLevels
+                        : rule.urgencyLevels();
+                rules.add(new TenantRoutingRule(
+                        rule.name() == null || rule.name().isBlank() ? "Route " + (index + 1) : rule.name().trim(),
+                        sanitizeNullable(rule.description()),
+                        sanitize(rule.urgentKeywords()),
+                        sanitize(rule.consultationWindows()),
+                        sanitizeUrgencyLevels(ruleUrgencyLevels),
+                        sanitizeEmail(rule.destinationEmail())
+                ));
+            }
+            return List.copyOf(rules);
         }
         return List.of(new TenantRoutingRule(
                 "Default intake route",
-                settings.urgentKeywords(),
-                settings.consultationWindows(),
-                settings.destinationEmail()
+                null,
+                sanitize(settings.urgentKeywords()),
+                sanitize(settings.consultationWindows()),
+                fallbackUrgencyLevels,
+                sanitizeEmail(settings.destinationEmail())
         ));
+    }
+
+    private List<String> urgencyLevelsFor(TenantRoutingRule rule) {
+        if (rule.urgencyLevels() == null || rule.urgencyLevels().isEmpty()) {
+            return DEFAULT_URGENCY_LEVELS;
+        }
+        return rule.urgencyLevels();
     }
 
     private List<String> urgencyLevelsFor(TenantSettingsResponse settings) {
         if (settings.urgencyLevels() == null || settings.urgencyLevels().isEmpty()) {
             return DEFAULT_URGENCY_LEVELS;
         }
-        return settings.urgencyLevels();
+        return sanitizeUrgencyLevels(settings.urgencyLevels());
+    }
+
+    private List<String> derivedUrgencyLevels(List<TenantRoutingRule> routingRules) {
+        LinkedHashSet<String> levels = new LinkedHashSet<>();
+        for (TenantRoutingRule rule : routingRules) {
+            levels.addAll(urgencyLevelsFor(rule));
+        }
+        return levels.isEmpty() ? DEFAULT_URGENCY_LEVELS : List.copyOf(levels);
     }
 
     private String preferredWindowFor(String requestedWindow, List<String> configuredWindows) {
@@ -487,3 +525,5 @@ public class IntakeService {
         return withoutAccents.toLowerCase(Locale.ROOT);
     }
 }
+
+
