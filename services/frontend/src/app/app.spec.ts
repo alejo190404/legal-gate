@@ -54,11 +54,30 @@ const demoSettings = {
   urgencyLevels: ['NORMAL', 'URGENT'],
   destinationEmail: 'notificaciones@firma.test',
   intakeEmail: 'firma-demo@intake.legal-gate.co',
+  lawyers: [
+    {
+      id: 'lawyer-general',
+      displayName: 'Notificaciones',
+      email: 'notificaciones@firma.test',
+      active: true,
+      defaultEventDurationMinutes: 60,
+      availabilityWindows: [
+        { weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' },
+      ],
+    },
+  ],
   routingRules: [
     {
       name: 'Default intake route',
+      description: 'Ruta general',
       urgentKeywords: ['audiencia', 'captura'],
-      consultationWindows: ['LUN-VIE 09:00-13:00'],
+      consultationWindows: [],
+      urgencyLevels: ['NORMAL', 'URGENT'],
+      lawyerId: 'lawyer-general',
+      urgencyDefinitions: [
+        { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+        { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+      ],
       destinationEmail: 'notificaciones@firma.test',
     },
   ],
@@ -244,10 +263,12 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.email = 'wrong@example.com';
     fixture.componentInstance.loginForm.password = 'bad-password';
     fixture.componentInstance.login();
-    http.expectOne('/api/auth/login').flush(
-      { error: 'invalid_credentials', message: 'Email or password is incorrect.' },
-      { status: 401, statusText: 'Unauthorized' },
-    );
+    http
+      .expectOne('/api/auth/login')
+      .flush(
+        { error: 'invalid_credentials', message: 'Email or password is incorrect.' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
     fixture.detectChanges();
 
     expect(compiled.querySelector('h1')?.textContent).toContain('Ingresa a LegalGate');
@@ -265,15 +286,19 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
     fixture.componentInstance.login();
 
-    http.expectOne('https://legal-gate-gateway.onrender.com/api/backend/api/auth/login').flush(
-      loginResponse,
-    );
-    http.expectOne(
-      'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
-    ).flush(demoResponse);
-    http.expectOne(
-      'https://legal-gate-gateway.onrender.com/api/backend/api/tenants/firma-demo/settings',
-    ).flush(demoSettings);
+    http
+      .expectOne('https://legal-gate-gateway.onrender.com/api/backend/api/auth/login')
+      .flush(loginResponse);
+    http
+      .expectOne(
+        'https://legal-gate-gateway.onrender.com/api/backend/api/admin/tenants/firma-demo/consultations',
+      )
+      .flush(demoResponse);
+    http
+      .expectOne(
+        'https://legal-gate-gateway.onrender.com/api/backend/api/tenants/firma-demo/settings',
+      )
+      .flush(demoSettings);
   });
 
   it('shows the read-only LegalGate intake email and saves routing rules without intakeEmail', () => {
@@ -296,40 +321,69 @@ describe('App landing to login to consultation inbox flow', () => {
 
     fixture.componentInstance.settingsForm.lawyers[0].displayName = 'Notificaciones';
     fixture.componentInstance.settingsForm.lawyers[0].email = 'notificaciones@firma.test';
-    fixture.componentInstance.settingsForm.routingRules[0].destinationEmail = 'notificaciones@firma.test';
+    fixture.componentInstance.settingsForm.lawyers[0].active = false;
+    fixture.componentInstance.settingsForm.lawyers[0].availabilityWindows[0].timezone = 'UTC';
+    fixture.componentInstance.settingsForm.routingRules[0].destinationEmail =
+      'notificaciones@firma.test';
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
-    fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
+    fixture.componentInstance.settingsForm.routingRules[0].consultationWindows =
+      'LUN-VIE 09:00-13:00';
     fixture.componentInstance.settingsForm.routingRules[0].description = ' Ruta general ';
     fixture.componentInstance.settingsForm.routingRules[0].urgencyDefinitions = [
-      { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
-      { name: 'URGENT', rank: 2, slaDays: 1, active: true },
-      { name: 'CRITICA', rank: 3, slaDays: 5, active: true },
+      { name: 'NORMAL', rank: 10, slaDays: 5, active: false },
+      { name: 'URGENT', rank: 4, slaDays: 1, active: false },
+      { name: 'CRITICA', rank: 99, slaDays: 5, active: false },
     ];
     fixture.componentInstance.addLawyer();
     fixture.componentInstance.settingsForm.lawyers[1].displayName = 'Laboral';
     fixture.componentInstance.settingsForm.lawyers[1].email = 'laboral@firma.test';
+    fixture.componentInstance.settingsForm.lawyers[1].active = false;
+    fixture.componentInstance.settingsForm.lawyers[1].availabilityWindows[0].timezone =
+      'Europe/Madrid';
     fixture.componentInstance.addRoutingRule();
-    fixture.componentInstance.settingsForm.routingRules[1].lawyerId = fixture.componentInstance.settingsForm.lawyers[1].id;
+    fixture.componentInstance.settingsForm.routingRules[1].lawyerId =
+      fixture.componentInstance.settingsForm.lawyers[1].id;
     fixture.componentInstance.settingsForm.routingRules[1].name = 'Labor penalties';
     fixture.componentInstance.settingsForm.routingRules[1].description = 'Labor escalations';
     fixture.componentInstance.settingsForm.routingRules[1].destinationEmail = 'Laboral@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[1].urgentKeywords = 'penalties';
-    fixture.componentInstance.settingsForm.routingRules[1].consultationWindows = 'MAR 09:00-12:00, JUE 09:00-12:00';
+    fixture.componentInstance.settingsForm.routingRules[1].consultationWindows =
+      'MAR 09:00-12:00, JUE 09:00-12:00';
     fixture.componentInstance.settingsForm.routingRules[1].urgencyDefinitions = [
-      { name: 'URGENT', rank: 1, slaDays: 1, active: true },
-      { name: 'CRITICAL', rank: 2, slaDays: 5, active: true },
+      { name: 'URGENT', rank: 9, slaDays: 1, active: false },
+      { name: 'CRITICAL', rank: 3, slaDays: 5, active: false },
     ];
     fixture.componentInstance.saveSettings();
 
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.method).toBe('PUT');
     expect(settingsRequest.request.body.lawyers).toHaveLength(2);
+    expect(settingsRequest.request.body.lawyers[0]).toMatchObject({
+      displayName: 'Notificaciones',
+      email: 'notificaciones@firma.test',
+      active: true,
+    });
+    expect(settingsRequest.request.body.lawyers[0].availabilityWindows[0]).toMatchObject({
+      weekday: 1,
+      startTime: '09:00',
+      endTime: '17:00',
+      timezone: 'America/Bogota',
+    });
+    expect(settingsRequest.request.body.lawyers[1]).toMatchObject({
+      displayName: 'Laboral',
+      email: 'laboral@firma.test',
+      active: true,
+    });
+    expect(settingsRequest.request.body.lawyers[1].availabilityWindows[0].timezone).toBe(
+      'America/Bogota',
+    );
     expect(settingsRequest.request.body.routingRules[0]).toMatchObject({
       name: 'Default intake route',
       description: 'Ruta general',
       urgentKeywords: ['audiencia', 'tutela'],
-      consultationWindows: ['LUN-VIE 09:00-13:00'],
+      consultationWindows: [],
       urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
+      lawyerId: 'lawyer-general',
       destinationEmail: 'notificaciones@firma.test',
     });
     expect(settingsRequest.request.body.routingRules[0].urgencyDefinitions).toEqual([
@@ -341,10 +395,15 @@ describe('App landing to login to consultation inbox flow', () => {
       name: 'Labor penalties',
       description: 'Labor escalations',
       urgentKeywords: ['penalties'],
-      consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
+      consultationWindows: [],
       urgencyLevels: ['URGENT', 'CRITICAL'],
+      lawyerId: fixture.componentInstance.settingsForm.lawyers[1].id,
       destinationEmail: 'laboral@firma.test',
     });
+    expect(settingsRequest.request.body.routingRules[1].urgencyDefinitions).toEqual([
+      { name: 'URGENT', rank: 1, slaDays: 1, active: true },
+      { name: 'CRITICAL', rank: 2, slaDays: 5, active: true },
+    ]);
     settingsRequest.flush({
       ...demoSettings,
       urgentKeywords: ['audiencia', 'tutela'],
@@ -352,28 +411,94 @@ describe('App landing to login to consultation inbox flow', () => {
       urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA', 'CRITICAL'],
       destinationEmail: 'notificaciones@firma.test',
       intakeEmail: 'firma-demo@intake.legal-gate.co',
-      routingRules: [
-        {
-          name: 'Default intake route',
-          description: 'Ruta general',
-          urgentKeywords: ['audiencia', 'tutela'],
-          consultationWindows: ['LUN-VIE 09:00-13:00'],
-          urgencyLevels: ['NORMAL', 'URGENT', 'CRITICA'],
-          destinationEmail: 'notificaciones@firma.test',
-        },
-        {
-          name: 'Labor penalties',
-          description: 'Labor escalations',
-          urgentKeywords: ['penalties'],
-          consultationWindows: ['MAR 09:00-12:00', 'JUE 09:00-12:00'],
-          urgencyLevels: ['URGENT', 'CRITICAL'],
-          destinationEmail: 'laboral@firma.test',
-        },
-      ],
+      lawyers: settingsRequest.request.body.lawyers,
+      routingRules: settingsRequest.request.body.routingRules,
     });
     fixture.detectChanges();
 
     expect(compiled.textContent).toContain('firma-demo@intake.legal-gate.co');
+  });
+
+  it('shows one lawyer and one rule card at a time with next and dotted add rails', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+
+    fixture.componentInstance.addLawyer();
+    fixture.componentInstance.settingsForm.lawyers[1].displayName = 'Laboral';
+    fixture.componentInstance.settingsForm.lawyers[1].email = 'laboral@firma.test';
+    fixture.componentInstance.addRoutingRule();
+    fixture.componentInstance.settingsForm.routingRules[1].name = 'Labor route';
+    fixture.componentInstance.activeLawyerIndex.set(0);
+    fixture.componentInstance.activeRuleIndex.set(0);
+    fixture.detectChanges();
+
+    const settingsPanel = compiled.querySelector('#configuracion') as HTMLElement;
+    expect(settingsPanel.querySelectorAll('.lawyer-card')).toHaveLength(1);
+    expect(settingsPanel.querySelectorAll('.routing-rule')).toHaveLength(1);
+    expect(settingsPanel.textContent).toContain('Abogado 1');
+    expect(settingsPanel.textContent).not.toContain('Abogado 2');
+    expect(settingsPanel.textContent).toContain('Regla 1');
+    expect(settingsPanel.textContent).not.toContain('Regla 2');
+
+    const nextLawyerRail = settingsPanel.querySelector<HTMLButtonElement>(
+      '[aria-label="Abogado siguiente"]',
+    );
+    const nextRuleRail = settingsPanel.querySelector<HTMLButtonElement>(
+      '[aria-label="Regla siguiente"]',
+    );
+    expect(nextLawyerRail).toBeTruthy();
+    expect(nextLawyerRail?.classList.contains('is-add')).toBe(false);
+    expect(nextRuleRail).toBeTruthy();
+    expect(nextRuleRail?.classList.contains('is-add')).toBe(false);
+
+    nextLawyerRail?.click();
+    nextRuleRail?.click();
+    fixture.detectChanges();
+
+    expect(settingsPanel.querySelectorAll('.lawyer-card')).toHaveLength(1);
+    expect(settingsPanel.querySelectorAll('.routing-rule')).toHaveLength(1);
+    expect(settingsPanel.textContent).toContain('Abogado 2');
+    expect(settingsPanel.textContent).toContain('Regla 2');
+    expect(
+      settingsPanel.querySelector('[aria-label="Agregar abogado"]')?.classList.contains('is-add'),
+    ).toBe(true);
+    expect(
+      settingsPanel.querySelector('[aria-label="Agregar regla"]')?.classList.contains('is-add'),
+    ).toBe(true);
+  });
+
+  it('hides backend-only configuration controls from the settings panel', () => {
+    const { fixture, http, compiled } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+    fixture.detectChanges();
+
+    const settingsPanel = compiled.querySelector('#configuracion') as HTMLElement;
+    expect(settingsPanel.textContent).not.toContain('Activo');
+    expect(settingsPanel.textContent).not.toContain('Activa');
+    expect(settingsPanel.textContent).not.toContain('Ranking');
+    expect(settingsPanel.textContent).not.toContain('America/Bogota');
+    expect(settingsPanel.textContent).not.toContain('Ventanas heredadas');
+    expect(settingsPanel.querySelector('[name^="lawyerActive-"]')).toBeFalsy();
+    expect(settingsPanel.querySelector('[name^="zone-"]')).toBeFalsy();
+    expect(settingsPanel.querySelector('[name^="urgencyRank-"]')).toBeFalsy();
+    expect(settingsPanel.querySelector('[name^="urgencyActive-"]')).toBeFalsy();
+    expect(settingsPanel.querySelector('[id^="consultationWindows-"]')).toBeFalsy();
   });
 
   it('shows configuration validation errors inside the configuration panel', () => {
@@ -395,11 +520,14 @@ describe('App landing to login to consultation inbox flow', () => {
 
     const settingsPanel = compiled.querySelector('#configuracion');
     const casesPanel = compiled.querySelector('#consultas');
-    expect(settingsPanel?.textContent).toContain('Configura al menos un abogado activo con nombre y email valido');
-    expect(casesPanel?.textContent).not.toContain('Configura al menos un abogado activo con nombre y email valido');
+    expect(settingsPanel?.textContent).toContain(
+      'Configura al menos un abogado activo con nombre y email valido',
+    );
+    expect(casesPanel?.textContent).not.toContain(
+      'Configura al menos un abogado activo con nombre y email valido',
+    );
     expect(compiled.querySelector('.workspace > .status-banner.has-error')).toBeFalsy();
   });
-
 
   it('shows validation errors for invalid per-rule urgency lists', () => {
     const { fixture, http, compiled } = create();
@@ -426,7 +554,7 @@ describe('App landing to login to consultation inbox flow', () => {
     );
   });
 
-  it('saves directly edited urgency definitions without replacing them from legacy urgencyLevels', () => {
+  it('saves directly edited urgency definitions in row order without legacy urgencyLevels', () => {
     const { fixture, http } = create();
 
     fixture.componentInstance.showLogin();
@@ -440,15 +568,15 @@ describe('App landing to login to consultation inbox flow', () => {
 
     fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, URGENT';
     fixture.componentInstance.settingsForm.routingRules[0].urgencyDefinitions = [
-      { name: 'BAJA', rank: 1, slaDays: 7, active: true },
-      { name: 'ALTA', rank: 5, slaDays: 1, active: true },
+      { name: 'BAJA', rank: 10, slaDays: 7, active: false },
+      { name: 'ALTA', rank: 5, slaDays: 1, active: false },
     ];
     fixture.componentInstance.saveSettings();
 
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
     expect(settingsRequest.request.body.routingRules[0].urgencyDefinitions).toEqual([
       { name: 'BAJA', rank: 1, slaDays: 7, active: true },
-      { name: 'ALTA', rank: 5, slaDays: 1, active: true },
+      { name: 'ALTA', rank: 2, slaDays: 1, active: true },
     ]);
     expect(settingsRequest.request.body.routingRules[0].urgencyLevels).toEqual(['BAJA', 'ALTA']);
     settingsRequest.flush(demoSettings);

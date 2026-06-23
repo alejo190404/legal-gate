@@ -185,6 +185,8 @@ export class App {
   readonly errorMessage = signal('');
   readonly consultationsErrorMessage = signal('');
   readonly settingsErrorMessage = signal('');
+  readonly activeLawyerIndex = signal(0);
+  readonly activeRuleIndex = signal(0);
 
   readonly loginForm: LoginForm = {
     email: '',
@@ -232,14 +234,12 @@ export class App {
       this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
   );
   readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
-  readonly configuredIntakeEmail = computed(
-    () => {
-      if (!this.settingsLoaded()) {
-        return 'Cargando...';
-      }
-      return this.tenantSettings()?.intakeEmail || 'No disponible';
-    },
-  );
+  readonly configuredIntakeEmail = computed(() => {
+    if (!this.settingsLoaded()) {
+      return 'Cargando...';
+    }
+    return this.tenantSettings()?.intakeEmail || 'No disponible';
+  });
   readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
   readonly consoleSections: ReadonlyArray<{ id: ConsoleSection; label: string }> = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -302,7 +302,9 @@ export class App {
           this.loadSettings();
         },
         error: () => {
-          this.errorMessage.set('No se pudo crear la cuenta. Verifica los datos e intenta nuevamente.');
+          this.errorMessage.set(
+            'No se pudo crear la cuenta. Verifica los datos e intenta nuevamente.',
+          );
           this.isSubmitting.set(false);
         },
       });
@@ -356,6 +358,8 @@ export class App {
     this.consultations.set([]);
     this.tenantSettings.set(null);
     this.settingsLoaded.set(false);
+    this.activeLawyerIndex.set(0);
+    this.activeRuleIndex.set(0);
     this.isTutorialOpen.set(false);
     this.copyStatus.set('');
     this.isConsoleMenuOpen.set(false);
@@ -430,15 +434,14 @@ export class App {
     this.settingsErrorMessage.set('');
     this.settingsLoaded.set(false);
     this.http
-      .get<TenantSettingsResponse>(
-        this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`),
-      )
+      .get<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`))
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
           this.settingsLoaded.set(true);
           this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
+          this.clampActiveIndexes();
         },
         error: () => {
           this.settingsLoaded.set(true);
@@ -452,31 +455,32 @@ export class App {
       id: lawyer.id,
       displayName: lawyer.displayName.trim(),
       email: lawyer.email.trim().toLowerCase(),
-      active: lawyer.active,
+      active: true,
       defaultEventDurationMinutes: Number(lawyer.defaultEventDurationMinutes),
       availabilityWindows: lawyer.availabilityWindows.map((window) => ({
         weekday: Number(window.weekday),
         startTime: window.startTime,
         endTime: window.endTime,
-        timezone: window.timezone || 'America/Bogota',
+        timezone: 'America/Bogota',
       })),
     }));
 
     const primaryLawyerId = lawyers[0]?.id ?? null;
     const routingRules = this.settingsForm.routingRules.map((rule, index) => {
       const lawyer = lawyers.find((item) => item.id === rule.lawyerId) ?? lawyers[0];
+      const urgencyDefinitions = this.definitionsForSave(rule);
       return {
         name: rule.name.trim() || `Route ${index + 1}`,
         description: rule.description.trim() || null,
         urgentKeywords: this.csvValues(rule.urgentKeywords),
-        consultationWindows: this.csvValues(rule.consultationWindows),
-        urgencyLevels: this.definitionsForSave(rule).filter((item) => item.active).sort((a, b) => a.rank - b.rank).map((item) => item.name.trim()),
+        consultationWindows: [],
+        urgencyLevels: urgencyDefinitions.map((item) => item.name.trim()),
         lawyerId: rule.lawyerId || primaryLawyerId,
-        urgencyDefinitions: this.definitionsForSave(rule).map((item) => ({
+        urgencyDefinitions: urgencyDefinitions.map((item) => ({
           name: item.name.trim(),
           rank: Number(item.rank),
           slaDays: Number(item.slaDays),
-          active: Boolean(item.active),
+          active: true,
         })),
         destinationEmail: (lawyer?.email || rule.destinationEmail).trim().toLowerCase(),
       };
@@ -487,23 +491,38 @@ export class App {
       return;
     }
 
-    if (!lawyers.length || !lawyers.some((lawyer) => lawyer.active) || lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))) {
-      this.settingsErrorMessage.set('Configura al menos un abogado activo con nombre y email valido.');
+    if (
+      !lawyers.length ||
+      !lawyers.some((lawyer) => lawyer.active) ||
+      lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))
+    ) {
+      this.settingsErrorMessage.set(
+        'Configura al menos un abogado activo con nombre y email valido.',
+      );
       return;
     }
 
-    if (lawyers.some((lawyer) => !lawyer.defaultEventDurationMinutes || lawyer.defaultEventDurationMinutes < 15)) {
+    if (
+      lawyers.some(
+        (lawyer) => !lawyer.defaultEventDurationMinutes || lawyer.defaultEventDurationMinutes < 15,
+      )
+    ) {
       this.settingsErrorMessage.set('La duracion por defecto debe ser de al menos 15 minutos.');
       return;
     }
 
-    if (!routingRules.length || routingRules.some((rule) => !rule.lawyerId || !this.isValidEmail(rule.destinationEmail))) {
+    if (
+      !routingRules.length ||
+      routingRules.some((rule) => !rule.lawyerId || !this.isValidEmail(rule.destinationEmail))
+    ) {
       this.settingsErrorMessage.set('Cada regla necesita un abogado asignado.');
       return;
     }
 
     if (routingRules.some((rule) => !this.hasValidUrgencyDefinitions(rule.urgencyDefinitions))) {
-      this.settingsErrorMessage.set('Configura niveles de urgencia por regla sin vacios ni duplicados.');
+      this.settingsErrorMessage.set(
+        'Configura niveles de urgencia por regla sin vacios ni duplicados.',
+      );
       return;
     }
 
@@ -519,6 +538,7 @@ export class App {
           this.tenantSettings.set(settings);
           this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
+          this.clampActiveIndexes();
           this.settingsErrorMessage.set('');
           this.statusMessage.set('Reglas, abogados y SLA actualizados.');
           this.isSubmitting.set(false);
@@ -540,7 +560,8 @@ export class App {
       return;
     }
 
-    navigator.clipboard?.writeText(intakeEmail)
+    navigator.clipboard
+      ?.writeText(intakeEmail)
       .then(() => {
         this.copyStatus.set('Copiado');
         window.setTimeout(() => this.copyStatus.set(''), 1800);
@@ -559,7 +580,10 @@ export class App {
   }
 
   addRoutingRule(): void {
-    const lawyer = this.settingsForm.lawyers[0] ?? this.blankLawyer();
+    const lawyer =
+      this.settingsForm.lawyers[this.activeLawyerIndex()] ??
+      this.settingsForm.lawyers[0] ??
+      this.blankLawyer();
     this.settingsForm.routingRules = [
       ...this.settingsForm.routingRules,
       {
@@ -576,6 +600,8 @@ export class App {
         ],
       },
     ];
+    this.activeRuleIndex.set(this.settingsForm.routingRules.length - 1);
+    this.clampActiveIndexes();
   }
 
   removeRoutingRule(index: number): void {
@@ -584,11 +610,30 @@ export class App {
       return;
     }
     this.settingsErrorMessage.set('');
-    this.settingsForm.routingRules = this.settingsForm.routingRules.filter((_, itemIndex) => itemIndex !== index);
+    this.settingsForm.routingRules = this.settingsForm.routingRules.filter(
+      (_, itemIndex) => itemIndex !== index,
+    );
+    this.clampActiveIndexes();
+  }
+
+  previousRoutingRule(): void {
+    this.activeRuleIndex.update((index) => Math.max(0, index - 1));
+  }
+
+  nextRoutingRule(): void {
+    this.activeRuleIndex.update((index) =>
+      this.clampedIndex(index + 1, this.settingsForm.routingRules.length),
+    );
+  }
+
+  isLastRoutingRule(): boolean {
+    return this.activeRuleIndex() >= this.settingsForm.routingRules.length - 1;
   }
 
   addLawyer(): void {
     this.settingsForm.lawyers = [...this.settingsForm.lawyers, this.blankLawyer()];
+    this.activeLawyerIndex.set(this.settingsForm.lawyers.length - 1);
+    this.clampActiveIndexes();
   }
 
   removeLawyer(index: number): void {
@@ -597,11 +642,32 @@ export class App {
       return;
     }
     const removed = this.settingsForm.lawyers[index];
-    this.settingsForm.lawyers = this.settingsForm.lawyers.filter((_, itemIndex) => itemIndex !== index);
-    const fallback = this.settingsForm.lawyers[0];
-    this.settingsForm.routingRules = this.settingsForm.routingRules.map((rule) =>
-      rule.lawyerId === removed.id ? { ...rule, lawyerId: fallback.id, destinationEmail: fallback.email } : rule,
+    this.settingsForm.lawyers = this.settingsForm.lawyers.filter(
+      (_, itemIndex) => itemIndex !== index,
     );
+    const fallback = this.settingsForm.lawyers[0];
+    if (removed) {
+      this.settingsForm.routingRules = this.settingsForm.routingRules.map((rule) =>
+        rule.lawyerId === removed.id
+          ? { ...rule, lawyerId: fallback.id, destinationEmail: fallback.email }
+          : rule,
+      );
+    }
+    this.clampActiveIndexes();
+  }
+
+  previousLawyer(): void {
+    this.activeLawyerIndex.update((index) => Math.max(0, index - 1));
+  }
+
+  nextLawyer(): void {
+    this.activeLawyerIndex.update((index) =>
+      this.clampedIndex(index + 1, this.settingsForm.lawyers.length),
+    );
+  }
+
+  isLastLawyer(): boolean {
+    return this.activeLawyerIndex() >= this.settingsForm.lawyers.length - 1;
   }
 
   addAvailabilityWindow(lawyer: LawyerForm): void {
@@ -612,7 +678,9 @@ export class App {
   }
 
   removeAvailabilityWindow(lawyer: LawyerForm, index: number): void {
-    lawyer.availabilityWindows = lawyer.availabilityWindows.filter((_, itemIndex) => itemIndex !== index);
+    lawyer.availabilityWindows = lawyer.availabilityWindows.filter(
+      (_, itemIndex) => itemIndex !== index,
+    );
   }
 
   addUrgencyDefinition(rule: TenantRoutingRuleForm): void {
@@ -652,7 +720,9 @@ export class App {
       !this.form.clientEmail.trim() ||
       !this.form.summary.trim()
     ) {
-      this.consultationsErrorMessage.set('Completa nombre, email y resumen para crear la consulta.');
+      this.consultationsErrorMessage.set(
+        'Completa nombre, email y resumen para crear la consulta.',
+      );
       return;
     }
 
@@ -689,15 +759,20 @@ export class App {
 
   isHighestUrgency(consultation: Consultation): boolean {
     const settings = this.tenantSettings();
-    const matchedRule = settings?.routingRules?.find((rule) => rule.name === consultation.consultationType);
-    const definitions = matchedRule?.urgencyDefinitions?.filter((definition) => definition.active) ?? [];
+    const matchedRule = settings?.routingRules?.find(
+      (rule) => rule.name === consultation.consultationType,
+    );
+    const definitions =
+      matchedRule?.urgencyDefinitions?.filter((definition) => definition.active) ?? [];
     if (definitions.length) {
       const highest = [...definitions].sort((a, b) => a.rank - b.rank).at(-1);
       return consultation.urgency === highest?.name;
     }
     const levels = matchedRule?.urgencyLevels?.length
       ? matchedRule.urgencyLevels
-      : (settings?.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT']);
+      : settings?.urgencyLevels?.length
+        ? settings.urgencyLevels
+        : ['NORMAL', 'URGENT'];
     return consultation.urgency === levels[levels.length - 1];
   }
 
@@ -750,14 +825,16 @@ export class App {
   private lawyerFormsFrom(settings: TenantSettingsResponse): LawyerForm[] {
     const lawyers = settings.lawyers?.length
       ? settings.lawyers
-      : [{
-          id: this.cryptoId(),
-          displayName: 'Abogado principal',
-          email: settings.destinationEmail ?? this.sessionEmail(),
-          active: true,
-          defaultEventDurationMinutes: 60,
-          availabilityWindows: this.defaultAvailability(),
-        }];
+      : [
+          {
+            id: this.cryptoId(),
+            displayName: 'Abogado principal',
+            email: settings.destinationEmail ?? this.sessionEmail(),
+            active: true,
+            defaultEventDurationMinutes: 60,
+            availabilityWindows: this.defaultAvailability(),
+          },
+        ];
 
     return lawyers.map((lawyer) => ({
       id: lawyer.id ?? this.cryptoId(),
@@ -765,28 +842,37 @@ export class App {
       email: lawyer.email ?? '',
       active: lawyer.active ?? true,
       defaultEventDurationMinutes: lawyer.defaultEventDurationMinutes ?? 60,
-      availabilityWindows: lawyer.availabilityWindows?.length ? lawyer.availabilityWindows : this.defaultAvailability(),
+      availabilityWindows: lawyer.availabilityWindows?.length
+        ? lawyer.availabilityWindows
+        : this.defaultAvailability(),
     }));
   }
 
   private routingRuleFormsFrom(settings: TenantSettingsResponse): TenantRoutingRuleForm[] {
-    const lawyers = this.settingsForm.lawyers.length ? this.settingsForm.lawyers : this.lawyerFormsFrom(settings);
+    const lawyers = this.settingsForm.lawyers.length
+      ? this.settingsForm.lawyers
+      : this.lawyerFormsFrom(settings);
     const fallbackLawyerId = lawyers[0]?.id ?? null;
     const rules = settings.routingRules?.length
       ? settings.routingRules
-      : [{
-          name: 'Default intake route',
-          description: null,
-          urgentKeywords: settings.urgentKeywords ?? [],
-          consultationWindows: settings.consultationWindows ?? [],
-          urgencyLevels: settings.urgencyLevels?.length ? settings.urgencyLevels : ['NORMAL', 'URGENT'],
-          lawyerId: fallbackLawyerId,
-          urgencyDefinitions: this.urgencyDefinitionsFromLevels(settings.urgencyLevels),
-          destinationEmail: settings.destinationEmail,
-        }];
+      : [
+          {
+            name: 'Default intake route',
+            description: null,
+            urgentKeywords: settings.urgentKeywords ?? [],
+            consultationWindows: settings.consultationWindows ?? [],
+            urgencyLevels: settings.urgencyLevels?.length
+              ? settings.urgencyLevels
+              : ['NORMAL', 'URGENT'],
+            lawyerId: fallbackLawyerId,
+            urgencyDefinitions: this.urgencyDefinitionsFromLevels(settings.urgencyLevels),
+            destinationEmail: settings.destinationEmail,
+          },
+        ];
 
     return rules.map((rule, index) => {
-      const lawyerId = rule.lawyerId ?? this.lawyerIdForEmail(lawyers, rule.destinationEmail) ?? fallbackLawyerId;
+      const lawyerId =
+        rule.lawyerId ?? this.lawyerIdForEmail(lawyers, rule.destinationEmail) ?? fallbackLawyerId;
       const lawyer = lawyers.find((item) => item.id === lawyerId);
       return {
         name: rule.name || `Route ${index + 1}`,
@@ -794,8 +880,11 @@ export class App {
         lawyerId,
         destinationEmail: rule.destinationEmail ?? lawyer?.email ?? this.sessionEmail(),
         urgentKeywords: (rule.urgentKeywords ?? []).join(', '),
-        consultationWindows: (rule.consultationWindows ?? []).join(', '),
-        urgencyLevels: (rule.urgencyLevels?.length ? rule.urgencyLevels : this.activeUrgencyNames(rule.urgencyDefinitions)).join(', '),
+        consultationWindows: '',
+        urgencyLevels: (rule.urgencyLevels?.length
+          ? rule.urgencyLevels
+          : this.activeUrgencyNames(rule.urgencyDefinitions)
+        ).join(', '),
         urgencyDefinitions: rule.urgencyDefinitions?.length
           ? rule.urgencyDefinitions.map((item) => ({ ...item }))
           : this.urgencyDefinitionsFromLevels(rule.urgencyLevels),
@@ -804,7 +893,11 @@ export class App {
   }
 
   private definitionsForSave(rule: TenantRoutingRuleForm): UrgencyDefinition[] {
-    return rule.urgencyDefinitions;
+    return rule.urgencyDefinitions.map((definition, index) => ({
+      ...definition,
+      rank: index + 1,
+      active: true,
+    }));
   }
 
   private activeUrgencyNames(definitions: UrgencyDefinition[] | undefined): string[] {
@@ -833,11 +926,33 @@ export class App {
 
   private hasValidUrgencyDefinitions(definitions: UrgencyDefinition[]): boolean {
     const active = definitions.filter((definition) => definition.active);
-    const names = definitions.map((definition) => definition.name.trim().toLowerCase()).filter(Boolean);
-    return Boolean(active.length)
-      && names.length === definitions.length
-      && names.length === new Set(names).size
-      && definitions.every((definition) => Number(definition.rank) > 0 && Number(definition.slaDays) >= 0);
+    const names = definitions
+      .map((definition) => definition.name.trim().toLowerCase())
+      .filter(Boolean);
+    return (
+      Boolean(active.length) &&
+      names.length === definitions.length &&
+      names.length === new Set(names).size &&
+      definitions.every(
+        (definition) => Number(definition.rank) > 0 && Number(definition.slaDays) >= 0,
+      )
+    );
+  }
+
+  private clampActiveIndexes(): void {
+    this.activeLawyerIndex.set(
+      this.clampedIndex(this.activeLawyerIndex(), this.settingsForm.lawyers.length),
+    );
+    this.activeRuleIndex.set(
+      this.clampedIndex(this.activeRuleIndex(), this.settingsForm.routingRules.length),
+    );
+  }
+
+  private clampedIndex(index: number, length: number): number {
+    if (length <= 0) {
+      return 0;
+    }
+    return Math.min(Math.max(index, 0), length - 1);
   }
 
   private csvValues(value: string): string[] {

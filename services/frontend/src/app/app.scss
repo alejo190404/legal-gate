@@ -882,8 +882,8 @@
 
 .settings-form {
   display: grid;
-  gap: 12px;
-  max-width: 720px;
+  gap: 14px;
+  max-width: 920px;
 
   label {
     color: var(--fg-2);
@@ -891,13 +891,30 @@
     font-weight: 700;
   }
 
-  input {
+  input,
+  select,
+  textarea {
     width: 100%;
     border: 1.5px solid var(--stone-950);
     background: var(--bg-surface);
     color: var(--fg-1);
     font: inherit;
     padding: 12px;
+  }
+
+  select {
+    cursor: pointer;
+  }
+
+  textarea {
+    min-height: 74px;
+    resize: vertical;
+  }
+
+  small {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 12px;
   }
 
   .btn {
@@ -1031,29 +1048,92 @@
   }
 }
 
-.routing-rules {
-  display: grid;
-  gap: 16px;
-}
-
-.urgency-levels-editor {
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-}
-
-.routing-rule {
+.config-frame {
   display: grid;
   gap: 12px;
-  padding: 16px;
+  padding: 14px;
   background: var(--bg-sunken);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--stone-950);
 }
 
-.routing-rule-header,
-.settings-actions {
+.config-frame-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+
+  .eyebrow {
+    margin-bottom: 6px;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0;
+  }
+}
+
+.config-count {
+  align-self: center;
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-ink);
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.config-carousel {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.carousel-rail {
+  display: inline-flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--stone-950);
+  background: var(--bg-surface);
+  box-shadow: 3px 3px 0 0 var(--stone-950);
+  color: var(--brand);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+    box-shadow: none;
+  }
+
+  &.is-add {
+    border-style: dotted;
+    background: var(--brand-subtle);
+    font-size: 28px;
+  }
+}
+
+.config-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--stone-950);
+  box-shadow: 4px 4px 0 0 var(--stone-950);
+}
+
+.config-card-header,
+.settings-actions,
+.config-card-actions,
+.editor-table-title {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -1061,11 +1141,87 @@
   justify-content: space-between;
 }
 
-.routing-rule-header {
-  h3 {
-    margin: 0;
+.config-card-header {
+  h4 {
+    margin: 0 0 4px;
     font-size: 18px;
+    letter-spacing: 0;
   }
+
+  span {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+}
+
+.config-card-actions {
+  justify-content: flex-end;
+}
+
+.save-icon-button {
+  width: 36px;
+  height: 36px;
+  box-shadow: 2px 2px 0 0 var(--stone-950);
+  color: var(--brand);
+  font-size: 16px;
+}
+
+.config-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+
+  &.full-span {
+    grid-column: 1 / -1;
+  }
+}
+
+.duration-field {
+  max-width: 180px;
+}
+
+.editor-table {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--stone-950);
+}
+
+.availability-header,
+.availability-row,
+.sla-header,
+.sla-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.availability-header,
+.sla-header {
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.availability-header,
+.availability-row {
+  grid-template-columns: minmax(120px, 1.2fr) repeat(2, minmax(96px, 1fr)) auto;
+}
+
+.sla-header,
+.sla-row {
+  grid-template-columns: minmax(140px, 1fr) minmax(96px, 0.5fr) auto;
 }
 
 .settings-actions {
@@ -1427,65 +1583,77 @@
   }
 }
 
-.lawyer-editor,
-.routing-rules {
-  display: grid;
-  gap: 16px;
-}
-
-.lawyer-card,
-.routing-rule {
-  display: grid;
-  gap: 10px;
-}
-
-.inline-check {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-}
-
-.availability-table,
-.sla-table {
-  border: 1px solid rgba(31, 41, 55, 0.12);
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-}
-
-.availability-row,
-.sla-header,
-.sla-row {
-  align-items: center;
-  display: grid;
-  gap: 8px;
-}
-
-.availability-row {
-  grid-template-columns: minmax(96px, 1fr) repeat(3, minmax(88px, 1fr)) auto;
-}
-
-.sla-header,
-.sla-row {
-  grid-template-columns: minmax(110px, 1.4fr) minmax(72px, 0.7fr) minmax(80px, 0.8fr) minmax(56px, 0.5fr) auto;
-}
-
-.sla-header {
-  color: #64748b;
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.routing-rule small {
-  color: #64748b;
-}
-
 @media (max-width: 760px) {
+  .settings-form {
+    max-width: 100%;
+  }
+
+  .config-frame {
+    padding: 10px;
+  }
+
+  .config-carousel {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    gap: 8px;
+  }
+
+  .carousel-rail {
+    box-shadow: 2px 2px 0 0 var(--stone-950);
+    font-size: 18px;
+  }
+
+  .carousel-rail.is-add {
+    font-size: 24px;
+  }
+
+  .config-card {
+    padding: 12px;
+    box-shadow: 3px 3px 0 0 var(--stone-950);
+  }
+
+  .config-card-header {
+    align-items: flex-start;
+  }
+
+  .config-field-grid,
   .availability-row,
   .sla-header,
   .sla-row {
     grid-template-columns: 1fr;
+  }
+
+  .availability-header,
+  .sla-header {
+    display: none;
+  }
+
+  .duration-field {
+    max-width: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .readonly-intake-email,
+  .config-frame-header {
+    grid-template-columns: 1fr;
+  }
+
+  .icon-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .config-carousel {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+  }
+
+  .config-card-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .editor-table-title {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
