@@ -305,6 +305,20 @@ class JdbcIntakeRepository implements IntakeRepository {
         if (lawyers == null) {
             return;
         }
+        List<UUID> lawyerIds = lawyers.stream()
+                .map(lawyer -> UUID.fromString(lawyer.id()))
+                .toList();
+        if (lawyerIds.isEmpty()) {
+            jdbcTemplate.update("delete from lawyers where tenant_id = ?", tenantId);
+        } else {
+            String placeholders = String.join(",", lawyerIds.stream().map(ignored -> "?").toList());
+            Object[] args = new Object[lawyerIds.size() + 1];
+            args[0] = tenantId;
+            for (int index = 0; index < lawyerIds.size(); index++) {
+                args[index + 1] = lawyerIds.get(index);
+            }
+            jdbcTemplate.update("delete from lawyers where tenant_id = ? and id not in (" + placeholders + ")", args);
+        }
         for (LawyerProfile lawyer : lawyers) {
             UUID lawyerId = UUID.fromString(lawyer.id());
             jdbcTemplate.update("""

@@ -300,7 +300,11 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.settingsForm.routingRules[0].urgentKeywords = 'audiencia, tutela';
     fixture.componentInstance.settingsForm.routingRules[0].consultationWindows = 'LUN-VIE 09:00-13:00';
     fixture.componentInstance.settingsForm.routingRules[0].description = ' Ruta general ';
-    fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, URGENT, CRITICA';
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyDefinitions = [
+      { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+      { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+      { name: 'CRITICA', rank: 3, slaDays: 5, active: true },
+    ];
     fixture.componentInstance.addLawyer();
     fixture.componentInstance.settingsForm.lawyers[1].displayName = 'Laboral';
     fixture.componentInstance.settingsForm.lawyers[1].email = 'laboral@firma.test';
@@ -311,7 +315,10 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.settingsForm.routingRules[1].destinationEmail = 'Laboral@Firma.test ';
     fixture.componentInstance.settingsForm.routingRules[1].urgentKeywords = 'penalties';
     fixture.componentInstance.settingsForm.routingRules[1].consultationWindows = 'MAR 09:00-12:00, JUE 09:00-12:00';
-    fixture.componentInstance.settingsForm.routingRules[1].urgencyLevels = 'URGENT, CRITICAL';
+    fixture.componentInstance.settingsForm.routingRules[1].urgencyDefinitions = [
+      { name: 'URGENT', rank: 1, slaDays: 1, active: true },
+      { name: 'CRITICAL', rank: 2, slaDays: 5, active: true },
+    ];
     fixture.componentInstance.saveSettings();
 
     const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
@@ -407,13 +414,44 @@ describe('App landing to login to consultation inbox flow', () => {
     http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
     fixture.detectChanges();
 
-    fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, NORMAL';
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyDefinitions = [
+      { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+      { name: 'NORMAL', rank: 2, slaDays: 1, active: true },
+    ];
     fixture.componentInstance.saveSettings();
     fixture.detectChanges();
 
     expect(compiled.querySelector('#configuracion')?.textContent).toContain(
       'Configura niveles de urgencia por regla sin vacios ni duplicados',
     );
+  });
+
+  it('saves directly edited urgency definitions without replacing them from legacy urgencyLevels', () => {
+    const { fixture, http } = create();
+
+    fixture.componentInstance.showLogin();
+    fixture.componentInstance.loginForm.email = 'admin@firma-demo.test';
+    fixture.componentInstance.loginForm.password = 'LegalGateDemo2026!';
+    fixture.componentInstance.login();
+
+    http.expectOne('/api/auth/login').flush(loginResponse);
+    http.expectOne('/api/admin/tenants/firma-demo/consultations').flush(demoResponse);
+    http.expectOne('/api/tenants/firma-demo/settings').flush(demoSettings);
+
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyLevels = 'NORMAL, URGENT';
+    fixture.componentInstance.settingsForm.routingRules[0].urgencyDefinitions = [
+      { name: 'BAJA', rank: 1, slaDays: 7, active: true },
+      { name: 'ALTA', rank: 5, slaDays: 1, active: true },
+    ];
+    fixture.componentInstance.saveSettings();
+
+    const settingsRequest = http.expectOne('/api/tenants/firma-demo/settings');
+    expect(settingsRequest.request.body.routingRules[0].urgencyDefinitions).toEqual([
+      { name: 'BAJA', rank: 1, slaDays: 7, active: true },
+      { name: 'ALTA', rank: 5, slaDays: 1, active: true },
+    ]);
+    expect(settingsRequest.request.body.routingRules[0].urgencyLevels).toEqual(['BAJA', 'ALTA']);
+    settingsRequest.flush(demoSettings);
   });
 
   it('copies the read-only intake email with temporary feedback', async () => {

@@ -487,7 +487,7 @@ export class App {
       return;
     }
 
-    if (!lawyers.length || lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))) {
+    if (!lawyers.length || !lawyers.some((lawyer) => lawyer.active) || lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))) {
       this.settingsErrorMessage.set('Configura al menos un abogado activo con nombre y email valido.');
       return;
     }
@@ -637,7 +637,7 @@ export class App {
       return 'Sin abogado asignado';
     }
     const windows = lawyer.availabilityWindows.length;
-    return `${lawyer.displayName || lawyer.email} � ${windows} ventanas � ${lawyer.defaultEventDurationMinutes || 60} min`;
+    return `${lawyer.displayName || lawyer.email} - ${windows} ventanas - ${lawyer.defaultEventDurationMinutes || 60} min`;
   }
 
   syncRouteLawyer(rule: TenantRoutingRuleForm): void {
@@ -804,10 +804,6 @@ export class App {
   }
 
   private definitionsForSave(rule: TenantRoutingRuleForm): UrgencyDefinition[] {
-    const legacyLevels = this.csvValues(rule.urgencyLevels);
-    if (legacyLevels.length && legacyLevels.join('|') !== this.activeUrgencyNames(rule.urgencyDefinitions).join('|')) {
-      return this.urgencyDefinitionsFromLevels(legacyLevels);
-    }
     return rule.urgencyDefinitions;
   }
 

@@ -309,7 +309,10 @@ public class IntakeService {
         if (response.routeIndex() < 0 || response.routeIndex() >= routingRules.size()) {
             return false;
         }
-        return urgencyLevelsFor(routingRules.get(response.routeIndex())).contains(response.urgency().trim());
+        String normalizedUrgency = normalize(response.urgency().trim());
+        return urgencyLevelsFor(routingRules.get(response.routeIndex())).stream()
+                .map(this::normalize)
+                .anyMatch(level -> level.equals(normalizedUrgency));
     }
 
     private TenantSettingsResponse settingsFor(String tenantId) {
@@ -391,6 +394,9 @@ public class IntakeService {
         }
         List<LawyerAvailabilityWindow> sanitized = new ArrayList<>();
         for (LawyerAvailabilityWindow window : windows) {
+            if (window == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_availability_window");
+            }
             if (window.weekday() == null || window.weekday() < 1 || window.weekday() > 7) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_availability_weekday");
             }
@@ -648,7 +654,7 @@ public class IntakeService {
         if (values == null) {
             return List.of();
         }
-        return values.stream().map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
+        return values.stream().filter(value -> value != null).map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
     }
 
     private List<String> sanitizeUrgencyLevels(List<String> values) {

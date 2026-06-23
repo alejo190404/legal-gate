@@ -264,7 +264,7 @@
                     <dl>
                       <div><dt>Estado</dt><dd>{{ consultation.status }}</dd></div>
                       <div><dt>Tipo</dt><dd>{{ consultation.consultationType || 'Por definir' }}</dd></div>
-                      <div><dt>Abogado</dt><dd>{{ consultation.event?.lawyerDisplayName || consultation.assignedLawyerEmail || 'Por definir' }}</dd></div>
+                      <div><dt>Abogado</dt><dd>{{ consultation.event?.lawyerDisplayName || consultation.event?.lawyerEmail || consultation.assignedLawyerEmail || 'Por definir' }}</dd></div>
                       <div><dt>Concepto</dt><dd>{{ consultation.classification.concept || 'Por definir' }}</dd></div>
                       <div><dt>Clasificación</dt><dd>{{ consultation.classification.label }}</dd></div>
                       <div><dt>Ventana</dt><dd>{{ consultation.preferredWindow || 'Por definir' }}</dd></div>

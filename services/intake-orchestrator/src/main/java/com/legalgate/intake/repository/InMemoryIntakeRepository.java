@@ -27,7 +27,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, List<EventResponse>> eventsByTenant = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ConcurrentMap<String, EventResponse>> eventsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Boolean> tenantsBySlug = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Instant> lastLoginAtByEmail = new ConcurrentHashMap<>();
@@ -82,7 +82,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 List.of(lawyer)
         ));
         consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
-        eventsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
+        eventsByTenant.putIfAbsent(firmSlug, new ConcurrentHashMap<>());
         return user.toSession();
     }
 
@@ -145,7 +145,8 @@ class InMemoryIntakeRepository implements IntakeRepository {
         }
         consultationsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>()).add(consultation);
         if (consultation.event() != null) {
-            eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>()).add(consultation.event());
+            eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>())
+                    .putIfAbsent(consultation.event().id(), consultation.event());
         }
         return consultation;
     }
@@ -163,7 +164,11 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     @Override
     public List<EventResponse> eventsForLawyer(String tenantSlug, String lawyerId) {
-        return eventsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+        ConcurrentMap<String, EventResponse> events = eventsByTenant.get(tenantSlug);
+        if (events == null) {
+            return List.of();
+        }
+        return events.values().stream()
                 .filter(event -> lawyerId != null && lawyerId.equals(event.lawyerId()))
                 .toList();
     }
@@ -173,14 +178,9 @@ class InMemoryIntakeRepository implements IntakeRepository {
         if (events == null || events.isEmpty()) {
             return;
         }
-        List<EventResponse> stored = eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>());
+        ConcurrentMap<String, EventResponse> stored = eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>());
         for (EventResponse event : events) {
-            for (int index = 0; index < stored.size(); index++) {
-                if (stored.get(index).id().equals(event.id())) {
-                    stored.set(index, event);
-                    break;
-                }
-            }
+            stored.computeIfPresent(event.id(), (ignored, existing) -> event);
         }
     }
 

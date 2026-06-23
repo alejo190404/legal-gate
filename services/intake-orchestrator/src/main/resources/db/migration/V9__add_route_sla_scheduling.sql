@@ -7,9 +7,11 @@ create table if not exists lawyers (
     default_event_duration_minutes integer not null default 60,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    constraint lawyers_duration_positive check (default_event_duration_minutes > 0),
-    constraint lawyers_tenant_email_unique unique (tenant_id, email)
+    constraint lawyers_duration_positive check (default_event_duration_minutes > 0)
 );
+
+create unique index if not exists idx_lawyers_tenant_lower_email_unique
+    on lawyers (tenant_id, lower(email));
 
 create table if not exists lawyer_availability_windows (
     id uuid primary key default gen_random_uuid(),
@@ -62,10 +64,6 @@ create index if not exists idx_events_tenant_priority on events (tenant_id, prio
 alter table lawyers enable row level security;
 alter table lawyer_availability_windows enable row level security;
 alter table events enable row level security;
-alter table lawyers force row level security;
-alter table lawyer_availability_windows force row level security;
-alter table events force row level security;
-
 drop policy if exists lawyers_tenant_context on lawyers;
 create policy lawyers_tenant_context on lawyers
     for all
@@ -151,3 +149,7 @@ set routing_rules = coalesce((
         limit 1
     ) lawyer_match on true
 ), '[]'::jsonb);
+
+alter table lawyers force row level security;
+alter table lawyer_availability_windows force row level security;
+alter table events force row level security;
