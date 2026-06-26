@@ -14,6 +14,7 @@ import com.legalgate.intake.model.CreateConsultationRequest;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.NotificationStatus;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
@@ -30,6 +31,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -59,6 +61,8 @@ public class IntakeService {
             DEFAULT_URGENCY_LEVELS, null, DEFAULT_URGENCY_DEFINITIONS, null
     );
     private static final Pattern EMAIL_PATTERN = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
+    private static final int POST_SLA_SEARCH_DAYS = 90;
+    private static final DateTimeFormatter ICS_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneId.of("UTC"));
 
     private static final TenantSettingsResponse DEFAULT_SETTINGS = new TenantSettingsResponse(
             "default", DEFAULT_ROUTING_RULE.urgentKeywords(), DEFAULT_ROUTING_RULE.consultationWindows(),
@@ -98,16 +102,18 @@ public class IntakeService {
         List<String> urgencyLevels = urgencyLevelsFor(routingRule);
         String urgency = matchedKeywords.isEmpty() ? urgencyLevels.get(0) : urgencyLevels.get(urgencyLevels.size() - 1);
         Instant createdAt = Instant.now();
-        EventResponse event = scheduleEvent(tenantId, settings, routingRule, urgency, createdAt, "LEGALGATE");
+        SchedulingResult scheduled = scheduleEvent(tenantId, settings, routingRule, urgency, createdAt, "LEGALGATE");
+        EventResponse event = scheduled.event();
+        String consultationId = UUID.randomUUID().toString();
         ConsultationResponse consultation = new ConsultationResponse(
-                UUID.randomUUID().toString(), tenantId, request.clientName().trim(), request.clientEmail().trim(), request.summary().trim(),
+                consultationId, tenantId, request.clientName().trim(), request.clientEmail().trim(), request.summary().trim(),
                 preferredWindow, "RECEIVED", urgency, routingRule.name(), event.lawyerEmail(),
                 new ClassificationResult("MANUAL_REVIEW", matchedKeywords, null,
                         "Pending LLM classification; routed to " + routingRule.name() + " for lawyer review.", null),
                 new NotificationStatus(true, true, destinationEmailFor(settings, routingRule), preferredWindow),
                 null, null, createdAt, event.id(), event
         );
-        return intakeRepository.saveConsultation(tenantId, consultation);
+        return intakeRepository.saveConsultation(tenantId, consultation, notificationsFor(consultation, event, "CONSULTATION_SCHEDULED"));
     }
 
     public ConsultationResponse createConsultationFromInboundEmail(InboundEmailReceived event) {
@@ -134,16 +140,19 @@ public class IntakeService {
         TenantRoutingRule selectedRoute = routingRules.get(classifierResponse.routeIndex());
         String preferredWindow = firstConfiguredWindow(selectedRoute.consultationWindows());
         Instant createdAt = Instant.now();
-        EventResponse scheduledEvent = scheduleEvent(event.tenantId(), settings, selectedRoute, classifierResponse.urgency().trim(), createdAt, "LEGALGATE");
-        return intakeRepository.saveConsultation(event.tenantId(), new ConsultationResponse(
-                UUID.randomUUID().toString(), event.tenantId(),
+        SchedulingResult scheduled = scheduleEvent(event.tenantId(), settings, selectedRoute, classifierResponse.urgency().trim(), createdAt, "LEGALGATE");
+        EventResponse scheduledEvent = scheduled.event();
+        String consultationId = UUID.randomUUID().toString();
+        ConsultationResponse consultation = new ConsultationResponse(
+                consultationId, event.tenantId(),
                 firstNonBlank(classifierResponse.clientName(), senderDisplayName(event.headerFrom()), "Unknown client"),
                 clientEmailFor(event), firstNonBlank(classifierResponse.summary(), event.plain(), event.subject(), "Inbound email received.").trim(),
                 preferredWindow, "RECEIVED", classifierResponse.urgency().trim(), selectedRoute.name(), scheduledEvent.lawyerEmail(),
                 new ClassificationResult("LLM_CLASSIFIED", List.of(), sanitizeNullable(classifierResponse.concept()), sanitizeNullable(classifierResponse.explanation()), classifierResponse.confidence()),
-                new NotificationStatus(false, false, destinationEmailFor(settings, selectedRoute), preferredWindow),
+                new NotificationStatus(true, true, destinationEmailFor(settings, selectedRoute), preferredWindow),
                 sanitizeTraceValue(event.eventId()), sourceMessageId, createdAt, scheduledEvent.id(), scheduledEvent
-        ));
+        );
+        return intakeRepository.saveConsultation(event.tenantId(), consultation, notificationsFor(consultation, scheduledEvent, "CONSULTATION_SCHEDULED"));
     }
 
     public ConsultationListResponse consultationsForTenant(String tenantId) {
@@ -155,33 +164,33 @@ public class IntakeService {
         String preferredWindow = firstConfiguredWindow(primaryRoute.consultationWindows());
         String urgency = urgencyLevelsFor(primaryRoute).get(0);
         Instant createdAt = Instant.now();
-        EventResponse scheduledEvent = scheduleEvent(event.tenantId(), settings, primaryRoute, urgency, createdAt, "LEGALGATE");
-        return intakeRepository.saveConsultation(event.tenantId(), new ConsultationResponse(
-                UUID.randomUUID().toString(), event.tenantId(), firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
+        SchedulingResult scheduled = scheduleEvent(event.tenantId(), settings, primaryRoute, urgency, createdAt, "LEGALGATE");
+        EventResponse scheduledEvent = scheduled.event();
+        String consultationId = UUID.randomUUID().toString();
+        ConsultationResponse consultation = new ConsultationResponse(
+                consultationId, event.tenantId(), firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
                 clientEmailFor(event), firstNonBlank(event.plain(), event.subject(), event.html(), "Inbound email received.").trim(),
                 preferredWindow, "RECEIVED", urgency, primaryRoute.name(), scheduledEvent.lawyerEmail(),
                 new ClassificationResult(label, List.of(), null,
                         "Gemini classification was not available or could not be validated; routed to primary route for manual review.", null),
-                new NotificationStatus(false, false, destinationEmailFor(settings, primaryRoute), preferredWindow),
+                new NotificationStatus(true, true, destinationEmailFor(settings, primaryRoute), preferredWindow),
                 sanitizeTraceValue(event.eventId()), sanitizeTraceValue(event.messageId()), createdAt, scheduledEvent.id(), scheduledEvent
-        ));
+        );
+        return intakeRepository.saveConsultation(event.tenantId(), consultation, notificationsFor(consultation, scheduledEvent, "CONSULTATION_SCHEDULED"));
     }
-    private EventResponse scheduleEvent(String tenantId, TenantSettingsResponse settings, TenantRoutingRule route, String urgencyName, Instant createdAt, String source) {
+    private SchedulingResult scheduleEvent(String tenantId, TenantSettingsResponse settings, TenantRoutingRule route, String urgencyName, Instant createdAt, String source) {
         UrgencyDefinition urgency = urgencyDefinitionFor(route, urgencyName);
-        LawyerProfile lawyer = lawyerFor(settings, route).orElse(null);
+        LawyerProfile lawyer = lawyerFor(settings, route)
+                .map(this::lawyerWithDefaultAvailability)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "active_lawyer_required"));
         Instant deadline = addBusinessDays(createdAt, urgency.slaDays());
         int priorityScore = priorityScore(urgency, deadline, createdAt);
-        if (lawyer == null || lawyer.availabilityWindows() == null || lawyer.availabilityWindows().isEmpty()) {
-            return eventResponse(route, urgency, deadline, priorityScore, null, null, "NEEDS_MANUAL_SCHEDULING", source, lawyer);
-        }
         SlotSearchResult slot = findSlot(lawyer, intakeRepository.eventsForLawyer(tenantId, lawyer.id()), createdAt, deadline, priorityScore);
         if (!slot.movedEvents().isEmpty()) {
             intakeRepository.updateEvents(tenantId, slot.movedEvents());
+            queueRescheduleNotifications(tenantId, slot.movedEvents());
         }
-        if (slot.start() == null) {
-            return eventResponse(route, urgency, deadline, priorityScore, null, null, "NEEDS_MANUAL_SCHEDULING", source, lawyer);
-        }
-        return eventResponse(route, urgency, deadline, priorityScore, slot.start(), slot.end(), "TENTATIVE", source, lawyer);
+        return new SchedulingResult(eventResponse(route, urgency, deadline, priorityScore, slot.start(), slot.end(), "TENTATIVE", source, lawyer), slot.movedEvents());
     }
 
     private SlotSearchResult findSlot(LawyerProfile lawyer, List<EventResponse> events, Instant createdAt, Instant deadline, int priorityScore) {
@@ -190,7 +199,7 @@ public class IntakeService {
                 .filter(event -> event.scheduledStart() != null && event.scheduledEnd() != null)
                 .sorted(Comparator.comparing(EventResponse::scheduledStart))
                 .toList();
-        for (Slot candidate : candidateSlots(lawyer, createdAt, deadline, durationMinutes)) {
+        for (Slot candidate : inSlaCandidateSlots(lawyer, createdAt, deadline, durationMinutes)) {
             if (isFree(candidate, scheduled)) {
                 return new SlotSearchResult(candidate.start(), candidate.end(), List.of());
             }
@@ -203,27 +212,67 @@ public class IntakeService {
                 .toList();
         for (EventResponse displaced : movable) {
             List<EventResponse> withoutDisplaced = scheduled.stream().filter(event -> !event.id().equals(displaced.id())).toList();
-            for (Slot candidate : candidateSlots(lawyer, createdAt, deadline, durationMinutes)) {
+            for (Slot candidate : inSlaCandidateSlots(lawyer, createdAt, deadline, durationMinutes)) {
                 if (isFree(candidate, withoutDisplaced)) {
+                    EventResponse placeholder = new EventResponse(
+                            UUID.randomUUID().toString(), lawyer.id(), lawyer.displayName(), lawyer.email(),
+                            null, null, null, deadline, priorityScore, candidate.start(), candidate.end(),
+                            lawyer.meetingUrl(), true, "TENTATIVE", "LEGALGATE"
+                    );
+                    Slot displacedSlot = earliestFreeSlot(lawyer, withEvent(withoutDisplaced, placeholder), createdAt, displaced.slaDeadline(), durationMinutes);
                     EventResponse moved = new EventResponse(
                             displaced.id(), displaced.lawyerId(), displaced.lawyerDisplayName(), displaced.lawyerEmail(),
                             displaced.routeName(), displaced.urgencyName(), displaced.slaDays(), displaced.slaDeadline(),
-                            displaced.priorityScore(), null, null, "NEEDS_MANUAL_SCHEDULING", displaced.source()
+                            displaced.priorityScore(), displacedSlot.start(), displacedSlot.end(), displaced.meetingUrl(),
+                            !displacedSlot.end().isAfter(displaced.slaDeadline()), "TENTATIVE", displaced.source()
                     );
                     return new SlotSearchResult(candidate.start(), candidate.end(), List.of(moved));
                 }
             }
         }
-        return new SlotSearchResult(null, null, List.of());
+        Slot postSlaSlot = postSlaCandidateSlots(lawyer, createdAt, deadline, durationMinutes).stream()
+                .filter(candidate -> isFree(candidate, scheduled))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "no_available_lawyer_slot"));
+        return new SlotSearchResult(postSlaSlot.start(), postSlaSlot.end(), List.of());
     }
 
     private boolean isFree(Slot candidate, List<EventResponse> scheduled) {
         return scheduled.stream().noneMatch(event -> candidate.start().isBefore(event.scheduledEnd()) && candidate.end().isAfter(event.scheduledStart()));
     }
 
-    private List<Slot> candidateSlots(LawyerProfile lawyer, Instant createdAt, Instant deadline, int durationMinutes) {
-        LocalDate date = createdAt.atZone(BUSINESS_ZONE).toLocalDate();
-        LocalDate endDate = deadline.atZone(BUSINESS_ZONE).toLocalDate();
+    private Slot earliestFreeSlot(LawyerProfile lawyer, List<EventResponse> scheduled, Instant createdAt, Instant deadline, int durationMinutes) {
+        return inSlaCandidateSlots(lawyer, createdAt, deadline, durationMinutes).stream()
+                .filter(candidate -> isFree(candidate, scheduled))
+                .findFirst()
+                .or(() -> postSlaCandidateSlots(lawyer, createdAt, deadline, durationMinutes).stream()
+                        .filter(candidate -> isFree(candidate, scheduled))
+                        .findFirst())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "no_available_lawyer_slot"));
+    }
+
+    private List<EventResponse> withEvent(List<EventResponse> events, EventResponse event) {
+        List<EventResponse> updated = new ArrayList<>(events);
+        updated.add(event);
+        return updated;
+    }
+
+    private List<Slot> inSlaCandidateSlots(LawyerProfile lawyer, Instant createdAt, Instant deadline, int durationMinutes) {
+        return candidateSlots(lawyer, createdAt, deadline, durationMinutes).stream()
+                .filter(slot -> !slot.end().isAfter(deadline))
+                .toList();
+    }
+
+    private List<Slot> postSlaCandidateSlots(LawyerProfile lawyer, Instant createdAt, Instant deadline, int durationMinutes) {
+        Instant searchStart = deadline.isAfter(createdAt) ? deadline : createdAt;
+        return candidateSlots(lawyer, searchStart, deadline.plus(Duration.ofDays(POST_SLA_SEARCH_DAYS)), durationMinutes).stream()
+                .filter(slot -> !slot.start().isBefore(deadline))
+                .toList();
+    }
+
+    private List<Slot> candidateSlots(LawyerProfile lawyer, Instant searchStart, Instant searchEnd, int durationMinutes) {
+        LocalDate date = searchStart.atZone(BUSINESS_ZONE).toLocalDate();
+        LocalDate endDate = searchEnd.atZone(BUSINESS_ZONE).toLocalDate();
         List<Slot> slots = new ArrayList<>();
         while (!date.isAfter(endDate)) {
             final int weekday = date.getDayOfWeek().getValue();
@@ -235,8 +284,8 @@ public class IntakeService {
                         ZoneId zone = zoneFor(window);
                         ZonedDateTime start = ZonedDateTime.of(LocalDateTime.of(slotDate, LocalTime.parse(window.startTime())), zone);
                         ZonedDateTime windowEnd = ZonedDateTime.of(LocalDateTime.of(slotDate, LocalTime.parse(window.endTime())), zone);
-                        if (start.toInstant().isBefore(createdAt)) {
-                            start = createdAt.atZone(zone).withSecond(0).withNano(0);
+                        if (start.toInstant().isBefore(searchStart)) {
+                            start = searchStart.atZone(zone).withSecond(0).withNano(0);
                             int minute = start.getMinute();
                             if (minute % 15 != 0) {
                                 start = start.plusMinutes(15 - (minute % 15));
@@ -245,7 +294,7 @@ public class IntakeService {
                         while (!start.plusMinutes(durationMinutes).isAfter(windowEnd)) {
                             Instant slotStart = start.toInstant();
                             Instant slotEnd = start.plusMinutes(durationMinutes).toInstant();
-                            if (!slotStart.isBefore(createdAt) && !slotEnd.isAfter(deadline)) {
+                            if (!slotStart.isBefore(searchStart) && !slotEnd.isAfter(searchEnd)) {
                                 slots.add(new Slot(slotStart, slotEnd));
                             }
                             start = start.plusMinutes(15);
@@ -261,8 +310,144 @@ public class IntakeService {
         return new EventResponse(
                 UUID.randomUUID().toString(), lawyer == null ? null : lawyer.id(), lawyer == null ? null : lawyer.displayName(),
                 lawyer == null ? null : lawyer.email(), route.name(), urgency.name(), urgency.slaDays(), deadline,
-                priorityScore, start, end, status, source
+                priorityScore, start, end, lawyer == null ? null : lawyer.meetingUrl(),
+                end == null ? null : !end.isAfter(deadline), status, source
         );
+    }
+
+    private void queueRescheduleNotifications(String tenantId, List<EventResponse> movedEvents) {
+        for (EventResponse movedEvent : movedEvents) {
+            intakeRepository.consultationForEventId(tenantId, movedEvent.id())
+                    .ifPresent(consultation -> intakeRepository.queueNotifications(
+                            tenantId,
+                            notificationsFor(
+                                    new ConsultationResponse(
+                                            consultation.id(), consultation.tenantId(), consultation.clientName(),
+                                            consultation.clientEmail(), consultation.summary(), consultation.preferredWindow(),
+                                            consultation.status(), consultation.urgency(), consultation.consultationType(),
+                                            consultation.assignedLawyerEmail(), consultation.classification(),
+                                            consultation.notifications(), consultation.sourceEventId(),
+                                            consultation.sourceMessageId(), consultation.createdAt(), consultation.eventId(),
+                                            movedEvent
+                                    ),
+                                    movedEvent,
+                                    "CONSULTATION_RESCHEDULED"
+                            )
+                    ));
+        }
+    }
+
+    private List<NotificationOutboxItem> notificationsFor(ConsultationResponse consultation, EventResponse event, String type) {
+        if (event == null || event.scheduledStart() == null || event.scheduledEnd() == null) {
+            return List.of();
+        }
+        List<NotificationOutboxItem> notifications = new ArrayList<>();
+        String ics = calendarInviteFor(consultation, event);
+        if (event.lawyerEmail() != null && !event.lawyerEmail().isBlank()) {
+            notifications.add(new NotificationOutboxItem(
+                    consultation.id(), event.id(), type, "LAWYER", event.lawyerEmail(),
+                    subjectFor(type, consultation, event),
+                    lawyerEmailBody(consultation, event),
+                    ics
+            ));
+        }
+        if (consultation.clientEmail() != null && !consultation.clientEmail().isBlank()) {
+            notifications.add(new NotificationOutboxItem(
+                    consultation.id(), event.id(), type, "CLIENT", consultation.clientEmail(),
+                    subjectFor(type, consultation, event),
+                    clientEmailBody(consultation, event),
+                    ics
+            ));
+        }
+        return notifications;
+    }
+
+    private String subjectFor(String type, ConsultationResponse consultation, EventResponse event) {
+        String prefix = "CONSULTATION_RESCHEDULED".equals(type) ? "Consulta reagendada" : "Consulta agendada";
+        return prefix + ": " + consultation.clientName() + " - " + event.routeName();
+    }
+
+    private String lawyerEmailBody(ConsultationResponse consultation, EventResponse event) {
+        return """
+                LegalGate agendo una consulta.
+
+                Cliente: %s <%s>
+                Ruta: %s
+                Urgencia: %s
+                SLA: %s
+                Hora: %s - %s
+                En SLA: %s
+                %s
+                Resumen:
+                %s
+                """.formatted(
+                consultation.clientName(),
+                consultation.clientEmail(),
+                event.routeName(),
+                event.urgencyName(),
+                event.slaDeadline(),
+                event.scheduledStart(),
+                event.scheduledEnd(),
+                Boolean.TRUE.equals(event.scheduledWithinSla()) ? "si" : "no",
+                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
+                consultation.summary()
+        ).trim();
+    }
+
+    private String clientEmailBody(ConsultationResponse consultation, EventResponse event) {
+        return """
+                Tu consulta LegalGate fue agendada.
+
+                Hora: %s - %s
+                Abogado: %s <%s>
+                %s
+                Resumen:
+                %s
+                """.formatted(
+                event.scheduledStart(),
+                event.scheduledEnd(),
+                firstNonBlank(event.lawyerDisplayName(), "Abogado LegalGate"),
+                event.lawyerEmail(),
+                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
+                consultation.summary()
+        ).trim();
+    }
+
+    private String calendarInviteFor(ConsultationResponse consultation, EventResponse event) {
+        String description = "Resumen: " + consultation.summary()
+                + "\nCliente: " + consultation.clientName() + " <" + consultation.clientEmail() + ">"
+                + "\nAbogado: " + firstNonBlank(event.lawyerDisplayName(), event.lawyerEmail())
+                + (event.meetingUrl() == null ? "" : "\nMeeting: " + event.meetingUrl());
+        return String.join("\r\n",
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//LegalGate//Consultation Scheduling//EN",
+                "METHOD:REQUEST",
+                "BEGIN:VEVENT",
+                "UID:legalgate-" + event.id() + "@legal-gate.co",
+                "DTSTAMP:" + ICS_TIME.format(Instant.now()),
+                "DTSTART:" + ICS_TIME.format(event.scheduledStart()),
+                "DTEND:" + ICS_TIME.format(event.scheduledEnd()),
+                "ORGANIZER;CN=" + icsEscape(intakeProperties.notificationsFromName()) + ":mailto:" + intakeProperties.notificationsFromEmail(),
+                "ATTENDEE;CN=" + icsEscape(firstNonBlank(event.lawyerDisplayName(), event.lawyerEmail())) + ";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:" + event.lawyerEmail(),
+                "ATTENDEE;CN=" + icsEscape(consultation.clientName()) + ";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:" + consultation.clientEmail(),
+                "SUMMARY:" + icsEscape("Consulta LegalGate - " + consultation.clientName()),
+                "DESCRIPTION:" + icsEscape(description),
+                event.meetingUrl() == null ? "LOCATION:LegalGate" : "LOCATION:" + icsEscape(event.meetingUrl()),
+                "STATUS:TENTATIVE",
+                "END:VEVENT",
+                "END:VCALENDAR",
+                ""
+        );
+    }
+
+    private String icsEscape(String value) {
+        return (value == null ? "" : value)
+                .replace("\\", "\\\\")
+                .replace(";", "\\;")
+                .replace(",", "\\,")
+                .replace("\r\n", "\\n")
+                .replace("\n", "\\n");
     }
 
     private int priorityScore(UrgencyDefinition urgency, Instant deadline, Instant createdAt) {
@@ -382,6 +567,7 @@ public class IntakeService {
                 id,
                 lawyer.displayName() == null || lawyer.displayName().isBlank() ? "Lawyer " + (index + 1) : lawyer.displayName().trim(),
                 email,
+                sanitizeMeetingUrl(lawyer.meetingUrl()),
                 lawyer.active() == null || lawyer.active(),
                 duration,
                 sanitizeAvailability(lawyer.availabilityWindows())
@@ -486,6 +672,21 @@ public class IntakeService {
         return List.of(new LawyerProfile(deterministicUuid("lawyer:" + tenantId + ":" + email), displayNameFromEmail(email), sanitizeEmail(email), true, 60, defaultAvailability()));
     }
 
+    private LawyerProfile lawyerWithDefaultAvailability(LawyerProfile lawyer) {
+        if (lawyer.availabilityWindows() != null && !lawyer.availabilityWindows().isEmpty()) {
+            return lawyer;
+        }
+        return new LawyerProfile(
+                lawyer.id(),
+                lawyer.displayName(),
+                lawyer.email(),
+                lawyer.meetingUrl(),
+                lawyer.active(),
+                lawyer.defaultEventDurationMinutes(),
+                defaultAvailability()
+        );
+    }
+
     private List<TenantRoutingRule> routingRulesFor(TenantSettingsResponse settings) {
         return routingRulesFor(settings, settings.lawyers() == null ? List.of() : settings.lawyers());
     }
@@ -535,7 +736,16 @@ public class IntakeService {
         if (settings.lawyers() == null) {
             return Optional.empty();
         }
-        return settings.lawyers().stream().filter(lawyer -> lawyer.id().equals(rule.lawyerId())).filter(lawyer -> lawyer.active() == null || lawyer.active()).findFirst();
+        Optional<LawyerProfile> routeLawyer = settings.lawyers().stream()
+                .filter(lawyer -> lawyer.id().equals(rule.lawyerId()))
+                .filter(lawyer -> lawyer.active() == null || lawyer.active())
+                .findFirst();
+        if (routeLawyer.isPresent()) {
+            return routeLawyer;
+        }
+        return settings.lawyers().stream()
+                .filter(lawyer -> lawyer.active() == null || lawyer.active())
+                .findFirst();
     }
 
     private UrgencyDefinition urgencyDefinitionFor(TenantRoutingRule route, String urgencyName) {
@@ -713,6 +923,17 @@ public class IntakeService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private String sanitizeMeetingUrl(String value) {
+        String sanitized = sanitizeNullable(value);
+        if (sanitized == null) {
+            return null;
+        }
+        if (!sanitized.startsWith("https://") && !sanitized.startsWith("http://")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_meeting_url");
+        }
+        return sanitized;
+    }
+
     private String normalize(String value) {
         if (value == null) {
             return "";
@@ -722,6 +943,7 @@ public class IntakeService {
 
     private record Slot(Instant start, Instant end) { }
     private record SlotSearchResult(Instant start, Instant end, List<EventResponse> movedEvents) { }
+    private record SchedulingResult(EventResponse event, List<EventResponse> movedEvents) { }
 }
 
 

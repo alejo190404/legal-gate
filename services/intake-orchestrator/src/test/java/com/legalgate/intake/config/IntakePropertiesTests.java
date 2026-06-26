@@ -16,7 +16,13 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                null
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                false
         );
 
         assertThat(properties.canonicalIntakeEmail("firma-demo"))
@@ -32,7 +38,13 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                null
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                false
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("must not use .local");

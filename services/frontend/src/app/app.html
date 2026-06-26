@@ -595,6 +595,15 @@
                               type="email"
                             />
                           </div>
+                          <div class="form-field">
+                            <label [for]="'lawyerMeeting-' + lawyerIndex">Meeting URL</label>
+                            <input
+                              [id]="'lawyerMeeting-' + lawyerIndex"
+                              [name]="'lawyerMeeting-' + lawyerIndex"
+                              [(ngModel)]="lawyer.meetingUrl"
+                              type="url"
+                            />
+                          </div>
                           <div class="form-field duration-field">
                             <label [for]="'lawyerDuration-' + lawyerIndex">Duracion</label>
                             <input
