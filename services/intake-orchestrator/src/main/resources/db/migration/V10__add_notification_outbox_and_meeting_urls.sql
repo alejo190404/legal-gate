@@ -6,7 +6,10 @@ alter table events
     add column if not exists scheduled_within_sla bool;
 
 update events
-set scheduled_within_sla = scheduled_end is not null and scheduled_end <= sla_deadline
+set scheduled_within_sla = case
+    when scheduled_end is null then null
+    else scheduled_end <= sla_deadline
+  end
 where scheduled_within_sla is null;
 
 create table if not exists notification_outbox (
@@ -30,11 +33,12 @@ create table if not exists notification_outbox (
     updated_at timestamptz not null default now(),
     constraint notification_outbox_type_check check (notification_type in ('CONSULTATION_SCHEDULED', 'CONSULTATION_RESCHEDULED')),
     constraint notification_outbox_role_check check (recipient_role in ('LAWYER', 'CLIENT')),
-    constraint notification_outbox_status_check check (status in ('PENDING', 'SENDING', 'SENT', 'FAILED'))
+    constraint notification_outbox_status_check check (status in ('PENDING', 'SENDING', 'SENT', 'FAILED', 'DEAD'))
 );
 
 create unique index if not exists idx_notification_outbox_dedupe
-    on notification_outbox (tenant_id, consultation_id, event_id, notification_type, recipient_role);
+    on notification_outbox (tenant_id, consultation_id, event_id, notification_type, recipient_role)
+    where status in ('PENDING', 'SENDING', 'FAILED');
 
 create index if not exists idx_notification_outbox_pending
     on notification_outbox (status, next_attempt_at, created_at);

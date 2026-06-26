@@ -38,6 +38,7 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
     private static final TypeReference<List<TenantRoutingRule>> ROUTING_RULE_LIST = new TypeReference<>() { };
+    private static final int MAX_NOTIFICATION_ATTEMPTS = 5;
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -174,7 +175,12 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation, List<NotificationOutboxItem> notifications) {
+    public ConsultationResponse saveConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    ) {
         try {
             return transactionTemplate.execute(status -> {
                 setTenantContext(tenantSlug);
@@ -230,6 +236,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                             event.source());
                     jdbcTemplate.update("update consultations set event_id = ? where id = ?", eventId, consultationId);
                 }
+                updateEventsInCurrentTransaction(eventsToUpdate);
                 insertNotifications(tenantId, tenantSlug, notifications);
                 return consultation;
             });
@@ -305,20 +312,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         transactionTemplate.executeWithoutResult(status -> {
             setTenantContext(tenantSlug);
             ensureTenant(tenantSlug, displayName(tenantSlug));
-            for (EventResponse event : events) {
-                jdbcTemplate.update("""
-                        update events
-                        set scheduled_start = ?, scheduled_end = ?, status = ?, priority_score = ?,
-                            scheduled_within_sla = ?, updated_at = now()
-                        where id = ?
-                        """,
-                        timestampOrNull(event.scheduledStart()),
-                        timestampOrNull(event.scheduledEnd()),
-                        event.status(),
-                        event.priorityScore(),
-                        event.scheduledWithinSla(),
-                        UUID.fromString(event.id()));
-            }
+            updateEventsInCurrentTransaction(events);
         });
     }
 
@@ -340,11 +334,15 @@ class JdbcIntakeRepository implements IntakeRepository {
             setTenantContext("__worker__");
             List<NotificationOutboxItem> notifications = jdbcTemplate.query("""
                     update notification_outbox
-                    set status = 'SENDING', updated_at = now()
+                    set status = 'SENDING',
+                        next_attempt_at = now() + interval '5 minutes',
+                        updated_at = now()
                     where id in (
                         select id
                         from notification_outbox
-                        where status in ('PENDING', 'FAILED') and next_attempt_at <= now()
+                        where status in ('PENDING', 'FAILED', 'SENDING')
+                          and attempts < ?
+                          and next_attempt_at <= now()
                         order by created_at asc
                         limit ?
                         for update skip locked
@@ -352,7 +350,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                     returning id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
                               subject, body, ics_content, status, attempts, provider_message_id, last_error,
                               created_at, updated_at, next_attempt_at
-                    """, this::mapNotification, Math.max(1, limit));
+                    """, this::mapNotification, MAX_NOTIFICATION_ATTEMPTS, Math.max(1, limit));
             return notifications;
         });
     }
@@ -375,14 +373,37 @@ class JdbcIntakeRepository implements IntakeRepository {
             setTenantContext("__worker__");
             jdbcTemplate.update("""
                     update notification_outbox
-                    set status = 'FAILED',
+                    set status = case when attempts + 1 >= ? then 'DEAD' else 'FAILED' end,
                         attempts = attempts + 1,
                         last_error = ?,
-                        next_attempt_at = now() + (least(3600, power(2, least(10, attempts + 1))::int * 60) || ' seconds')::interval,
+                        next_attempt_at = case
+                            when attempts + 1 >= ? then now()
+                            else now() + (least(3600, power(2, least(10, attempts + 1))::int * 60) || ' seconds')::interval
+                        end,
                         updated_at = now()
                     where id = ?
-                    """, truncate(errorMessage, 2000), UUID.fromString(notificationId));
+                    """, MAX_NOTIFICATION_ATTEMPTS, truncate(errorMessage, 2000), MAX_NOTIFICATION_ATTEMPTS, UUID.fromString(notificationId));
         });
+    }
+
+    private void updateEventsInCurrentTransaction(List<EventResponse> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        for (EventResponse event : events) {
+            jdbcTemplate.update("""
+                    update events
+                    set scheduled_start = ?, scheduled_end = ?, status = ?, priority_score = ?,
+                        scheduled_within_sla = ?, updated_at = now()
+                    where id = ?
+                    """,
+                    timestampOrNull(event.scheduledStart()),
+                    timestampOrNull(event.scheduledEnd()),
+                    event.status(),
+                    event.priorityScore(),
+                    event.scheduledWithinSla(),
+                    UUID.fromString(event.id()));
+        }
     }
 
     private void saveLawyers(UUID tenantId, List<LawyerProfile> lawyers) {
@@ -567,7 +588,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                       tenant_id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
                       subject, body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
                     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
-                    on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role) do nothing
+                    on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role)
+                    where status in ('PENDING', 'SENDING', 'FAILED')
+                    do nothing
                     """,
                     tenantId,
                     tenantSlug,

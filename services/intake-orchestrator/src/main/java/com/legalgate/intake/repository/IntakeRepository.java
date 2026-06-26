@@ -37,7 +37,16 @@ public interface IntakeRepository {
         return saveConsultation(tenantSlug, consultation, List.of());
     }
 
-    ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation, List<NotificationOutboxItem> notifications);
+    default ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation, List<NotificationOutboxItem> notifications) {
+        return saveConsultation(tenantSlug, consultation, List.of(), notifications);
+    }
+
+    ConsultationResponse saveConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    );
 
     ConsultationListResponse consultationsForTenant(String tenantSlug);
 

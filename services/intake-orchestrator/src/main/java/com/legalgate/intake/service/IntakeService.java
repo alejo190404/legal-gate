@@ -113,7 +113,12 @@ public class IntakeService {
                 new NotificationStatus(true, true, destinationEmailFor(settings, routingRule), preferredWindow),
                 null, null, createdAt, event.id(), event
         );
-        return intakeRepository.saveConsultation(tenantId, consultation, notificationsFor(consultation, event, "CONSULTATION_SCHEDULED"));
+        return intakeRepository.saveConsultation(
+                tenantId,
+                consultation,
+                scheduled.movedEvents(),
+                notificationsForScheduling(tenantId, consultation, scheduled)
+        );
     }
 
     public ConsultationResponse createConsultationFromInboundEmail(InboundEmailReceived event) {
@@ -152,7 +157,12 @@ public class IntakeService {
                 new NotificationStatus(true, true, destinationEmailFor(settings, selectedRoute), preferredWindow),
                 sanitizeTraceValue(event.eventId()), sourceMessageId, createdAt, scheduledEvent.id(), scheduledEvent
         );
-        return intakeRepository.saveConsultation(event.tenantId(), consultation, notificationsFor(consultation, scheduledEvent, "CONSULTATION_SCHEDULED"));
+        return intakeRepository.saveConsultation(
+                event.tenantId(),
+                consultation,
+                scheduled.movedEvents(),
+                notificationsForScheduling(event.tenantId(), consultation, scheduled)
+        );
     }
 
     public ConsultationListResponse consultationsForTenant(String tenantId) {
@@ -176,8 +186,14 @@ public class IntakeService {
                 new NotificationStatus(true, true, destinationEmailFor(settings, primaryRoute), preferredWindow),
                 sanitizeTraceValue(event.eventId()), sanitizeTraceValue(event.messageId()), createdAt, scheduledEvent.id(), scheduledEvent
         );
-        return intakeRepository.saveConsultation(event.tenantId(), consultation, notificationsFor(consultation, scheduledEvent, "CONSULTATION_SCHEDULED"));
+        return intakeRepository.saveConsultation(
+                event.tenantId(),
+                consultation,
+                scheduled.movedEvents(),
+                notificationsForScheduling(event.tenantId(), consultation, scheduled)
+        );
     }
+
     private SchedulingResult scheduleEvent(String tenantId, TenantSettingsResponse settings, TenantRoutingRule route, String urgencyName, Instant createdAt, String source) {
         UrgencyDefinition urgency = urgencyDefinitionFor(route, urgencyName);
         LawyerProfile lawyer = lawyerFor(settings, route)
@@ -186,10 +202,6 @@ public class IntakeService {
         Instant deadline = addBusinessDays(createdAt, urgency.slaDays());
         int priorityScore = priorityScore(urgency, deadline, createdAt);
         SlotSearchResult slot = findSlot(lawyer, intakeRepository.eventsForLawyer(tenantId, lawyer.id()), createdAt, deadline, priorityScore);
-        if (!slot.movedEvents().isEmpty()) {
-            intakeRepository.updateEvents(tenantId, slot.movedEvents());
-            queueRescheduleNotifications(tenantId, slot.movedEvents());
-        }
         return new SchedulingResult(eventResponse(route, urgency, deadline, priorityScore, slot.start(), slot.end(), "TENTATIVE", source, lawyer), slot.movedEvents());
     }
 
@@ -219,7 +231,11 @@ public class IntakeService {
                             null, null, null, deadline, priorityScore, candidate.start(), candidate.end(),
                             lawyer.meetingUrl(), true, "TENTATIVE", "LEGALGATE"
                     );
-                    Slot displacedSlot = earliestFreeSlot(lawyer, withEvent(withoutDisplaced, placeholder), createdAt, displaced.slaDeadline(), durationMinutes);
+                    int displacedDurationMinutes = Math.max(
+                            1,
+                            (int) Duration.between(displaced.scheduledStart(), displaced.scheduledEnd()).toMinutes()
+                    );
+                    Slot displacedSlot = earliestFreeSlot(lawyer, withEvent(withoutDisplaced, placeholder), createdAt, displaced.slaDeadline(), displacedDurationMinutes);
                     EventResponse moved = new EventResponse(
                             displaced.id(), displaced.lawyerId(), displaced.lawyerDisplayName(), displaced.lawyerEmail(),
                             displaced.routeName(), displaced.urgencyName(), displaced.slaDays(), displaced.slaDeadline(),
@@ -315,11 +331,17 @@ public class IntakeService {
         );
     }
 
-    private void queueRescheduleNotifications(String tenantId, List<EventResponse> movedEvents) {
+    private List<NotificationOutboxItem> notificationsForScheduling(String tenantId, ConsultationResponse consultation, SchedulingResult scheduled) {
+        List<NotificationOutboxItem> notifications = new ArrayList<>(notificationsFor(consultation, scheduled.event(), "CONSULTATION_SCHEDULED"));
+        notifications.addAll(rescheduleNotificationsFor(tenantId, scheduled.movedEvents()));
+        return List.copyOf(notifications);
+    }
+
+    private List<NotificationOutboxItem> rescheduleNotificationsFor(String tenantId, List<EventResponse> movedEvents) {
+        List<NotificationOutboxItem> notifications = new ArrayList<>();
         for (EventResponse movedEvent : movedEvents) {
             intakeRepository.consultationForEventId(tenantId, movedEvent.id())
-                    .ifPresent(consultation -> intakeRepository.queueNotifications(
-                            tenantId,
+                    .ifPresent(consultation -> notifications.addAll(
                             notificationsFor(
                                     new ConsultationResponse(
                                             consultation.id(), consultation.tenantId(), consultation.clientName(),
@@ -335,6 +357,7 @@ public class IntakeService {
                             )
                     ));
         }
+        return List.copyOf(notifications);
     }
 
     private List<NotificationOutboxItem> notificationsFor(ConsultationResponse consultation, EventResponse event, String type) {

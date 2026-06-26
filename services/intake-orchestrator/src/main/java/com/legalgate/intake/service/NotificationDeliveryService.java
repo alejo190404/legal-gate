@@ -24,6 +24,10 @@ class NotificationDeliveryService {
 
     @Scheduled(fixedDelayString = "${LEGALGATE_NOTIFICATION_DISPATCH_DELAY_MS:30000}", initialDelayString = "${LEGALGATE_NOTIFICATION_DISPATCH_INITIAL_DELAY_MS:10000}")
     void deliverPendingNotifications() {
+        if (!outboundEmailClient.isEnabled()) {
+            LOGGER.debug("LegalGate outbound notification delivery is disabled; pending notifications remain queued.");
+            return;
+        }
         List<NotificationOutboxItem> notifications = intakeRepository.claimPendingNotifications(BATCH_SIZE);
         for (NotificationOutboxItem notification : notifications) {
             try {
