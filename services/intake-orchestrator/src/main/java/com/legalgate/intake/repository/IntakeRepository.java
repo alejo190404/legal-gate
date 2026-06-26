@@ -4,6 +4,7 @@ import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.StoredUserCredentials;
 import com.legalgate.intake.model.TenantSettingsResponse;
@@ -32,13 +33,36 @@ public interface IntakeRepository {
 
     Optional<ConsultationResponse> consultationForSourceMessageId(String tenantSlug, String sourceMessageId);
 
-    ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation);
+    default ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
+        return saveConsultation(tenantSlug, consultation, List.of());
+    }
+
+    default ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation, List<NotificationOutboxItem> notifications) {
+        return saveConsultation(tenantSlug, consultation, List.of(), notifications);
+    }
+
+    ConsultationResponse saveConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    );
 
     ConsultationListResponse consultationsForTenant(String tenantSlug);
+
+    Optional<ConsultationResponse> consultationForEventId(String tenantSlug, String eventId);
 
     List<LawyerProfile> lawyersForTenant(String tenantSlug);
 
     List<EventResponse> eventsForLawyer(String tenantSlug, String lawyerId);
 
     void updateEvents(String tenantSlug, List<EventResponse> events);
+
+    void queueNotifications(String tenantSlug, List<NotificationOutboxItem> notifications);
+
+    List<NotificationOutboxItem> claimPendingNotifications(int limit);
+
+    void markNotificationSent(String notificationId, String providerMessageId);
+
+    void markNotificationFailed(String notificationId, String errorMessage);
 }

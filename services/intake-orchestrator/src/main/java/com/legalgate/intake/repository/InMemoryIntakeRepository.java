@@ -5,6 +5,7 @@ import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.RegistrationResponse;
 import com.legalgate.intake.model.StoredUserCredentials;
 import com.legalgate.intake.model.TenantRoutingRule;
@@ -25,9 +26,13 @@ import org.springframework.web.server.ResponseStatusException;
 @ConditionalOnProperty(name = "legalgate.intake.persistence", havingValue = "memory", matchIfMissing = true)
 class InMemoryIntakeRepository implements IntakeRepository {
 
+    private static final int MAX_NOTIFICATION_ATTEMPTS = 5;
+    private static final long NOTIFICATION_LEASE_SECONDS = 300;
+
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, EventResponse>> eventsByTenant = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NotificationOutboxItem> notificationsByDedupeKey = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Boolean> tenantsBySlug = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Instant> lastLoginAtByEmail = new ConcurrentHashMap<>();
@@ -138,7 +143,12 @@ class InMemoryIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public ConsultationResponse saveConsultation(String tenantSlug, ConsultationResponse consultation) {
+    public ConsultationResponse saveConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    ) {
         Optional<ConsultationResponse> existing = consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId());
         if (existing.isPresent()) {
             return existing.get();
@@ -148,12 +158,24 @@ class InMemoryIntakeRepository implements IntakeRepository {
             eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>())
                     .putIfAbsent(consultation.event().id(), consultation.event());
         }
+        updateEvents(tenantSlug, eventsToUpdate);
+        queueNotifications(tenantSlug, notifications);
         return consultation;
     }
 
     @Override
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
         return new ConsultationListResponse(tenantSlug, List.copyOf(consultationsByTenant.getOrDefault(tenantSlug, List.of())));
+    }
+
+    @Override
+    public Optional<ConsultationResponse> consultationForEventId(String tenantSlug, String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            return Optional.empty();
+        }
+        return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+                .filter(consultation -> eventId.equals(consultation.eventId()))
+                .findFirst();
     }
 
     @Override
@@ -181,7 +203,119 @@ class InMemoryIntakeRepository implements IntakeRepository {
         ConcurrentMap<String, EventResponse> stored = eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>());
         for (EventResponse event : events) {
             stored.computeIfPresent(event.id(), (ignored, existing) -> event);
+            List<ConsultationResponse> consultations = consultationsByTenant.getOrDefault(tenantSlug, List.of());
+            for (int index = 0; index < consultations.size(); index++) {
+                ConsultationResponse consultation = consultations.get(index);
+                if (event.id().equals(consultation.eventId())) {
+                    consultations.set(index, new ConsultationResponse(
+                            consultation.id(), consultation.tenantId(), consultation.clientName(), consultation.clientEmail(),
+                            consultation.summary(), consultation.preferredWindow(), consultation.status(), consultation.urgency(),
+                            consultation.consultationType(), consultation.assignedLawyerEmail(), consultation.classification(),
+                            consultation.notifications(), consultation.sourceEventId(), consultation.sourceMessageId(),
+                            consultation.createdAt(), consultation.eventId(), event
+                    ));
+                }
+            }
         }
+    }
+
+    @Override
+    public void queueNotifications(String tenantSlug, List<NotificationOutboxItem> notifications) {
+        if (notifications == null || notifications.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        for (NotificationOutboxItem notification : notifications) {
+            String id = notification.id() == null || notification.id().isBlank()
+                    ? java.util.UUID.randomUUID().toString()
+                    : notification.id();
+            String dedupeKey = tenantSlug + ":" + notification.consultationId() + ":" + notification.eventId()
+                    + ":" + notification.type() + ":" + notification.recipientRole();
+            NotificationOutboxItem queued = new NotificationOutboxItem(
+                    id,
+                    tenantSlug,
+                    notification.consultationId(),
+                    notification.eventId(),
+                    notification.type(),
+                    notification.recipientRole(),
+                    notification.recipientEmail(),
+                    notification.subject(),
+                    notification.body(),
+                    notification.icsContent(),
+                    "PENDING",
+                    0,
+                    null,
+                    null,
+                    now,
+                    now,
+                    now
+            );
+            notificationsByDedupeKey.compute(dedupeKey, (ignored, existing) -> shouldSuppressDuplicate(existing) ? existing : queued);
+        }
+    }
+
+    @Override
+    public List<NotificationOutboxItem> claimPendingNotifications(int limit) {
+        Instant now = Instant.now();
+        return notificationsByDedupeKey.entrySet().stream()
+                .filter(entry -> isClaimable(entry.getValue()))
+                .filter(entry -> entry.getValue().nextAttemptAt() == null || !entry.getValue().nextAttemptAt().isAfter(now))
+                .limit(Math.max(1, limit))
+                .map(entry -> {
+                    NotificationOutboxItem notification = entry.getValue();
+                    NotificationOutboxItem claimed = new NotificationOutboxItem(
+                            notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
+                            notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                            notification.icsContent(), "SENDING", notification.attempts(), notification.providerMessageId(),
+                            notification.lastError(), notification.createdAt(), now, now.plusSeconds(NOTIFICATION_LEASE_SECONDS)
+                    );
+                    entry.setValue(claimed);
+                    return claimed;
+                })
+                .toList();
+    }
+
+    @Override
+    public void markNotificationSent(String notificationId, String providerMessageId) {
+        notificationsByDedupeKey.replaceAll((key, notification) -> notificationId.equals(notification.id())
+                ? new NotificationOutboxItem(
+                        notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
+                        notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                        notification.icsContent(), "SENT", notification.attempts(), providerMessageId, null,
+                        notification.createdAt(), Instant.now(), notification.nextAttemptAt()
+                )
+                : notification);
+    }
+
+    @Override
+    public void markNotificationFailed(String notificationId, String errorMessage) {
+        Instant now = Instant.now();
+        notificationsByDedupeKey.replaceAll((key, notification) -> {
+            if (!notificationId.equals(notification.id())) {
+                return notification;
+            }
+            int attempts = notification.attempts() + 1;
+            boolean exhausted = attempts >= MAX_NOTIFICATION_ATTEMPTS;
+            return new NotificationOutboxItem(
+                    notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
+                    notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                    notification.icsContent(), exhausted ? "DEAD" : "FAILED", attempts, notification.providerMessageId(),
+                    errorMessage, notification.createdAt(), now, exhausted ? now : now.plusSeconds(retryDelaySeconds(attempts))
+            );
+        });
+    }
+
+    private boolean shouldSuppressDuplicate(NotificationOutboxItem existing) {
+        return existing != null && List.of("PENDING", "SENDING", "FAILED").contains(existing.status());
+    }
+
+    private boolean isClaimable(NotificationOutboxItem notification) {
+        return List.of("PENDING", "FAILED", "SENDING").contains(notification.status())
+                && notification.attempts() < MAX_NOTIFICATION_ATTEMPTS;
+    }
+
+    private long retryDelaySeconds(int attempts) {
+        return Math.min(3600, (long) Math.pow(2, Math.min(10, attempts)) * 60);
     }
 
     private List<LawyerAvailabilityWindow> defaultAvailability() {

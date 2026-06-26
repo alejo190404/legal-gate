@@ -12,7 +12,13 @@ public record IntakeProperties(
         String consultationClassifierUrl,
         Duration consultationClassifierTimeout,
         String consultationClassifierPromptVersion,
-        String consultationClassifierSystemPrompt
+        String consultationClassifierSystemPrompt,
+        boolean outboundEmailEnabled,
+        String cloudmailinSmtpUsername,
+        String cloudmailinApiToken,
+        String notificationsFromEmail,
+        String notificationsFromName,
+        boolean outboundTestMode
 ) {
     public IntakeProperties {
         if (emailDomain == null || emailDomain.isBlank()) {
@@ -41,6 +47,16 @@ public record IntakeProperties(
                     """.strip();
         } else {
             consultationClassifierSystemPrompt = consultationClassifierSystemPrompt.trim();
+        }
+        if (notificationsFromEmail == null || notificationsFromEmail.isBlank()) {
+            notificationsFromEmail = "agenda@legal-gate.co";
+        } else {
+            notificationsFromEmail = notificationsFromEmail.trim().toLowerCase(Locale.ROOT);
+        }
+        if (notificationsFromName == null || notificationsFromName.isBlank()) {
+            notificationsFromName = "LegalGate Agenda";
+        } else {
+            notificationsFromName = notificationsFromName.trim();
         }
     }
 

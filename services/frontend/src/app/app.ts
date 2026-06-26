@@ -33,6 +33,8 @@ interface EventDetails {
   priorityScore: number;
   scheduledStart: string | null;
   scheduledEnd: string | null;
+  meetingUrl: string | null;
+  scheduledWithinSla: boolean | null;
   status: string;
   source: string;
 }
@@ -80,6 +82,7 @@ interface LawyerProfile {
   id: string | null;
   displayName: string;
   email: string;
+  meetingUrl: string | null;
   active: boolean;
   defaultEventDurationMinutes: number;
   availabilityWindows: LawyerAvailabilityWindow[];
@@ -134,6 +137,7 @@ interface LawyerForm {
   id: string | null;
   displayName: string;
   email: string;
+  meetingUrl: string;
   active: boolean;
   defaultEventDurationMinutes: number;
   availabilityWindows: LawyerAvailabilityWindow[];
@@ -455,6 +459,7 @@ export class App {
       id: lawyer.id,
       displayName: lawyer.displayName.trim(),
       email: lawyer.email.trim().toLowerCase(),
+      meetingUrl: lawyer.meetingUrl.trim() || null,
       active: true,
       defaultEventDurationMinutes: Number(lawyer.defaultEventDurationMinutes),
       availabilityWindows: lawyer.availabilityWindows.map((window) => ({
@@ -807,6 +812,7 @@ export class App {
       id,
       displayName: '',
       email: this.sessionEmail(),
+      meetingUrl: '',
       active: true,
       defaultEventDurationMinutes: 60,
       availabilityWindows: this.defaultAvailability(),
@@ -830,6 +836,7 @@ export class App {
             id: this.cryptoId(),
             displayName: 'Abogado principal',
             email: settings.destinationEmail ?? this.sessionEmail(),
+            meetingUrl: null,
             active: true,
             defaultEventDurationMinutes: 60,
             availabilityWindows: this.defaultAvailability(),
@@ -840,6 +847,7 @@ export class App {
       id: lawyer.id ?? this.cryptoId(),
       displayName: lawyer.displayName ?? '',
       email: lawyer.email ?? '',
+      meetingUrl: lawyer.meetingUrl ?? '',
       active: lawyer.active ?? true,
       defaultEventDurationMinutes: lawyer.defaultEventDurationMinutes ?? 60,
       availabilityWindows: lawyer.availabilityWindows?.length

@@ -352,8 +352,10 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.consultations[0].preferredWindow").value("MAR 09:00-12:00"))
                 .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_CLASSIFIED"))
                 .andExpect(jsonPath("$.consultations[0].classification.concept").value("Terminacion laboral"))
-                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
-                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false))
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].event.status").value("TENTATIVE"))
+                .andExpect(jsonPath("$.consultations[0].event.scheduledWithinSla").value(true))
                 .andExpect(jsonPath("$.consultations[0].sourceEventId").value("evt-1"))
                 .andExpect(jsonPath("$.consultations[0].sourceMessageId").value("<msg-1@example.com>"));
     }
@@ -408,12 +410,13 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.consultations[0].consultationType").value("Primary"))
                 .andExpect(jsonPath("$.consultations[0].assignedLawyerEmail").value("primary@firma.test"))
                 .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_INVALID_RESPONSE"))
-                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
-                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false));
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].event.status").value("TENTATIVE"));
     }
 
     @Test
-    void classifierTimeoutCreatesFallbackWithoutQueuedSideEffects() throws Exception {
+    void classifierTimeoutCreatesFallbackWithQueuedNotifications() throws Exception {
         when(consultationClassifierClient.classify(any()))
                 .thenThrow(new ClassifierUnavailableException("timeout"));
 
@@ -436,8 +439,9 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.consultations", hasSize(1)))
                 .andExpect(jsonPath("$.consultations[0].classification.label").value("LLM_FAILED"))
-                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(false))
-                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(false));
+                .andExpect(jsonPath("$.consultations[0].notifications.emailQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].notifications.calendarUpdateQueued").value(true))
+                .andExpect(jsonPath("$.consultations[0].event.status").value("TENTATIVE"));
     }
 
     @Test
@@ -622,6 +626,110 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(jsonPath("$.classification.label").value("MANUAL_REVIEW"))
                 .andExpect(jsonPath("$.notifications.emailQueued").value(true))
                 .andExpect(jsonPath("$.notifications.calendarUpdateQueued").value(true));
+    }
+
+    @Test
+    void fullSlaSchedulesEarliestPostSlaSlotWithoutManualStatus() throws Exception {
+        String lawyerId = "11111111-1111-1111-1111-111111111111";
+        mockMvc.perform(put("/api/tenants/post-sla/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "lawyers": [
+                                    {
+                                      "id": "%s",
+                                      "displayName": "Agenda Legal",
+                                      "email": "agenda@firma.test",
+                                      "meetingUrl": "https://meet.example.com/agenda",
+                                      "active": true,
+                                      "defaultEventDurationMinutes": 60,
+                                      "availabilityWindows": [
+                                        {"weekday": 1, "startTime": "09:00", "endTime": "17:00", "timezone": "America/Bogota"},
+                                        {"weekday": 2, "startTime": "09:00", "endTime": "17:00", "timezone": "America/Bogota"},
+                                        {"weekday": 3, "startTime": "09:00", "endTime": "17:00", "timezone": "America/Bogota"},
+                                        {"weekday": 4, "startTime": "09:00", "endTime": "17:00", "timezone": "America/Bogota"},
+                                        {"weekday": 5, "startTime": "09:00", "endTime": "17:00", "timezone": "America/Bogota"}
+                                      ]
+                                    }
+                                  ],
+                                  "routingRules": [
+                                    {
+                                      "name": "Cero SLA",
+                                      "description": "Schedules after expired SLA",
+                                      "urgentKeywords": ["hoy"],
+                                      "consultationWindows": [],
+                                      "lawyerId": "%s",
+                                      "urgencyDefinitions": [
+                                        {"name": "NORMAL", "rank": 1, "slaDays": 0, "active": true}
+                                      ],
+                                      "destinationEmail": "agenda@firma.test"
+                                    }
+                                  ]
+                                }
+                                """.formatted(lawyerId, lawyerId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/tenants/post-sla/consultations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "clientName": "Laura Torres",
+                                  "clientEmail": "laura@example.com",
+                                  "summary": "Necesito revisar una citacion hoy."
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.event.status").value("TENTATIVE"))
+                .andExpect(jsonPath("$.event.scheduledStart").exists())
+                .andExpect(jsonPath("$.event.scheduledEnd").exists())
+                .andExpect(jsonPath("$.event.scheduledWithinSla").value(false))
+                .andExpect(jsonPath("$.event.meetingUrl").value("https://meet.example.com/agenda"))
+                .andExpect(jsonPath("$.notifications.emailQueued").value(true))
+                .andExpect(jsonPath("$.notifications.calendarUpdateQueued").value(true));
+    }
+
+    @Test
+    void noActiveLawyerReturnsConfigurationError() throws Exception {
+        String lawyerId = "22222222-2222-2222-2222-222222222222";
+        mockMvc.perform(put("/api/tenants/no-active-lawyer/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "lawyers": [
+                                    {
+                                      "id": "%s",
+                                      "displayName": "Inactive Lawyer",
+                                      "email": "inactive@firma.test",
+                                      "active": false,
+                                      "defaultEventDurationMinutes": 60,
+                                      "availabilityWindows": []
+                                    }
+                                  ],
+                                  "routingRules": [
+                                    {
+                                      "name": "Inactive Route",
+                                      "urgentKeywords": [],
+                                      "consultationWindows": [],
+                                      "lawyerId": "%s",
+                                      "urgencyLevels": ["NORMAL"],
+                                      "destinationEmail": "inactive@firma.test"
+                                    }
+                                  ]
+                                }
+                                """.formatted(lawyerId, lawyerId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/tenants/no-active-lawyer/consultations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "clientName": "Pedro Ruiz",
+                                  "clientEmail": "pedro@example.com",
+                                  "summary": "Necesito una consulta legal general."
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("active_lawyer_required"));
     }
 
     @Test

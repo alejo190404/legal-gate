@@ -59,6 +59,7 @@ const demoSettings = {
       id: 'lawyer-general',
       displayName: 'Notificaciones',
       email: 'notificaciones@firma.test',
+      meetingUrl: 'https://meet.example.com/notificaciones',
       active: true,
       defaultEventDurationMinutes: 60,
       availabilityWindows: [
@@ -321,6 +322,8 @@ describe('App landing to login to consultation inbox flow', () => {
 
     fixture.componentInstance.settingsForm.lawyers[0].displayName = 'Notificaciones';
     fixture.componentInstance.settingsForm.lawyers[0].email = 'notificaciones@firma.test';
+    fixture.componentInstance.settingsForm.lawyers[0].meetingUrl =
+      'https://meet.example.com/notificaciones';
     fixture.componentInstance.settingsForm.lawyers[0].active = false;
     fixture.componentInstance.settingsForm.lawyers[0].availabilityWindows[0].timezone = 'UTC';
     fixture.componentInstance.settingsForm.routingRules[0].destinationEmail =
@@ -337,6 +340,7 @@ describe('App landing to login to consultation inbox flow', () => {
     fixture.componentInstance.addLawyer();
     fixture.componentInstance.settingsForm.lawyers[1].displayName = 'Laboral';
     fixture.componentInstance.settingsForm.lawyers[1].email = 'laboral@firma.test';
+    fixture.componentInstance.settingsForm.lawyers[1].meetingUrl = '';
     fixture.componentInstance.settingsForm.lawyers[1].active = false;
     fixture.componentInstance.settingsForm.lawyers[1].availabilityWindows[0].timezone =
       'Europe/Madrid';
@@ -361,6 +365,7 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(settingsRequest.request.body.lawyers[0]).toMatchObject({
       displayName: 'Notificaciones',
       email: 'notificaciones@firma.test',
+      meetingUrl: 'https://meet.example.com/notificaciones',
       active: true,
     });
     expect(settingsRequest.request.body.lawyers[0].availabilityWindows[0]).toMatchObject({
@@ -372,6 +377,7 @@ describe('App landing to login to consultation inbox flow', () => {
     expect(settingsRequest.request.body.lawyers[1]).toMatchObject({
       displayName: 'Laboral',
       email: 'laboral@firma.test',
+      meetingUrl: null,
       active: true,
     });
     expect(settingsRequest.request.body.lawyers[1].availabilityWindows[0].timezone).toBe(

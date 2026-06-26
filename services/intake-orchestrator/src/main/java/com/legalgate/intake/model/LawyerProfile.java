@@ -10,8 +10,19 @@ public record LawyerProfile(
         String id,
         @NotBlank String displayName,
         @NotBlank @Email String email,
+        String meetingUrl,
         Boolean active,
         @NotNull Integer defaultEventDurationMinutes,
         List<@Valid LawyerAvailabilityWindow> availabilityWindows
 ) {
+    public LawyerProfile(
+            String id,
+            String displayName,
+            String email,
+            Boolean active,
+            Integer defaultEventDurationMinutes,
+            List<LawyerAvailabilityWindow> availabilityWindows
+    ) {
+        this(id, displayName, email, null, active, defaultEventDurationMinutes, availabilityWindows);
+    }
 }
