@@ -107,7 +107,9 @@ public class BillingService {
         String payerEmail = workos.userEmail(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, "payer_email_unavailable"));
         Coupon coupon = quote.couponCode() == null ? null
-                : repository.validCoupon(quote.couponCode(), Instant.now()).orElseThrow();
+                : repository.validCoupon(quote.couponCode(), Instant.now())
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, "invalid_coupon"));
         Subscription pending;
         try {
             pending = repository.createPending(
@@ -196,7 +198,7 @@ public class BillingService {
         if (!properties.enabled()) return;
         repository.expirePendingAndGrace(Instant.now());
         Instant staleBefore = Instant.now().minus(properties.reconciliationInterval());
-        for (Subscription subscription : repository.reconciliationCandidates(staleBefore, 50)) {
+        for (Subscription subscription : repository.claimReconciliationCandidates(staleBefore, 50)) {
             try {
                 JsonNode canonical = provider.subscription(subscription.providerSubscriptionId());
                 reconcileSubscription(subscription, canonical);
@@ -221,11 +223,13 @@ public class BillingService {
                         }
                     }
                 }
+                repository.completeReconciliation(subscription);
             } catch (Exception exception) {
+                repository.failReconciliation(subscription);
                 log.warn("Subscription reconciliation failed subscription={}", subscription.id(), exception);
             }
         }
-        for (Subscription subscription : repository.amountTransitionCandidates(25)) {
+        for (Subscription subscription : repository.claimAmountTransitionCandidates(25)) {
             try {
                 provider.updateAmount(subscription.providerSubscriptionId(), subscription.originalAmountCop());
                 repository.completeAmountTransition(subscription);

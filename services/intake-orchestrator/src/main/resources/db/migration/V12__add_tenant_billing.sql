@@ -55,6 +55,9 @@ create table coupons (
 
 create unique index uq_coupons_case_insensitive_code on coupons (upper(code));
 
+alter table tenants
+    add constraint tenants_id_slug_unique unique (id, slug);
+
 create table subscriptions (
     id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references tenants(id) on delete cascade,
@@ -86,9 +89,11 @@ create table subscriptions (
     approved_cycle_count integer not null default 0,
     amount_transition_pending boolean not null default false,
     amount_transition_attempts integer not null default 0,
+    amount_transition_claimed_until timestamptz,
     amount_transition_error text,
     idempotency_key text not null,
     last_provider_sync_at timestamptz,
+    reconciliation_claimed_until timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint subscriptions_plan_interval_check check (plan_interval in ('MONTHLY', 'YEARLY')),
@@ -99,7 +104,10 @@ create table subscriptions (
         original_amount_cop > 0 and current_amount_cop > 0
     ),
     constraint subscriptions_cycle_count_check check (approved_cycle_count >= 0),
-    constraint subscriptions_idempotency_unique unique (tenant_id, idempotency_key)
+    constraint subscriptions_idempotency_unique unique (tenant_id, idempotency_key),
+    constraint subscriptions_tenant_identity_unique unique (id, tenant_id, tenant_slug),
+    constraint subscriptions_tenant_identity_fk foreign key (tenant_id, tenant_slug)
+        references tenants(id, slug)
 );
 
 create unique index uq_subscriptions_current_per_tenant
@@ -129,7 +137,10 @@ create table subscription_payments (
     updated_at timestamptz not null default now(),
     constraint subscription_payments_provider_unique unique (provider_payment_id),
     constraint subscription_payments_amount_check check (amount_cop is null or amount_cop >= 0),
-    constraint subscription_payments_currency_check check (currency = 'COP')
+    constraint subscription_payments_currency_check check (currency = 'COP'),
+    constraint subscription_payments_tenant_identity_fk
+        foreign key (subscription_id, tenant_id, tenant_slug)
+        references subscriptions(id, tenant_id, tenant_slug) on delete cascade
 );
 
 create index idx_subscription_payments_subscription

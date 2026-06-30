@@ -145,7 +145,8 @@ public class BackendProxyController {
     }
 
     private Duration timeout(String requestUri) {
-        if (requestUri != null && requestUri.startsWith("/api/billing/")) {
+        if ("/api/billing".equals(requestUri)
+                || (requestUri != null && requestUri.startsWith("/api/billing/"))) {
             return properties.getBillingRequestTimeout() == null
                     ? Duration.ofSeconds(10) : properties.getBillingRequestTimeout();
         }

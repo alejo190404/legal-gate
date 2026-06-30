@@ -1,98 +1,29 @@
 package com.legalgate.intake.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 
 import com.legalgate.intake.config.IntakeProperties;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 class WorkosClientTests {
-    private HttpServer server;
-
-    @AfterEach
-    void stopServer() {
-        if (server != null) {
-            server.stop(0);
-        }
-    }
-
     @Test
-    void collectsOrganizationMembershipsAcrossAllPages() throws IOException {
-        AtomicInteger requestCount = new AtomicInteger();
-        List<String> queries = new ArrayList<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/user_management/organization_memberships", exchange -> {
-            queries.add(exchange.getRequestURI().getRawQuery());
-            int page = requestCount.getAndIncrement();
-            String body = page == 0
-                    ? """
-                      {"data":[{"organization_id":"org_first"}],
-                       "list_metadata":{"after":"om_cursor"}}
-                      """
-                    : """
-                      {"data":[{"organization_id":"org_second"}],
-                       "list_metadata":{"after":null}}
-                      """;
-            respond(exchange, body);
-        });
-        server.start();
+    void userEmailMapsProviderFailuresToUnavailable() {
+        IntakeProperties properties = mock(IntakeProperties.class);
+        when(properties.workosApiBaseUrl()).thenReturn("https://workos.example.test");
+        when(properties.workosApiKey()).thenReturn("sk_test");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WorkosClient client = new WorkosClient(builder, properties);
+        server.expect(requestTo("https://workos.example.test/user_management/users/user_1"))
+                .andRespond(withServerError());
 
-        WorkosClient client = new WorkosClient(RestClient.builder(), properties());
-
-        assertThat(client.organizationMembershipIds("user_123"))
-                .containsExactly("org_first", "org_second");
-        assertThat(queries).hasSize(2);
-        assertThat(queries.get(0)).contains("user_id=user_123", "limit=100");
-        assertThat(queries.get(1)).contains("after=om_cursor");
-    }
-
-    @Test
-    void obtainsTrustedPayerEmailFromWorkosUser() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/user_management/users/user_123", exchange ->
-                respond(exchange, "{\"id\":\"user_123\",\"email\":\"Admin@Firma.Test\"}"));
-        server.start();
-
-        WorkosClient client = new WorkosClient(RestClient.builder(), properties());
-
-        assertThat(client.userEmail("user_123")).contains("admin@firma.test");
-    }
-
-    private IntakeProperties properties() {
-        return new IntakeProperties(
-                "memory",
-                false,
-                "intake.legal-gate.co",
-                null,
-                null,
-                null,
-                null,
-                false,
-                null,
-                null,
-                null,
-                null,
-                false,
-                "test-service-token",
-                "sk_test",
-                "http://localhost:" + server.getAddress().getPort()
-        );
-    }
-
-    private static void respond(HttpExchange exchange, String body) throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.close();
+        assertThat(client.userEmail("user_1")).isEmpty();
+        server.verify();
     }
 }

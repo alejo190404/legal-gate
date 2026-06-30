@@ -21,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 class BillingServiceTests {
     private final BillingRepository repository = mock(BillingRepository.class);
+    private final SubscriptionProviderClient provider = mock(SubscriptionProviderClient.class);
+    private final WorkosClient workos = mock(WorkosClient.class);
     private BillingService service;
     private Plan monthly;
 
@@ -34,7 +36,7 @@ class BillingServiceTests {
         when(intake.persistence()).thenReturn("jdbc");
         service = new BillingService(
                 properties, repository, mock(BillingAccessService.class),
-                mock(SubscriptionProviderClient.class), mock(WorkosClient.class),
+                provider, workos,
                 new ObjectMapper(), intake);
         monthly = new Plan(
                 UUID.randomUUID(), "monthly", 1, "Monthly", null,
@@ -93,5 +95,21 @@ class BillingServiceTests {
                 new ObjectMapper(), intake))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("LEGALGATE_INTAKE_PERSISTENCE=jdbc");
+    }
+
+    @Test
+    void checkoutMapsCouponExpiryBetweenValidationAndInsertToBadRequest() {
+        Coupon coupon = new Coupon(
+                UUID.randomUUID(), "FLASH", "PERCENTAGE", new BigDecimal("10"),
+                "ONCE", null);
+        when(repository.validCoupon(
+                org.mockito.ArgumentMatchers.eq("FLASH"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(coupon), Optional.empty());
+        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+
+        assertThatThrownBy(() -> service.checkout(
+                "tenant", "user-1", "monthly", "FLASH", "attempt-1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_coupon");
     }
 }

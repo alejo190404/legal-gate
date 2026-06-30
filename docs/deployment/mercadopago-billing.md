@@ -13,7 +13,10 @@ a pending `/preapproval` and redirects the payer to Mercado Pago.
 3. Under **Webhooks > Configurar notificaciones**, set:
    - Test URL: `https://<staging-gateway>/api/webhooks/mercadopago`
    - Production URL: `https://<production-gateway>/api/webhooks/mercadopago`
-   - Topics: payments, subscription preapprovals, and authorized subscription payments.
+   - Exact topic keys: `payment`, `subscription_preapproval`, and
+     `subscription_authorized_payment`. The integration does not use
+     `subscription_preapproval_plan` because LegalGate creates subscriptions without
+     provider-managed plans.
 4. Reveal and copy the webhook secret generated for that URL into
    `MERCADOPAGO_WEBHOOK_SECRET`. Test and production URLs can have different secrets.
 5. The webhook must point to the gateway, not directly to the intake orchestrator. The

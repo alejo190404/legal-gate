@@ -1,6 +1,7 @@
 package com.legalgate.intake.billing;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
@@ -30,5 +31,18 @@ class BillingPropertiesTests {
                 null, null, null, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("LEGALGATE_BILLING_ENABLED");
+    }
+
+    @Test
+    void normalizesRequiredProviderConfiguration() {
+        BillingProperties properties = new BillingProperties(
+                true, false, " token ", " secret ", " https://api.example.test ",
+                " https://app.example.test/?billing=return ",
+                null, null, null, null);
+
+        assertThat(properties.mercadoPagoAccessToken()).isEqualTo("token");
+        assertThat(properties.mercadoPagoWebhookSecret()).isEqualTo("secret");
+        assertThat(properties.mercadoPagoApiUrl()).isEqualTo("https://api.example.test");
+        assertThat(properties.returnUrl()).isEqualTo("https://app.example.test/?billing=return");
     }
 }

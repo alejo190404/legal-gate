@@ -31,12 +31,18 @@ class BillingAccessServiceTests {
         Subscription withinGrace = subscription(
                 "PAST_DUE", Instant.now().minus(Duration.ofDays(1)), Instant.now().plus(Duration.ofDays(6)));
         when(repository.currentSubscription("tenant")).thenReturn(Optional.of(withinGrace));
+        when(repository.entitledSubscription(
+                org.mockito.ArgumentMatchers.eq("tenant"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(withinGrace));
         when(repository.payments("tenant", withinGrace.id())).thenReturn(List.of());
         assertThat(access.status("tenant").entitled()).isTrue();
 
         Subscription expiredGrace = subscription(
                 "PAST_DUE", Instant.now().minus(Duration.ofDays(8)), Instant.now().minusSeconds(1));
         when(repository.currentSubscription("tenant")).thenReturn(Optional.of(expiredGrace));
+        when(repository.entitledSubscription(
+                org.mockito.ArgumentMatchers.eq("tenant"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.empty());
         when(repository.payments("tenant", expiredGrace.id())).thenReturn(List.of());
         assertThat(access.status("tenant").entitled()).isFalse();
     }
@@ -46,10 +52,31 @@ class BillingAccessServiceTests {
         Subscription canceled = subscription(
                 "CANCELED", Instant.now().plus(Duration.ofDays(3)), null);
         when(repository.currentSubscription("tenant")).thenReturn(Optional.of(canceled));
+        when(repository.entitledSubscription(
+                org.mockito.ArgumentMatchers.eq("tenant"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(canceled));
         when(repository.payments("tenant", canceled.id())).thenReturn(List.of());
 
         assertThat(access.status("tenant").entitled()).isTrue();
         assertThat(access.status("tenant").accessEndsAt()).isEqualTo(canceled.paidThrough());
+    }
+
+    @Test
+    void pendingCheckoutDoesNotHideStillPaidCanceledSubscription() {
+        Subscription pending = subscription("PENDING", null, null);
+        Subscription canceled = subscription(
+                "CANCELED", Instant.now().plus(Duration.ofDays(3)), null);
+        when(repository.currentSubscription("tenant")).thenReturn(Optional.of(pending));
+        when(repository.entitledSubscription(
+                org.mockito.ArgumentMatchers.eq("tenant"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(canceled));
+        when(repository.payments("tenant", pending.id())).thenReturn(List.of());
+
+        BillingModels.Status status = access.status("tenant");
+
+        assertThat(status.entitled()).isTrue();
+        assertThat(status.subscription()).isEqualTo(pending);
+        assertThat(status.accessEndsAt()).isEqualTo(canceled.paidThrough());
     }
 
     private Subscription subscription(String status, Instant paidThrough, Instant graceDeadline) {

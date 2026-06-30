@@ -14,10 +14,18 @@ import org.springframework.stereotype.Repository;
 @Repository
 @ConditionalOnProperty(name = "legalgate.intake.persistence", havingValue = "memory", matchIfMissing = true)
 class InMemoryBillingRepository implements BillingRepository {
+    InMemoryBillingRepository(BillingProperties properties) {
+        if (properties.enabled()) {
+            throw new IllegalStateException(
+                    "LEGALGATE_BILLING_ENABLED requires LEGALGATE_INTAKE_PERSISTENCE=jdbc.");
+        }
+    }
+
     public List<Plan> activePlans() { return List.of(); }
     public Optional<Plan> activePlan(String code) { return Optional.empty(); }
     public Optional<Coupon> validCoupon(String code, Instant now) { return Optional.empty(); }
     public Optional<Subscription> currentSubscription(String tenantSlug) { return Optional.empty(); }
+    public Optional<Subscription> entitledSubscription(String tenantSlug, Instant now) { return Optional.empty(); }
     public Optional<Subscription> subscriptionByIdempotency(String tenantSlug, String key) { return Optional.empty(); }
     public Optional<Subscription> subscriptionByExternalReference(String ref) { return Optional.empty(); }
     public Optional<Subscription> subscriptionByProviderId(String providerId) { return Optional.empty(); }
@@ -34,9 +42,11 @@ class InMemoryBillingRepository implements BillingRepository {
     public void failWebhook(UUID id, int attempts, String error) {}
     public void applyPayment(Subscription s, String p, String a, String status, BigDecimal amount, Instant paid,
                              Instant next, JsonNode payload, Duration grace) {}
-    public List<Subscription> reconciliationCandidates(Instant stale, int limit) { return List.of(); }
+    public List<Subscription> claimReconciliationCandidates(Instant stale, int limit) { return List.of(); }
+    public void completeReconciliation(Subscription subscription) {}
+    public void failReconciliation(Subscription subscription) {}
     public void expirePendingAndGrace(Instant now) {}
-    public List<Subscription> amountTransitionCandidates(int limit) { return List.of(); }
+    public List<Subscription> claimAmountTransitionCandidates(int limit) { return List.of(); }
     public void completeAmountTransition(Subscription s) {}
     public void failAmountTransition(Subscription s, String error) {}
 }

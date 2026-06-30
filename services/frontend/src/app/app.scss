@@ -1670,6 +1670,21 @@
   min-height: 72px;
   padding: 14px clamp(18px, 5vw, 72px);
   background: var(--stone-950);
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: white;
+    font-size: 20px;
+    font-weight: 700;
+    text-decoration: none;
+
+    img {
+      width: 28px;
+      height: 28px;
+    }
+  }
 }
 
 .billing-page {

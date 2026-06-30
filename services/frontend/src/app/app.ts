@@ -219,6 +219,13 @@ interface BillingStatus {
   message: string;
 }
 
+interface BillingCheckoutAttempt {
+  tenantId: string;
+  planCode: string;
+  couponCode: string;
+  idempotencyKey: string;
+}
+
 @Component({
   selector: 'app-root',
   imports: [FormsModule],
@@ -226,6 +233,7 @@ interface BillingStatus {
   styleUrl: './app.scss',
 })
 export class App implements OnInit {
+  private static readonly checkoutAttemptStorageKey = 'legalgate-active-checkout';
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
   readonly auth = inject(AuthService);
@@ -399,6 +407,7 @@ export class App implements OnInit {
     this.billingQuote.set(null);
     this.billingMessage.set('');
     this.billingError.set('');
+    this.clearCheckoutAttempt();
     this.isConsoleMenuOpen.set(false);
     this.clearConsoleErrors();
     this.auth.signOut();
@@ -439,6 +448,9 @@ export class App implements OnInit {
         next: (status) => {
           this.billingStatus.set(status);
           this.isBillingLoading.set(false);
+          if (!status.billingEnabled || status.subscription?.status !== 'PENDING') {
+            this.clearCheckoutAttempt();
+          }
           if (!status.billingEnabled || status.entitled) {
             const wasOutsideConsole = this.view() !== 'console';
             this.view.set('console');
@@ -472,7 +484,11 @@ export class App implements OnInit {
     this.http.get<BillingPlan[]>(this.apiConfig.url('/api/billing/plans')).subscribe({
       next: (plans) => {
         this.billingPlans.set(plans);
-        if (!this.selectedPlanCode() && plans.length) this.selectedPlanCode.set(plans[0].code);
+        const selected = this.selectedPlanCode();
+        if (!plans.some((plan) => plan.code === selected)) {
+          this.selectedPlanCode.set(plans[0]?.code ?? '');
+          this.billingQuote.set(null);
+        }
       },
       error: () => this.billingError.set('No se pudieron cargar los planes disponibles.'),
     });
@@ -510,15 +526,22 @@ export class App implements OnInit {
     if (!this.selectedPlanCode()) return;
     this.isBillingLoading.set(true);
     this.billingError.set('');
-    const storageKey = `legalgate-checkout-${this.selectedPlanCode()}-${this.couponCode().trim()}`;
-    const idempotencyKey = sessionStorage.getItem(storageKey) ?? this.cryptoId();
-    sessionStorage.setItem(storageKey, idempotencyKey);
+    const planCode = this.selectedPlanCode();
+    const couponCode = this.couponCode().trim();
+    const activeAttempt = this.checkoutAttempt();
+    const idempotencyKey =
+      activeAttempt?.tenantId === this.tenantId() &&
+      activeAttempt.planCode === planCode &&
+      activeAttempt.couponCode === couponCode
+        ? activeAttempt.idempotencyKey
+        : this.cryptoId();
+    this.storeCheckoutAttempt({ tenantId: this.tenantId(), planCode, couponCode, idempotencyKey });
     this.http
       .post<{ checkoutUrl: string }>(
         this.apiConfig.url('/api/billing/checkout'),
         {
-          planCode: this.selectedPlanCode(),
-          couponCode: this.couponCode().trim() || null,
+          planCode,
+          couponCode: couponCode || null,
         },
         { headers: { 'Idempotency-Key': idempotencyKey } },
       )
@@ -531,7 +554,10 @@ export class App implements OnInit {
           }
           window.location.assign(checkout.checkoutUrl);
         },
-        error: () => {
+        error: (error: HttpErrorResponse) => {
+          if (error.status >= 400 && error.status < 500) {
+            this.clearCheckoutAttempt();
+          }
           this.billingError.set('No se pudo iniciar Mercado Pago. El intento se puede reanudar sin duplicar la suscripcion.');
           this.isBillingLoading.set(false);
         },
@@ -605,6 +631,8 @@ export class App implements OnInit {
 
   private handleProtectedError(error: HttpErrorResponse, fallback: () => void): void {
     if (error.status === 402) {
+      this.isLoading.set(false);
+      this.isSubmitting.set(false);
       this.clearProtectedTenantData();
       this.view.set('billing');
       this.loadBillingStatus();
@@ -1219,6 +1247,35 @@ export class App implements OnInit {
 
   private cryptoId(): string {
     return crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+  }
+
+  private checkoutAttempt(): BillingCheckoutAttempt | null {
+    try {
+      const stored = sessionStorage.getItem(App.checkoutAttemptStorageKey);
+      if (!stored) return null;
+      const attempt = JSON.parse(stored) as Partial<BillingCheckoutAttempt>;
+      if (
+        typeof attempt.tenantId !== 'string' ||
+        typeof attempt.planCode !== 'string' ||
+        typeof attempt.couponCode !== 'string' ||
+        typeof attempt.idempotencyKey !== 'string'
+      ) {
+        this.clearCheckoutAttempt();
+        return null;
+      }
+      return attempt as BillingCheckoutAttempt;
+    } catch {
+      this.clearCheckoutAttempt();
+      return null;
+    }
+  }
+
+  private storeCheckoutAttempt(attempt: BillingCheckoutAttempt): void {
+    sessionStorage.setItem(App.checkoutAttemptStorageKey, JSON.stringify(attempt));
+  }
+
+  private clearCheckoutAttempt(): void {
+    sessionStorage.removeItem(App.checkoutAttemptStorageKey);
   }
 
   private isValidEmail(value: string): boolean {

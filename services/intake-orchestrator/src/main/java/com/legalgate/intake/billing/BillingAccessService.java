@@ -25,9 +25,10 @@ public class BillingAccessService {
         }
         Subscription subscription = repository.currentSubscription(tenantSlug).orElse(null);
         Instant now = Instant.now();
-        boolean paidEntitled = entitled(subscription, now);
+        Subscription entitledSubscription = repository.entitledSubscription(tenantSlug, now).orElse(null);
+        boolean paidEntitled = entitled(entitledSubscription, now);
         boolean entitled = !properties.enforcementEnabled() || paidEntitled;
-        Instant accessEndsAt = accessEndsAt(subscription);
+        Instant accessEndsAt = accessEndsAt(entitledSubscription);
         String status = subscription == null ? "SUBSCRIPTION_REQUIRED" : subscription.status();
         List<BillingModels.Payment> payments = subscription == null
                 ? List.of() : repository.payments(tenantSlug, subscription.id());

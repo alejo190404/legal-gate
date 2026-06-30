@@ -17,6 +17,7 @@ public interface BillingRepository {
     Optional<Plan> activePlan(String code);
     Optional<Coupon> validCoupon(String code, Instant now);
     Optional<Subscription> currentSubscription(String tenantSlug);
+    Optional<Subscription> entitledSubscription(String tenantSlug, Instant now);
     Optional<Subscription> subscriptionByIdempotency(String tenantSlug, String idempotencyKey);
     Optional<Subscription> subscriptionByExternalReference(String externalReference);
     Optional<Subscription> subscriptionByProviderId(String providerId);
@@ -37,9 +38,11 @@ public interface BillingRepository {
             Subscription subscription, String paymentId, String authorizedPaymentId, String providerStatus,
             BigDecimal amount, Instant paidAt, Instant providerNextPayment, JsonNode payload,
             java.time.Duration gracePeriod);
-    List<Subscription> reconciliationCandidates(Instant staleBefore, int limit);
+    List<Subscription> claimReconciliationCandidates(Instant staleBefore, int limit);
+    void completeReconciliation(Subscription subscription);
+    void failReconciliation(Subscription subscription);
     void expirePendingAndGrace(Instant now);
-    List<Subscription> amountTransitionCandidates(int limit);
+    List<Subscription> claimAmountTransitionCandidates(int limit);
     void completeAmountTransition(Subscription subscription);
     void failAmountTransition(Subscription subscription, String error);
 }

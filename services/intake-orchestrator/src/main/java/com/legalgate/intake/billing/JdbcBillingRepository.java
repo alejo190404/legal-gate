@@ -75,6 +75,21 @@ class JdbcBillingRepository implements BillingRepository {
     }
 
     @Override
+    public Optional<Subscription> entitledSubscription(String tenantSlug, Instant now) {
+        Timestamp timestamp = Timestamp.from(now);
+        return inTenant(tenantSlug, () -> jdbc.query(subscriptionSelect() + """
+                where s.tenant_slug = ?
+                  and (
+                    (s.status in ('ACTIVE','CANCELED') and s.paid_through > ?)
+                    or (s.status = 'PAST_DUE' and s.grace_deadline > ?)
+                  )
+                order by case when s.status = 'PAST_DUE' then s.grace_deadline else s.paid_through end desc,
+                         s.created_at desc
+                limit 1
+                """, this::mapSubscription, tenantSlug, timestamp, timestamp).stream().findFirst());
+    }
+
+    @Override
     public Optional<Subscription> subscriptionByIdempotency(String tenantSlug, String key) {
         return inTenant(tenantSlug, () -> jdbc.query(subscriptionSelect() + """
                 where s.tenant_slug = ? and s.idempotency_key = ?
@@ -85,9 +100,15 @@ class JdbcBillingRepository implements BillingRepository {
     @Override
     public Optional<Subscription> subscriptionByExternalReference(String externalReference) {
         if (externalReference == null || externalReference.isBlank()) return Optional.empty();
+        UUID subscriptionId;
+        try {
+            subscriptionId = UUID.fromString(externalReference.trim());
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
         return inWorker(() -> jdbc.query(subscriptionSelect() + """
-                where s.id = cast(? as uuid) limit 1
-                """, this::mapSubscription, externalReference).stream().findFirst());
+                where s.id = ? limit 1
+                """, this::mapSubscription, subscriptionId).stream().findFirst());
     }
 
     @Override
@@ -119,9 +140,6 @@ class JdbcBillingRepository implements BillingRepository {
                     coupon == null ? null : coupon.discountType(), coupon == null ? null : coupon.discountValue(),
                     coupon == null ? null : coupon.duration(), coupon == null ? null : coupon.durationCycles(),
                     plan.priceCop(), amount, payerEmail, Timestamp.from(expiresAt), idempotencyKey);
-            if (coupon != null) {
-                jdbc.update("update coupons set redemption_count = redemption_count + 1 where id = ?", coupon.id());
-            }
             return subscriptionByIdempotency(tenantSlug, idempotencyKey).orElseThrow();
         });
     }
@@ -243,6 +261,9 @@ class JdbcBillingRepository implements BillingRepository {
             Duration gracePeriod
     ) {
         inTenant(subscription.tenantSlug(), () -> {
+            int approvedCycleCount = jdbc.queryForObject(
+                    "select approved_cycle_count from subscriptions where id = ? for update",
+                    Integer.class, subscription.id());
             boolean approved = "approved".equalsIgnoreCase(providerStatus);
             String previousStatus = jdbc.query(
                     "select provider_status from subscription_payments where provider_payment_id = ?",
@@ -267,16 +288,24 @@ class JdbcBillingRepository implements BillingRepository {
             if (inserted == 0) {
                 jdbc.update("""
                         update subscription_payments
-                        set provider_status = ?, amount_cop = ?, raw_payload = cast(? as jsonb), updated_at = now()
+                        set provider_authorized_payment_id = coalesce(?, provider_authorized_payment_id),
+                            provider_status = ?,
+                            amount_cop = coalesce(?, amount_cop),
+                            paid_at = coalesce(?, paid_at),
+                            period_start = coalesce(?, period_start),
+                            period_end = coalesce(?, period_end),
+                            raw_payload = cast(? as jsonb),
+                            updated_at = now()
                         where provider_payment_id = ?
-                        """, providerStatus, amount, payload.toString(), paymentId);
+                        """, authorizedPaymentId, providerStatus, amount, timestamp(paidAt),
+                        timestamp(periodStart), timestamp(periodEnd), payload.toString(), paymentId);
             }
 
             boolean currentOrNew = subscription.currentPeriodStart() == null
                     || !paidAt.isBefore(subscription.currentPeriodStart());
             boolean newlyApproved = approved && !"approved".equalsIgnoreCase(previousStatus);
             if (newlyApproved && currentOrNew) {
-                int nextCycle = subscription.approvedCycleCount() + 1;
+                int nextCycle = approvedCycleCount + 1;
                 boolean transition = subscription.coupon() != null
                         && (("ONCE".equals(subscription.coupon().duration()) && nextCycle >= 1)
                         || ("REPEATING".equals(subscription.coupon().duration())
@@ -291,6 +320,13 @@ class JdbcBillingRepository implements BillingRepository {
                         where id = ?
                         """, timestamp(periodStart), timestamp(periodStart), timestamp(periodEnd),
                         nextCycle, transition, subscription.id());
+                if (subscription.coupon() != null && approvedCycleCount == 0) {
+                    jdbc.update("""
+                            update coupons
+                            set redemption_count = redemption_count + 1
+                            where id = ?
+                            """, subscription.coupon().id());
+                }
             } else if (currentOrNew && ("refunded".equalsIgnoreCase(providerStatus)
                     || "charged_back".equalsIgnoreCase(providerStatus))) {
                 jdbc.update("""
@@ -314,14 +350,44 @@ class JdbcBillingRepository implements BillingRepository {
     }
 
     @Override
-    public List<Subscription> reconciliationCandidates(Instant staleBefore, int limit) {
-        return inWorker(() -> jdbc.query(subscriptionSelect() + """
-                where s.status in ('PENDING','ACTIVE','PAST_DUE')
-                  and s.provider_subscription_id is not null
-                  and (s.last_provider_sync_at is null or s.last_provider_sync_at < ?)
-                order by coalesce(s.last_provider_sync_at, s.created_at)
-                limit ?
+    public List<Subscription> claimReconciliationCandidates(Instant staleBefore, int limit) {
+        return inWorker(() -> jdbc.query("""
+                with claimed as (
+                  select s.id
+                  from subscriptions s
+                  where s.status in ('PENDING','ACTIVE','PAST_DUE')
+                    and s.provider_subscription_id is not null
+                    and (s.last_provider_sync_at is null or s.last_provider_sync_at < ?)
+                    and (s.reconciliation_claimed_until is null
+                         or s.reconciliation_claimed_until < now())
+                  order by coalesce(s.last_provider_sync_at, s.created_at)
+                  for update skip locked
+                  limit ?
+                ),
+                updated as (
+                  update subscriptions s
+                  set reconciliation_claimed_until = now() + interval '15 minutes',
+                      updated_at = now()
+                  from claimed
+                  where s.id = claimed.id
+                  returning s.id
+                )
+                select s.*, p.version as plan_version, p.description as plan_description,
+                       p.display_order as plan_display_order
+                from subscriptions s
+                join billing_plans p on p.id = s.plan_id
+                join updated on updated.id = s.id
                 """, this::mapSubscription, Timestamp.from(staleBefore), limit));
+    }
+
+    @Override
+    public void completeReconciliation(Subscription subscription) {
+        finishReconciliation(subscription, true);
+    }
+
+    @Override
+    public void failReconciliation(Subscription subscription) {
+        finishReconciliation(subscription, false);
     }
 
     @Override
@@ -340,11 +406,35 @@ class JdbcBillingRepository implements BillingRepository {
     }
 
     @Override
-    public List<Subscription> amountTransitionCandidates(int limit) {
-        return inWorker(() -> jdbc.query(subscriptionSelect() + """
-                where s.amount_transition_pending and s.provider_subscription_id is not null
-                  and s.status in ('ACTIVE','PAST_DUE') and s.amount_transition_attempts < 8
-                order by s.updated_at limit ?
+    public List<Subscription> claimAmountTransitionCandidates(int limit) {
+        return inWorker(() -> jdbc.query("""
+                with claimed as (
+                  select s.id
+                  from subscriptions s
+                  where s.amount_transition_pending
+                    and s.provider_subscription_id is not null
+                    and s.status in ('ACTIVE','PAST_DUE')
+                    and s.amount_transition_attempts < 8
+                    and (s.amount_transition_claimed_until is null
+                         or s.amount_transition_claimed_until < now())
+                  order by s.updated_at
+                  for update skip locked
+                  limit ?
+                ),
+                updated as (
+                  update subscriptions s
+                  set amount_transition_claimed_until = now() + interval '10 minutes',
+                      amount_transition_attempts = amount_transition_attempts + 1,
+                      updated_at = now()
+                  from claimed
+                  where s.id = claimed.id
+                  returning s.id
+                )
+                select s.*, p.version as plan_version, p.description as plan_description,
+                       p.display_order as plan_display_order
+                from subscriptions s
+                join billing_plans p on p.id = s.plan_id
+                join updated on updated.id = s.id
                 """, this::mapSubscription, limit));
     }
 
@@ -354,7 +444,8 @@ class JdbcBillingRepository implements BillingRepository {
             jdbc.update("""
                     update subscriptions
                     set current_amount_cop = original_amount_cop, amount_transition_pending = false,
-                        amount_transition_error = null, updated_at = now()
+                        amount_transition_claimed_until = null, amount_transition_error = null,
+                        updated_at = now()
                     where id = ?
                     """, subscription.id());
             return null;
@@ -366,10 +457,22 @@ class JdbcBillingRepository implements BillingRepository {
         inTenant(subscription.tenantSlug(), () -> {
             jdbc.update("""
                     update subscriptions
-                    set amount_transition_attempts = amount_transition_attempts + 1,
-                        amount_transition_error = ?, updated_at = now()
+                    set amount_transition_error = ?, updated_at = now()
                     where id = ?
                     """, truncate(error), subscription.id());
+            return null;
+        });
+    }
+
+    private void finishReconciliation(Subscription subscription, boolean completed) {
+        inTenant(subscription.tenantSlug(), () -> {
+            jdbc.update("""
+                    update subscriptions
+                    set reconciliation_claimed_until = null,
+                        last_provider_sync_at = case when ? then now() else last_provider_sync_at end,
+                        updated_at = now()
+                    where id = ?
+                    """, completed, subscription.id());
             return null;
         });
     }

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
@@ -76,7 +77,7 @@ public class WorkosClient {
             return email == null || email.isBlank()
                     ? Optional.empty()
                     : Optional.of(email.trim().toLowerCase(java.util.Locale.ROOT));
-        } catch (HttpClientErrorException.NotFound ignored) {
+        } catch (RestClientException ignored) {
             return Optional.empty();
         }
     }

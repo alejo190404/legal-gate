@@ -17,7 +17,10 @@ public record BillingProperties(
         Duration gracePeriod
 ) {
     public BillingProperties {
+        mercadoPagoAccessToken = textOrDefault(mercadoPagoAccessToken, null);
+        mercadoPagoWebhookSecret = textOrDefault(mercadoPagoWebhookSecret, null);
         mercadoPagoApiUrl = textOrDefault(mercadoPagoApiUrl, "https://api.mercadopago.com");
+        returnUrl = textOrDefault(returnUrl, null);
         providerTimeout = durationOrDefault(providerTimeout, Duration.ofSeconds(8));
         reconciliationInterval = durationOrDefault(reconciliationInterval, Duration.ofMinutes(5));
         pendingCheckoutTtl = durationOrDefault(pendingCheckoutTtl, Duration.ofHours(24));

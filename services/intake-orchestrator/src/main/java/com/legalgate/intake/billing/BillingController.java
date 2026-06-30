@@ -58,6 +58,9 @@ class BillingController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CheckoutRequest request
     ) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "idempotency_key_required");
+        }
         requireAdmin(role);
         TenantProvisioning tenant = tenants.requireProvisioningActiveTenant(organizationId);
         return billing.checkout(

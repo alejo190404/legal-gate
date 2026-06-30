@@ -21,6 +21,7 @@ describe('App WorkOS authentication flow', () => {
   };
 
   beforeEach(async () => {
+    sessionStorage.clear();
     user.set(null);
     hasOrganization.set(false);
     vi.clearAllMocks();
@@ -131,5 +132,48 @@ describe('App WorkOS authentication flow', () => {
     expect(fixture.componentInstance.view()).toBe('billing');
     http.expectNone('/api/consultations');
     http.expectNone('/api/tenant/settings');
+  });
+
+  it('resets a plan selection that is absent from a refreshed catalog', () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance.selectedPlanCode.set('retired');
+
+    fixture.componentInstance.loadBillingPlans();
+    http.expectOne('/api/billing/plans').flush([
+      {
+        id: 'plan-1',
+        code: 'monthly',
+        version: 2,
+        displayName: 'Monthly',
+        description: null,
+        interval: 'MONTHLY',
+        priceCop: 100000,
+      },
+    ]);
+
+    expect(fixture.componentInstance.selectedPlanCode()).toBe('monthly');
+    expect(fixture.componentInstance.billingQuote()).toBeNull();
+  });
+
+  it('rotates checkout idempotency after a terminal client error', () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance.tenantId.set('tenant-1');
+    fixture.componentInstance.selectedPlanCode.set('monthly');
+
+    fixture.componentInstance.checkoutBilling();
+    const first = http.expectOne('/api/billing/checkout');
+    const firstKey = first.request.headers.get('Idempotency-Key');
+    first.flush({}, { status: 400, statusText: 'Bad Request' });
+
+    fixture.componentInstance.checkoutBilling();
+    const second = http.expectOne('/api/billing/checkout');
+    const secondKey = second.request.headers.get('Idempotency-Key');
+    second.flush({}, { status: 400, statusText: 'Bad Request' });
+
+    expect(firstKey).toBeTruthy();
+    expect(secondKey).toBeTruthy();
+    expect(secondKey).not.toBe(firstKey);
   });
 });
