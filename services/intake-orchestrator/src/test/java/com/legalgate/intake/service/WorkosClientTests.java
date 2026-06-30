@@ -55,6 +55,18 @@ class WorkosClientTests {
         assertThat(queries.get(1)).contains("after=om_cursor");
     }
 
+    @Test
+    void obtainsTrustedPayerEmailFromWorkosUser() throws IOException {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/user_management/users/user_123", exchange ->
+                respond(exchange, "{\"id\":\"user_123\",\"email\":\"Admin@Firma.Test\"}"));
+        server.start();
+
+        WorkosClient client = new WorkosClient(RestClient.builder(), properties());
+
+        assertThat(client.userEmail("user_123")).contains("admin@firma.test");
+    }
+
     private IntakeProperties properties() {
         return new IntakeProperties(
                 "memory",

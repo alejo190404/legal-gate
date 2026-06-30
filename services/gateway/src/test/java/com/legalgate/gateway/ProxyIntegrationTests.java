@@ -2,6 +2,7 @@ package com.legalgate.gateway;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,6 +37,7 @@ class ProxyIntegrationTests {
         try {
             backend = HttpServer.create(new InetSocketAddress(0), 0);
             backend.createContext("/api/session", ProxyIntegrationTests::echoHeaders);
+            backend.createContext("/api/webhooks/mercadopago", ProxyIntegrationTests::echoWebhook);
             executor = Executors.newSingleThreadExecutor();
             backend.setExecutor(executor);
             backend.start();
@@ -83,6 +85,27 @@ class ProxyIntegrationTests {
                 .andExpect(jsonPath("$.forwardedFor").isEmpty());
     }
 
+    @Test
+    void anonymousWebhookForwardsOnlyTheSignedEnvelope() throws Exception {
+        mockMvc.perform(post("/api/webhooks/mercadopago")
+                        .queryParam("data.id", "payment-1")
+                        .header("x-signature", "ts=1,v1=abc")
+                        .header("x-request-id", "request-1")
+                        .header("Authorization", "Bearer attacker")
+                        .header("Cookie", "session=attacker")
+                        .header("X-LegalGate-User-Id", "attacker")
+                        .contentType("application/json")
+                        .content("{\"data\":{\"id\":\"payment-1\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signature").value("ts=1,v1=abc"))
+                .andExpect(jsonPath("$.requestId").value("request-1"))
+                .andExpect(jsonPath("$.serviceToken").value("test-service-token"))
+                .andExpect(jsonPath("$.authorization").isEmpty())
+                .andExpect(jsonPath("$.cookie").isEmpty())
+                .andExpect(jsonPath("$.legalGateUser").isEmpty())
+                .andExpect(jsonPath("$.query").value("data.id=payment-1"));
+    }
+
     private static void echoHeaders(HttpExchange exchange) throws IOException {
         String body = """
                 {"user":"%s","organization":"%s","session":"%s","role":"%s","serviceToken":"%s","authorization":"%s","cookie":"%s","forwarded":"%s","forwardedFor":"%s"}
@@ -96,6 +119,24 @@ class ProxyIntegrationTests {
                 header(exchange, "Cookie"),
                 header(exchange, "Forwarded"),
                 header(exchange, "X-Forwarded-For"));
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private static void echoWebhook(HttpExchange exchange) throws IOException {
+        String body = """
+                {"signature":"%s","requestId":"%s","serviceToken":"%s","authorization":"%s","cookie":"%s","legalGateUser":"%s","query":"%s"}
+                """.formatted(
+                header(exchange, "x-signature"),
+                header(exchange, "x-request-id"),
+                header(exchange, "X-LegalGate-Service-Token"),
+                header(exchange, "Authorization"),
+                header(exchange, "Cookie"),
+                header(exchange, "X-LegalGate-User-Id"),
+                exchange.getRequestURI().getRawQuery());
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, bytes.length);

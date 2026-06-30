@@ -2,6 +2,7 @@ package com.legalgate.mail.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legalgate.mail.model.InboundEmailReceived;
+import com.legalgate.mail.model.InboundEmailIngestionResult;
 import com.legalgate.mail.model.MailerSendWebhook;
 import com.legalgate.mail.service.MailerSendIngestionService;
 import com.legalgate.mail.service.MailerSendSignatureVerifier;
@@ -48,9 +49,10 @@ class MailerSendWebhookController {
             return ResponseEntity.ok(Map.of("status", "ok"));
         }
 
-        InboundEmailReceived event = mailerSendIngestionService.ingest(webhook);
+        InboundEmailIngestionResult result = mailerSendIngestionService.ingest(webhook);
+        InboundEmailReceived event = result.event();
         return ResponseEntity.ok(Map.of(
-                "status", "received",
+                "status", result.status(),
                 "eventId", event.eventId(),
                 "tenantId", event.tenantId()
         ));

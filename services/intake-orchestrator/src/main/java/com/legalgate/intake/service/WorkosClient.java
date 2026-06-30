@@ -64,6 +64,23 @@ public class WorkosClient {
         }
     }
 
+    public Optional<String> userEmail(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode response = restClient.get()
+                    .uri("/user_management/users/{userId}", userId)
+                    .retrieve().body(JsonNode.class);
+            String email = response == null ? null : response.path("email").textValue();
+            return email == null || email.isBlank()
+                    ? Optional.empty()
+                    : Optional.of(email.trim().toLowerCase(java.util.Locale.ROOT));
+        } catch (HttpClientErrorException.NotFound ignored) {
+            return Optional.empty();
+        }
+    }
+
     public String createOrganization(String name, String externalId) {
         JsonNode response = restClient.post()
                 .uri("/organizations")

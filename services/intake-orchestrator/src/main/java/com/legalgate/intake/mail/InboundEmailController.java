@@ -2,6 +2,7 @@ package com.legalgate.intake.mail;
 
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.billing.BillingAccessService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -21,9 +22,11 @@ class InboundEmailController {
     private static final Logger log = LoggerFactory.getLogger(InboundEmailController.class);
 
     private final IntakeService intakeService;
+    private final BillingAccessService billingAccessService;
 
-    InboundEmailController(IntakeService intakeService) {
+    InboundEmailController(IntakeService intakeService, BillingAccessService billingAccessService) {
         this.intakeService = intakeService;
+        this.billingAccessService = billingAccessService;
     }
 
     @PostMapping
@@ -36,6 +39,12 @@ class InboundEmailController {
                 event.envelopeFrom(),
                 event.subject()
         );
+        if (!billingAccessService.isEntitled(event.tenantId())) {
+            return ResponseEntity.ok(Map.of(
+                    "status", "ignored_subscription_inactive",
+                    "eventId", event.eventId(),
+                    "tenantId", event.tenantId()));
+        }
         ConsultationResponse consultation = intakeService.createConsultationFromInboundEmail(event);
 
         Map<String, Object> response = new LinkedHashMap<>();

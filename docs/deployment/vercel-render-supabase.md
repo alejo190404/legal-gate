@@ -6,6 +6,8 @@ Intake or Mail Ingress.
 
 The complete environment-variable list, WorkOS Dashboard configuration, destructive migration
 warning, and rollout order are in [workos-authkit.md](workos-authkit.md).
+Mercado Pago credentials, webhook configuration, plan SQL, and the staged enforcement rollout are
+in [mercadopago-billing.md](mercadopago-billing.md).
 
 Production topology:
 
@@ -15,6 +17,9 @@ Production topology:
    headers and the shared internal service token.
 4. Mail Ingress calls private Intake with the same internal service token.
 5. Intake resolves `org_id` to a tenant before setting PostgreSQL tenant RLS context.
+6. Mercado Pago sends signed notifications to the public Gateway
+   `/api/webhooks/mercadopago`; the Gateway forwards the restricted webhook envelope to Intake,
+   where it is durably recorded before asynchronous processing.
 
 Set `LEGALGATE_API_BASE_URL` in Vercel to the public Render Gateway origin, without `/api/backend`.
 Set `LEGALGATE_WORKOS_CLIENT_ID` in Vercel; never set `WORKOS_API_KEY` there.

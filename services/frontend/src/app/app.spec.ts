@@ -73,6 +73,16 @@ describe('App WorkOS authentication flow', () => {
       displayName: 'Firma 1',
       role: 'firm_admin',
     });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: false,
+      enforcementEnabled: false,
+      entitled: true,
+      status: 'DISABLED',
+      subscription: null,
+      payments: [],
+      accessEndsAt: null,
+      message: 'Billing is disabled for this environment.',
+    });
     http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1',
@@ -88,5 +98,38 @@ describe('App WorkOS authentication flow', () => {
 
     expect(fixture.componentInstance.view()).toBe('console');
     expect(fixture.componentInstance.tenantId()).toBe('firma-1');
+  });
+
+  it('routes an organization without entitlement to billing before protected APIs', () => {
+    user.set({ id: 'user_1', email: 'admin@firma.test' });
+    hasOrganization.set(true);
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    http.expectOne('/api/session').flush({
+      userId: 'user_1',
+      sessionId: 'session_1',
+      organizationId: 'org_1',
+      tenantId: 'firma-1',
+      displayName: 'Firma 1',
+      role: 'firm_admin',
+    });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: true,
+      enforcementEnabled: true,
+      entitled: false,
+      status: 'SUBSCRIPTION_REQUIRED',
+      subscription: null,
+      payments: [],
+      accessEndsAt: null,
+      message: 'Choose a plan.',
+    });
+    http.expectOne('/api/billing/plans').flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.view()).toBe('billing');
+    http.expectNone('/api/consultations');
+    http.expectNone('/api/tenant/settings');
   });
 });

@@ -2,6 +2,9 @@ package com.legalgate.gateway;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,6 +31,28 @@ class GatewayApplicationTests {
         mockMvc.perform(get("/api/session"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("unauthorized"));
+    }
+
+    @Test
+    void billingRequiresFirmAdminButMercadoPagoWebhookIsAnonymous() throws Exception {
+        mockMvc.perform(get("/api/billing/subscription"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/webhooks/mercadopago")
+                        .queryParam("data.id", "123")
+                        .header("x-signature", "ts=1,v1=invalid")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void corsAllowsCheckoutIdempotencyHeader() throws Exception {
+        mockMvc.perform(options("/api/billing/checkout")
+                        .header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "idempotency-key"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers", "idempotency-key"));
     }
 
     @Test

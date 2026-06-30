@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { ApiConfigService } from './config/api-config.service';
 import { AuthService } from './auth/auth.service';
 
-type ViewName = 'landing' | 'login' | 'register' | 'console';
-type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion';
+type ViewName = 'landing' | 'login' | 'register' | 'billing' | 'console';
+type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion' | 'billing';
 
 interface ClassificationResult {
   label: string;
@@ -163,6 +163,62 @@ interface OrganizationOnboardingResponse {
   status: string;
 }
 
+interface BillingPlan {
+  id: string;
+  code: string;
+  version: number;
+  displayName: string;
+  description: string | null;
+  interval: 'MONTHLY' | 'YEARLY';
+  priceCop: number;
+  displayOrder: number;
+}
+
+interface BillingQuote {
+  plan: BillingPlan;
+  couponCode: string | null;
+  originalAmountCop: number;
+  recurringAmountCop: number;
+  discountAmountCop: number;
+  currency: string;
+  couponDuration: string | null;
+  discountedCycles: number | null;
+}
+
+interface BillingPayment {
+  providerPaymentId: string;
+  status: string;
+  amountCop: number | null;
+  paidAt: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+}
+
+interface BillingSubscription {
+  id: string;
+  plan: BillingPlan;
+  coupon: { code: string; duration: string } | null;
+  originalAmountCop: number;
+  currentAmountCop: number;
+  status: string;
+  providerStatus: string | null;
+  paidThrough: string | null;
+  graceDeadline: string | null;
+  canceledAt: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+interface BillingStatus {
+  billingEnabled: boolean;
+  enforcementEnabled: boolean;
+  entitled: boolean;
+  status: string;
+  subscription: BillingSubscription | null;
+  payments: BillingPayment[];
+  accessEndsAt: string | null;
+  message: string;
+}
+
 @Component({
   selector: 'app-root',
   imports: [FormsModule],
@@ -193,6 +249,14 @@ export class App implements OnInit {
   readonly settingsErrorMessage = signal('');
   readonly activeLawyerIndex = signal(0);
   readonly activeRuleIndex = signal(0);
+  readonly billingPlans = signal<BillingPlan[]>([]);
+  readonly billingStatus = signal<BillingStatus | null>(null);
+  readonly billingQuote = signal<BillingQuote | null>(null);
+  readonly selectedPlanCode = signal('');
+  readonly couponCode = signal('');
+  readonly billingMessage = signal('');
+  readonly billingError = signal('');
+  readonly isBillingLoading = signal(false);
 
   readonly registerForm: RegisterForm = {
     firmName: '',
@@ -244,6 +308,7 @@ export class App implements OnInit {
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'consultas', label: 'Consultas' },
     { id: 'configuracion', label: 'Configuracion' },
+    { id: 'billing', label: 'Facturacion' },
   ];
 
   ngOnInit(): void {
@@ -329,6 +394,11 @@ export class App implements OnInit {
     this.activeRuleIndex.set(0);
     this.isTutorialOpen.set(false);
     this.copyStatus.set('');
+    this.billingPlans.set([]);
+    this.billingStatus.set(null);
+    this.billingQuote.set(null);
+    this.billingMessage.set('');
+    this.billingError.set('');
     this.isConsoleMenuOpen.set(false);
     this.clearConsoleErrors();
     this.auth.signOut();
@@ -340,15 +410,13 @@ export class App implements OnInit {
       next: (session) => {
         this.tenantId.set(session.tenantId);
         this.sessionEmail.set(this.auth.user()?.email ?? '');
-        this.view.set('console');
         this.activeConsoleSection.set('dashboard');
         this.isConsoleMenuOpen.set(false);
         this.clearConsoleErrors();
-        this.statusMessage.set('Sesion segura iniciada. Cargando datos de la firma...');
+        this.statusMessage.set('Sesion segura iniciada. Validando suscripcion...');
         this.isSubmitting.set(false);
         this.isLoading.set(false);
-        this.loadConsultations();
-        this.loadSettings();
+        this.loadBillingStatus(true);
       },
       error: (error: HttpErrorResponse) => {
         this.isLoading.set(false);
@@ -360,6 +428,189 @@ export class App implements OnInit {
         this.errorMessage.set('No se pudo cargar la sesion de la firma.');
       },
     });
+  }
+
+  loadBillingStatus(initial = false): void {
+    this.isBillingLoading.set(true);
+    this.billingError.set('');
+    this.http
+      .get<BillingStatus>(this.apiConfig.url('/api/billing/subscription'))
+      .subscribe({
+        next: (status) => {
+          this.billingStatus.set(status);
+          this.isBillingLoading.set(false);
+          if (!status.billingEnabled || status.entitled) {
+            const wasOutsideConsole = this.view() !== 'console';
+            this.view.set('console');
+            if (wasOutsideConsole || initial) {
+              this.loadConsultations();
+              this.loadSettings();
+            }
+          } else {
+            this.clearProtectedTenantData();
+            this.view.set('billing');
+            this.loadBillingPlans();
+          }
+          if (new URLSearchParams(window.location.search).get('billing') === 'return') {
+            if (status.entitled) {
+              window.history.replaceState({}, '', window.location.pathname);
+              this.billingMessage.set('Pago confirmado. Tu acceso ya esta activo.');
+            } else if (initial) {
+              this.pollBillingReturn();
+            }
+          }
+        },
+        error: () => {
+          this.isBillingLoading.set(false);
+          this.billingError.set('No se pudo consultar el estado de facturacion.');
+          if (initial) this.view.set('billing');
+        },
+      });
+  }
+
+  loadBillingPlans(): void {
+    this.http.get<BillingPlan[]>(this.apiConfig.url('/api/billing/plans')).subscribe({
+      next: (plans) => {
+        this.billingPlans.set(plans);
+        if (!this.selectedPlanCode() && plans.length) this.selectedPlanCode.set(plans[0].code);
+      },
+      error: () => this.billingError.set('No se pudieron cargar los planes disponibles.'),
+    });
+  }
+
+  selectBillingPlan(code: string): void {
+    this.selectedPlanCode.set(code);
+    this.billingQuote.set(null);
+    this.billingError.set('');
+  }
+
+  quoteBilling(): void {
+    if (!this.selectedPlanCode()) return;
+    this.isBillingLoading.set(true);
+    this.billingError.set('');
+    this.http
+      .post<BillingQuote>(this.apiConfig.url('/api/billing/quote'), {
+        planCode: this.selectedPlanCode(),
+        couponCode: this.couponCode().trim() || null,
+      })
+      .subscribe({
+        next: (quote) => {
+          this.billingQuote.set(quote);
+          this.isBillingLoading.set(false);
+        },
+        error: () => {
+          this.billingQuote.set(null);
+          this.billingError.set('El plan o cupon no es valido.');
+          this.isBillingLoading.set(false);
+        },
+      });
+  }
+
+  checkoutBilling(): void {
+    if (!this.selectedPlanCode()) return;
+    this.isBillingLoading.set(true);
+    this.billingError.set('');
+    const storageKey = `legalgate-checkout-${this.selectedPlanCode()}-${this.couponCode().trim()}`;
+    const idempotencyKey = sessionStorage.getItem(storageKey) ?? this.cryptoId();
+    sessionStorage.setItem(storageKey, idempotencyKey);
+    this.http
+      .post<{ checkoutUrl: string }>(
+        this.apiConfig.url('/api/billing/checkout'),
+        {
+          planCode: this.selectedPlanCode(),
+          couponCode: this.couponCode().trim() || null,
+        },
+        { headers: { 'Idempotency-Key': idempotencyKey } },
+      )
+      .subscribe({
+        next: (checkout) => {
+          if (!checkout.checkoutUrl) {
+            this.billingError.set('Mercado Pago aun esta preparando el checkout. Intenta nuevamente.');
+            this.isBillingLoading.set(false);
+            return;
+          }
+          window.location.assign(checkout.checkoutUrl);
+        },
+        error: () => {
+          this.billingError.set('No se pudo iniciar Mercado Pago. El intento se puede reanudar sin duplicar la suscripcion.');
+          this.isBillingLoading.set(false);
+        },
+      });
+  }
+
+  cancelBilling(): void {
+    this.isBillingLoading.set(true);
+    this.billingError.set('');
+    this.http
+      .post<BillingStatus>(this.apiConfig.url('/api/billing/subscription/cancel'), {})
+      .subscribe({
+        next: (status) => {
+          this.billingStatus.set(status);
+          this.billingMessage.set(
+            status.accessEndsAt
+              ? `Renovacion cancelada. El acceso continua hasta ${this.formatDate(status.accessEndsAt)}.`
+              : 'Renovacion cancelada.',
+          );
+          this.isBillingLoading.set(false);
+        },
+        error: () => {
+          this.billingError.set('No se pudo cancelar la renovacion.');
+          this.isBillingLoading.set(false);
+        },
+      });
+  }
+
+  formatCop(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      maximumFractionDigits: 0,
+    }).format(value);
+  }
+
+  private pollBillingReturn(attempt = 0): void {
+    if (attempt >= 30 || this.billingStatus()?.entitled) {
+      if (!this.billingStatus()?.entitled) {
+        this.billingMessage.set('El pago sigue pendiente. Puedes actualizar el estado en unos minutos.');
+      }
+      return;
+    }
+    window.setTimeout(() => {
+      this.http
+        .get<BillingStatus>(this.apiConfig.url('/api/billing/subscription'))
+        .subscribe({
+          next: (status) => {
+            this.billingStatus.set(status);
+            if (status.entitled) {
+              window.history.replaceState({}, '', window.location.pathname);
+              this.billingMessage.set('Pago confirmado. Tu acceso ya esta activo.');
+              this.view.set('console');
+              this.loadConsultations();
+              this.loadSettings();
+            } else {
+              this.pollBillingReturn(attempt + 1);
+            }
+          },
+          error: () => this.pollBillingReturn(attempt + 1),
+        });
+    }, 2000);
+  }
+
+  private clearProtectedTenantData(): void {
+    this.consultations.set([]);
+    this.tenantSettings.set(null);
+    this.settingsLoaded.set(false);
+  }
+
+  private handleProtectedError(error: HttpErrorResponse, fallback: () => void): void {
+    if (error.status === 402) {
+      this.clearProtectedTenantData();
+      this.view.set('billing');
+      this.loadBillingStatus();
+      return;
+    }
+    fallback();
   }
 
   toggleConsoleMenu(): void {
@@ -413,11 +664,12 @@ export class App implements OnInit {
           this.statusMessage.set('Datos de la firma cargados desde el servicio de intake.');
           this.isLoading.set(false);
         },
-        error: () => {
-          this.consultationsErrorMessage.set('No se pudo conectar con el Sistema.');
-          this.statusMessage.set('Revisa que el Sistema este activo.');
-          this.isLoading.set(false);
-        },
+        error: (error: HttpErrorResponse) =>
+          this.handleProtectedError(error, () => {
+            this.consultationsErrorMessage.set('No se pudo conectar con el Sistema.');
+            this.statusMessage.set('Revisa que el Sistema este activo.');
+            this.isLoading.set(false);
+          }),
       });
   }
 
@@ -438,10 +690,11 @@ export class App implements OnInit {
           this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
           this.clampActiveIndexes();
         },
-        error: () => {
-          this.settingsLoaded.set(true);
-          this.settingsErrorMessage.set('No se pudo cargar la configuracion de intake.');
-        },
+        error: (error: HttpErrorResponse) =>
+          this.handleProtectedError(error, () => {
+            this.settingsLoaded.set(true);
+            this.settingsErrorMessage.set('No se pudo cargar la configuracion de intake.');
+          }),
       });
   }
 
@@ -540,12 +793,14 @@ export class App implements OnInit {
           this.isSubmitting.set(false);
         },
         error: (error: HttpErrorResponse) => {
-          this.settingsErrorMessage.set(
-            error.status === 409
-              ? 'Ese email ya esta configurado para otra firma.'
-              : 'No se pudo guardar la configuracion. Intenta nuevamente.',
-          );
-          this.isSubmitting.set(false);
+          this.handleProtectedError(error, () => {
+            this.settingsErrorMessage.set(
+              error.status === 409
+                ? 'Ese email ya esta configurado para otra firma.'
+                : 'No se pudo guardar la configuracion. Intenta nuevamente.',
+            );
+            this.isSubmitting.set(false);
+          });
         },
       });
   }
@@ -742,10 +997,11 @@ export class App implements OnInit {
           this.form.preferredWindow = '';
           this.isSubmitting.set(false);
         },
-        error: () => {
-          this.consultationsErrorMessage.set('No se pudo crear la consulta. Intenta nuevamente.');
-          this.isSubmitting.set(false);
-        },
+        error: (error: HttpErrorResponse) =>
+          this.handleProtectedError(error, () => {
+            this.consultationsErrorMessage.set('No se pudo crear la consulta. Intenta nuevamente.');
+            this.isSubmitting.set(false);
+          }),
       });
   }
 

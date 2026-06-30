@@ -19,6 +19,8 @@ token with `org_id` and role `firm_admin`. Public business contracts are:
 - `GET /api/session`
 - `GET|PUT /api/tenant/settings`
 - `GET|POST /api/consultations`
+- `GET|POST /api/billing/**`
+- `POST /api/webhooks/mercadopago` (signed Mercado Pago webhook)
 
 Tenant slugs and local passwords are not accepted from browsers.
 
@@ -42,4 +44,6 @@ cd ../consultation-classifier && pytest
 ## Production
 
 Follow [WorkOS AuthKit production setup](docs/deployment/workos-authkit.md) before deploying. The
-V11 Flyway migration is intentionally destructive and requires a verified Supabase backup.
+V11 Flyway migration is intentionally destructive and requires a verified Supabase backup. Follow
+[Mercado Pago tenant billing setup](docs/deployment/mercadopago-billing.md) before enabling billing
+enforcement.
