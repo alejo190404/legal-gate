@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -30,13 +29,19 @@ class ProxyIntegrationTests {
     private static ExecutorService executor;
     @Autowired MockMvc mockMvc;
 
-    @BeforeAll
-    static void startBackend() throws IOException {
-        backend = HttpServer.create(new InetSocketAddress(0), 0);
-        backend.createContext("/api/session", ProxyIntegrationTests::echoHeaders);
-        executor = Executors.newSingleThreadExecutor();
-        backend.setExecutor(executor);
-        backend.start();
+    static synchronized void startBackend() {
+        if (backend != null) {
+            return;
+        }
+        try {
+            backend = HttpServer.create(new InetSocketAddress(0), 0);
+            backend.createContext("/api/session", ProxyIntegrationTests::echoHeaders);
+            executor = Executors.newSingleThreadExecutor();
+            backend.setExecutor(executor);
+            backend.start();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to start the proxy test backend.", exception);
+        }
     }
 
     @AfterAll
@@ -47,6 +52,7 @@ class ProxyIntegrationTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
+        startBackend();
         registry.add("legalgate.gateway.backend.base-url",
                 () -> "http://localhost:" + backend.getAddress().getPort());
     }
@@ -56,6 +62,9 @@ class ProxyIntegrationTests {
         mockMvc.perform(get("/api/session")
                         .header("X-LegalGate-User-Id", "attacker")
                         .header("X-LegalGate-Organization-Id", "org_attacker")
+                        .header("Cookie", "session=attacker")
+                        .header("Forwarded", "host=attacker.example")
+                        .header("X-Forwarded-For", "203.0.113.10")
                         .with(jwt().jwt(token -> token
                                 .subject("user_real")
                                 .claim("sid", "session_real")
@@ -68,19 +77,25 @@ class ProxyIntegrationTests {
                 .andExpect(jsonPath("$.session").value("session_real"))
                 .andExpect(jsonPath("$.role").value("firm_admin"))
                 .andExpect(jsonPath("$.serviceToken").value("test-service-token"))
-                .andExpect(jsonPath("$.authorization").isEmpty());
+                .andExpect(jsonPath("$.authorization").isEmpty())
+                .andExpect(jsonPath("$.cookie").isEmpty())
+                .andExpect(jsonPath("$.forwarded").isEmpty())
+                .andExpect(jsonPath("$.forwardedFor").isEmpty());
     }
 
     private static void echoHeaders(HttpExchange exchange) throws IOException {
         String body = """
-                {"user":"%s","organization":"%s","session":"%s","role":"%s","serviceToken":"%s","authorization":"%s"}
+                {"user":"%s","organization":"%s","session":"%s","role":"%s","serviceToken":"%s","authorization":"%s","cookie":"%s","forwarded":"%s","forwardedFor":"%s"}
                 """.formatted(
                 header(exchange, "X-LegalGate-User-Id"),
                 header(exchange, "X-LegalGate-Organization-Id"),
                 header(exchange, "X-LegalGate-Session-Id"),
                 header(exchange, "X-LegalGate-Role"),
                 header(exchange, "X-LegalGate-Service-Token"),
-                header(exchange, "Authorization"));
+                header(exchange, "Authorization"),
+                header(exchange, "Cookie"),
+                header(exchange, "Forwarded"),
+                header(exchange, "X-Forwarded-For"));
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, bytes.length);

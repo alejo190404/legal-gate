@@ -31,7 +31,7 @@ legalgate:
       webhook-secret: ${LEGALGATE_MAILERSEND_WEBHOOK_SECRET:}
     intake-orchestrator:
       base-url: ${LEGALGATE_INTAKE_ORCHESTRATOR_URL:http://localhost:8081}
-      service-token: ${LEGALGATE_INTERNAL_SERVICE_TOKEN:}
+      service-token: ${LEGALGATE_INTERNAL_SERVICE_TOKEN}
 
 logging:
   level:

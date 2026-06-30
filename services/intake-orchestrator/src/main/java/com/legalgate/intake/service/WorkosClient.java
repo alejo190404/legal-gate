@@ -2,9 +2,9 @@ package com.legalgate.intake.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.legalgate.intake.config.IntakeProperties;
-import java.net.URI;
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -28,18 +28,29 @@ public class WorkosClient {
     }
 
     public List<String> organizationMembershipIds(String userId) {
-        URI uri = UriComponentsBuilder.fromPath("/user_management/organization_memberships")
-                .queryParam("user_id", userId)
-                .queryParam("limit", 10)
-                .build().toUri();
-        JsonNode response = restClient.get().uri(uri).retrieve().body(JsonNode.class);
-        if (response == null || !response.path("data").isArray()) {
-            return List.of();
-        }
-        return java.util.stream.StreamSupport.stream(response.path("data").spliterator(), false)
-                .map(item -> item.path("organization_id").asText(""))
-                .filter(value -> !value.isBlank())
-                .toList();
+        List<String> organizationIds = new ArrayList<>();
+        String after = null;
+        do {
+            UriComponentsBuilder uriBuilder =
+                    UriComponentsBuilder.fromPath("/user_management/organization_memberships")
+                            .queryParam("user_id", userId)
+                            .queryParam("limit", 100);
+            if (after != null) {
+                uriBuilder.queryParam("after", after);
+            }
+            String uri = uriBuilder.build().toUriString();
+            JsonNode response = restClient.get().uri(uri).retrieve().body(JsonNode.class);
+            if (response == null || !response.path("data").isArray()) {
+                break;
+            }
+            java.util.stream.StreamSupport.stream(response.path("data").spliterator(), false)
+                    .map(item -> item.path("organization_id").asText(""))
+                    .filter(value -> !value.isBlank())
+                    .forEach(organizationIds::add);
+            String nextAfter = response.path("list_metadata").path("after").textValue();
+            after = nextAfter == null || nextAfter.isBlank() || nextAfter.equals(after) ? null : nextAfter;
+        } while (after != null);
+        return List.copyOf(organizationIds);
     }
 
     public Optional<String> organizationByExternalId(String externalId) {

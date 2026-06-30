@@ -41,12 +41,11 @@ export class ApiConfigService {
   }
 
   isGatewayUrl(url: string): boolean {
-    if (!url.startsWith(this.apiBaseUrl || window.location.origin) && /^https?:\/\//.test(url)) {
+    const base = this.apiBaseUrl || window.location.origin;
+    if (!url.startsWith(base) && /^https?:\/\//.test(url)) {
       return false;
     }
-    const path = this.apiBaseUrl && url.startsWith(this.apiBaseUrl)
-      ? url.slice(this.apiBaseUrl.length)
-      : url;
+    const path = url.startsWith(base) ? url.slice(base.length) : url;
     return path.startsWith('/api/') && !path.startsWith('/api/status');
   }
 }

@@ -20,7 +20,11 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     public ServiceTokenFilter(IntakeProperties properties, ObjectMapper objectMapper) {
-        this.expectedToken = properties.internalServiceToken().getBytes(StandardCharsets.UTF_8);
+        String configuredToken = properties.internalServiceToken();
+        if (configuredToken == null || configuredToken.isBlank()) {
+            throw new IllegalStateException("LEGALGATE_INTERNAL_SERVICE_TOKEN must be configured.");
+        }
+        this.expectedToken = configuredToken.getBytes(StandardCharsets.UTF_8);
         this.objectMapper = objectMapper;
     }
 
@@ -38,7 +42,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String supplied = request.getHeader("X-LegalGate-Service-Token");
         byte[] suppliedBytes = supplied == null ? new byte[0] : supplied.getBytes(StandardCharsets.UTF_8);
-        if (!MessageDigest.isEqual(expectedToken, suppliedBytes)) {
+        if (supplied == null || supplied.isBlank() || !MessageDigest.isEqual(expectedToken, suppliedBytes)) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             objectMapper.writeValue(response.getOutputStream(), Map.of(

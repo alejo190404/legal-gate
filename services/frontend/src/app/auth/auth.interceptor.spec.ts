@@ -38,6 +38,13 @@ describe('authInterceptor', () => {
     const api = controller.expectOne('/api/session');
     expect(api.request.headers.get('Authorization')).toBe('Bearer token-1');
     api.flush({});
+
+    const absoluteUrl = `${window.location.origin}/api/consultations`;
+    http.get(absoluteUrl).subscribe();
+    await Promise.resolve();
+    const absoluteApi = controller.expectOne(absoluteUrl);
+    expect(absoluteApi.request.headers.get('Authorization')).toBe('Bearer token-1');
+    absoluteApi.flush({});
   });
 
   it('force-refreshes once after a 401', async () => {

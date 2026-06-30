@@ -130,6 +130,9 @@ public class BackendProxyController {
 
     private boolean isUntrustedSecurityHeader(String headerName) {
         return HttpHeaders.AUTHORIZATION.equalsIgnoreCase(headerName)
+                || HttpHeaders.COOKIE.equalsIgnoreCase(headerName)
+                || "Forwarded".equalsIgnoreCase(headerName)
+                || headerName.regionMatches(true, 0, "X-Forwarded-", 0, "X-Forwarded-".length())
                 || headerName.regionMatches(true, 0, "X-LegalGate-", 0, "X-LegalGate-".length());
     }
 
