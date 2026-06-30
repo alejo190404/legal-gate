@@ -22,7 +22,10 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                false
+                false,
+                "test-service-token",
+                "sk_test",
+                "https://api.workos.com"
         );
 
         assertThat(properties.canonicalIntakeEmail("firma-demo"))
@@ -44,9 +47,36 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                false
+                false,
+                "test-service-token",
+                "sk_test",
+                "https://api.workos.com"
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("must not use .local");
+    }
+
+    @Test
+    void rejectsBlankInternalServiceToken() {
+        assertThatThrownBy(() -> new IntakeProperties(
+                "memory",
+                false,
+                "intake.legal-gate.co",
+                null,
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                false,
+                " ",
+                "sk_test",
+                "https://api.workos.com"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LEGALGATE_INTERNAL_SERVICE_TOKEN");
     }
 }

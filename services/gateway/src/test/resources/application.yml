@@ -1,0 +1,7 @@
+legalgate:
+  gateway:
+    forwarded-token: test-service-token
+    workos:
+      client-id: client_test
+      issuer: https://api.workos.com
+      jwks-url: https://api.workos.com/sso/jwks/client_test

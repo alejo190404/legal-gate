@@ -1,135 +1,45 @@
 # LegalGate
 
-LegalGate is a SaaS platform for automating legal consultation intake, classification, scheduling, and notifications.
+LegalGate automates legal consultation intake, classification, scheduling, and notifications.
 
 ## Services
 
-- `services/gateway`: Spring Boot gateway service that exposes the public entrypoint for LegalGate APIs.
-- `services/intake-orchestrator`: Spring Boot consultation intake service for tenant routing-rule settings, plain-language consultation creation, urgency pre-classification, and admin review.
-- `services/consultation-classifier`: Python FastAPI Gemini sidecar for structured inbound email consultation classification.
-- `services/mail-ingress`: Spring Boot CloudMailin and MailerSend webhook adapter that sends inbound email events synchronously to Intake Orchestrator over HTTP.
-- `services/frontend`: Angular 21 public landing page for Colombian client-facing marketing.
+- `services/frontend`: Angular SPA with WorkOS AuthKit Hosted UI.
+- `services/gateway`: WorkOS JWT resource server and public API boundary.
+- `services/intake-orchestrator`: tenant-isolated business logic, onboarding, and PostgreSQL RLS.
+- `services/mail-ingress`: verified inbound-mail adapter.
+- `services/consultation-classifier`: FastAPI/Gemini classification sidecar.
 
-## Gateway quick start
+## Authentication and APIs
 
-Deployment guide: [`docs/deployment/vercel-render-supabase.md`](docs/deployment/vercel-render-supabase.md).
+Each LegalGate tenant maps to one WorkOS organization. Browser business requests require an access
+token with `org_id` and role `firm_admin`. Public business contracts are:
 
-Run the local verification script:
+- `POST /api/onboarding/organization`
+- `GET /api/session`
+- `GET|PUT /api/tenant/settings`
+- `GET|POST /api/consultations`
 
-```bash
-./scripts/test-local.sh
-```
+Tenant slugs and local passwords are not accepted from browsers.
 
-Run the gateway locally:
+## Development
 
-```bash
-GATEWAY_FORWARDED_TOKEN=local-dev-service-token \
-./scripts/run-gateway-local.sh
-```
-
-Then test public endpoints and the temporary prototype gateway facade:
+Copy `.env.example` to `.env`, supply a WorkOS test Client ID/API key and a random shared service
+token, then run:
 
 ```bash
-curl http://localhost:8080/api/status
-curl -i http://localhost:8080/api/backend/api/status
+docker compose up --build
 ```
 
-If `LEGALGATE_BACKEND_URL` is unset or the backend is unreachable, the gateway returns a consistent JSON `503 service_unavailable` fallback instead of failing with an empty response. Real backend HTTP errors such as `400`, `409`, and `500` are preserved so deployment issues can be diagnosed from the client response.
-
-## Intake orchestrator quick start
-
-Run the intake verification script:
+Run verification suites:
 
 ```bash
-./scripts/test-intake-local.sh
+mvn test
+cd services/frontend && npm test && npm run build
+cd ../consultation-classifier && pytest
 ```
 
-Run the intake service locally:
+## Production
 
-```bash
-PORT=8081 ./scripts/run-intake-local.sh
-```
-
-Then test tenant settings, consultation creation, and admin review:
-
-```bash
-curl http://localhost:8081/api/status
-curl http://localhost:8081/api/tenants/firma-demo/settings
-curl -X PUT -H 'Content-Type: application/json' \
-  -d '{"routingRules":[{"name":"Urgencias laborales","urgentKeywords":["audiencia","captura"],"consultationWindows":["LUN-VIE 09:00-13:00"],"destinationEmail":"notificaciones@firma.test"}]}' \
-  http://localhost:8081/api/tenants/firma-demo/settings
-curl -X POST -H 'Content-Type: application/json' \
-  -d '{"clientName":"María Pérez","clientEmail":"maria@example.com","summary":"Tengo una audiencia mañana y necesito orientación aunque no conozco términos legales."}' \
-  http://localhost:8081/api/tenants/firma-demo/consultations
-curl http://localhost:8081/api/admin/tenants/firma-demo/consultations
-```
-
-The default test profile stores data in memory. Docker Compose and Render can run the intake service with JDBC/Flyway enabled so consultations persist to Postgres/Supabase while preserving the public contract.
-
-## Frontend quick start
-
-Run the frontend verification script:
-
-```bash
-./scripts/test-frontend-local.sh
-```
-
-Run the Angular dev server:
-
-```bash
-cd services/frontend
-npm start
-```
-
-Open `http://localhost:4200`.
-
-## Vercel frontend deployment
-
-The repository includes root `vercel.json` configuration for the Angular frontend service:
-
-- Install command: `npm ci --prefix services/frontend`
-- Build command: `npm run build --prefix services/frontend`
-- Output directory: `services/frontend/dist/frontend/browser`
-
-This lets Vercel deploy the monorepo from the repository root while serving only the Angular landing page.
-
-Set `LEGALGATE_API_BASE_URL` in Vercel to the Render gateway facade URL, for example `https://legal-gate-gateway.onrender.com/api/backend`. The frontend build writes this value into `/assets/legalgate-config.json`.
-
-## Docker Compose
-
-Build and run services locally:
-
-```bash
-cp .env.example .env
-docker compose up --build postgres consultation-classifier intake-orchestrator mail-ingress gateway frontend
-```
-
-- Gateway: `http://localhost:8080/api/status`
-- Intake orchestrator: `http://localhost:8081/api/status`
-- Consultation classifier: `http://localhost:8083/health`
-- Mail ingress: `http://localhost:8082/actuator/health`
-- Frontend: `http://localhost:4200`
-
-Local CloudMailin-style webhook smoke test:
-
-```bash
-curl -fsS -X PUT -H 'Content-Type: application/json' \
-  -d '{"routingRules":[{"name":"Default intake route","urgentKeywords":["audiencia"],"consultationWindows":[],"destinationEmail":"notificaciones@firma.test"}]}' \
-  http://localhost:8081/api/tenants/firma-demo/settings
-
-curl -i -u cloudmailin-local:cloudmailin-local-password \
-  -H 'Content-Type: application/json' \
-  -d '{"headers":{"from":"Cliente <cliente@example.com>","subject":"Consulta","message_id":"<local@example.com>"},"envelope":{"to":"firma-demo@intake.legal-gate.co","recipients":["firma-demo@intake.legal-gate.co"],"from":"cliente@example.com"},"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>","attachments":[]}' \
-  http://localhost:8082/webhooks/cloudmailin
-```
-
-Local MailerSend-style webhook smoke test:
-
-```bash
-curl -i -H 'Content-Type: application/json' \
-  -H 'X-MailerSend-Webhook-Secret: mailersend-local-secret' \
-  -d '{"type":"inbound.message","data":{"from":{"email":"cliente@example.com","name":"Cliente"},"recipients":[{"email":"firma-demo@intake.legal-gate.co"}],"subject":"Consulta","message_id":"<local-mailersend@example.com>","text":{"plain":"Necesito orientacion.","html":"<p>Necesito orientacion.</p>"}}}' \
-  http://localhost:8082/webhooks/mailersend
-```
-
-Made by Alejandro Barragán
+Follow [WorkOS AuthKit production setup](docs/deployment/workos-authkit.md) before deploying. The
+V11 Flyway migration is intentionally destructive and requires a verified Supabase backup.

@@ -18,7 +18,10 @@ public record IntakeProperties(
         String cloudmailinApiToken,
         String notificationsFromEmail,
         String notificationsFromName,
-        boolean outboundTestMode
+        boolean outboundTestMode,
+        String internalServiceToken,
+        String workosApiKey,
+        String workosApiBaseUrl
 ) {
     public IntakeProperties {
         if (emailDomain == null || emailDomain.isBlank()) {
@@ -57,6 +60,15 @@ public record IntakeProperties(
             notificationsFromName = "LegalGate Agenda";
         } else {
             notificationsFromName = notificationsFromName.trim();
+        }
+        if (internalServiceToken == null || internalServiceToken.isBlank()) {
+            throw new IllegalStateException("LEGALGATE_INTERNAL_SERVICE_TOKEN must be configured.");
+        }
+        if (workosApiKey == null || workosApiKey.isBlank()) {
+            throw new IllegalStateException("WORKOS_API_KEY must be configured.");
+        }
+        if (workosApiBaseUrl == null || workosApiBaseUrl.isBlank()) {
+            workosApiBaseUrl = "https://api.workos.com";
         }
     }
 

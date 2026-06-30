@@ -8,7 +8,8 @@ Spring Boot adapter for CloudMailin and MailerSend inbound email webhooks.
 2. MailerSend sends inbound JSON to `POST /webhooks/mailersend`; the endpoint verifies `LEGALGATE_MAILERSEND_WEBHOOK_SECRET` when configured and accepts `webhook.test` validation payloads.
 3. Provider payloads are normalized into one internal inbound-email shape.
 4. The service matches recipient addresses exactly against canonical `tenant_settings.intake_email` values.
-5. The normalized `InboundEmailReceived` payload is posted synchronously to `intake-orchestrator` over HTTP.
+5. The normalized `InboundEmailReceived` payload is posted synchronously to `intake-orchestrator`
+   with `X-LegalGate-Service-Token` from the required `LEGALGATE_INTERNAL_SERVICE_TOKEN`.
 6. `intake-orchestrator` validates and logs the event before the webhook response is returned.
 
 ## Local commands

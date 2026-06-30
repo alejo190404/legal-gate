@@ -1,0 +1,4 @@
+legalgate:
+  mail-ingress:
+    intake-orchestrator:
+      service-token: test-service-token

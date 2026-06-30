@@ -1,45 +1,27 @@
-# Frontend service
+# LegalGate frontend
 
-Angular 21 landing page for LegalGate clients in Colombia. The implementation intentionally stays scoped to the public marketing landing page: no dashboard, console, authentication screens, or private workflows are implemented here.
+Angular SPA containing the public landing page and authenticated firm console. Authentication is
+provided by WorkOS AuthKit Hosted UI; the browser never stores access or refresh tokens manually.
 
-## Design system usage
+Required build variables:
 
-The page uses the exported LegalGate design system primitives:
+- `LEGALGATE_WORKOS_CLIENT_ID`
+- `LEGALGATE_API_BASE_URL` (empty only when the host reverse-proxies `/api` to Gateway)
 
-- Gate Orange `#FA5410`
-- warm paper/stone neutral palette
-- Space Grotesk + JetBrains Mono
-- sharp pixel-native corners
-- hard offset pixel shadows
-- copied LegalGate SVG logo, pixel pattern, and pixel icon assets in `public/assets/`
-
-## Local development
+Local development:
 
 ```bash
+export LEGALGATE_WORKOS_CLIENT_ID=client_test_...
 npm install
 npm start
 ```
 
-Open `http://localhost:4200`.
-
-## Verification
+Verification:
 
 ```bash
-npm test -- --watch=false
+npm test
 npm run build
+npm audit --omit=dev
 ```
 
-Or from the repository root:
-
-```bash
-./scripts/test-frontend-local.sh
-```
-
-## Docker
-
-```bash
-docker compose build frontend
-docker compose up frontend
-```
-
-Open `http://localhost:4200`.
+See [WorkOS production setup](../../docs/deployment/workos-authkit.md).

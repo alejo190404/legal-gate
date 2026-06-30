@@ -5,25 +5,21 @@ import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
-import com.legalgate.intake.model.RegistrationResponse;
-import com.legalgate.intake.model.StoredUserCredentials;
+import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.util.List;
 import java.util.Optional;
 
 public interface IntakeRepository {
-    RegistrationResponse registerFirmOwner(
-            String firmSlug,
-            String firmName,
-            String email,
-            String hashedPassword,
-            String role,
-            String intakeEmail
-    );
+    Optional<TenantProvisioning> tenantForOrganization(String organizationId);
 
-    Optional<StoredUserCredentials> findActiveUserByEmail(String email);
+    Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId);
 
-    void recordSuccessfulLogin(String email);
+    TenantProvisioning startTenantProvisioning(String ownerId, String displayName, String slug, String intakeEmail);
+
+    TenantProvisioning activateTenantProvisioning(String tenantId, String slug, String organizationId);
+
+    void failTenantProvisioning(String tenantId, String slug, String reason);
 
     TenantSettingsResponse saveSettings(String tenantSlug, TenantSettingsResponse settings);
 
