@@ -1,7 +1,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiConfigService } from './config/api-config.service';
+import { AuthService } from './auth/auth.service';
 
 type ViewName = 'landing' | 'login' | 'register' | 'console';
 type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion';
@@ -117,14 +118,7 @@ interface CreateConsultationForm {
   preferredWindow: string;
 }
 
-interface LoginForm {
-  email: string;
-  password: string;
-}
-
 interface RegisterForm {
-  email: string;
-  password: string;
   firmName: string;
 }
 
@@ -154,10 +148,19 @@ interface TenantRoutingRuleForm {
   urgencyDefinitions: UrgencyDefinition[];
 }
 interface SessionResponse {
-  email: string;
+  userId: string;
+  sessionId: string;
+  organizationId: string;
   tenantId: string;
   displayName: string;
-  role: 'FIRM_ADMIN' | string;
+  role: string;
+}
+
+interface OrganizationOnboardingResponse {
+  organizationId: string;
+  tenantId: string;
+  displayName: string;
+  status: string;
 }
 
 @Component({
@@ -166,13 +169,12 @@ interface SessionResponse {
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
-export class App {
+export class App implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
+  readonly auth = inject(AuthService);
 
-  // TODO(routing): Move landing/login/console to Angular routes once auth is real.
-  // For this prototype, a single component keeps the test scope small and protects the
-  // existing public landing experience while validating the backend-connected console.
+  // A single component preserves the existing landing/console UX while AuthKit owns auth redirects.
   readonly view = signal<ViewName>('landing');
   readonly tenantId = signal('');
   readonly sessionEmail = signal('');
@@ -192,14 +194,7 @@ export class App {
   readonly activeLawyerIndex = signal(0);
   readonly activeRuleIndex = signal(0);
 
-  readonly loginForm: LoginForm = {
-    email: '',
-    password: '',
-  };
-
   readonly registerForm: RegisterForm = {
-    email: '',
-    password: '',
     firmName: '',
   };
 
@@ -251,6 +246,20 @@ export class App {
     { id: 'configuracion', label: 'Configuracion' },
   ];
 
+  ngOnInit(): void {
+    const user = this.auth.user();
+    if (!user) {
+      return;
+    }
+    this.sessionEmail.set(user.email);
+    if (this.auth.hasOrganization()) {
+      this.loadSession();
+    } else {
+      this.view.set('register');
+      this.statusMessage.set('Completa el nombre de tu firma para terminar la configuracion.');
+    }
+  }
+
   showLanding(): void {
     this.view.set('landing');
     this.errorMessage.set('');
@@ -258,98 +267,52 @@ export class App {
   }
 
   showLogin(): void {
-    this.view.set('login');
     this.errorMessage.set('');
     this.clearConsoleErrors();
-    this.statusMessage.set('Ingresa con tu cuenta de administrador para abrir el panel.');
+    void this.auth.signIn().catch(() =>
+      this.errorMessage.set('No se pudo abrir el inicio de sesion seguro. Intenta nuevamente.'),
+    );
   }
 
   showRegister(): void {
-    this.view.set('register');
     this.errorMessage.set('');
     this.clearConsoleErrors();
-    this.statusMessage.set('Crea la cuenta administradora de tu firma para abrir el panel.');
+    void this.auth.signUp().catch(() =>
+      this.errorMessage.set('No se pudo abrir el registro seguro. Intenta nuevamente.'),
+    );
   }
 
   register(): void {
-    const email = this.registerForm.email.trim().toLowerCase();
-    const password = this.registerForm.password;
     const firmName = this.registerForm.firmName.trim();
 
-    if (!email || !password || !firmName) {
-      this.errorMessage.set('Completa email, password y nombre de la firma para registrarte.');
+    if (!firmName) {
+      this.errorMessage.set('Ingresa el nombre de la firma.');
       return;
     }
 
     this.isSubmitting.set(true);
     this.errorMessage.set('');
     this.http
-      .post<SessionResponse>(this.apiConfig.url('/api/auth/register'), {
-        email,
-        password,
-        firmName,
-      })
+      .post<OrganizationOnboardingResponse>(
+        this.apiConfig.url('/api/onboarding/organization'),
+        { firmName },
+      )
       .subscribe({
-        next: (session) => {
-          this.sessionEmail.set(session.email);
-          this.tenantId.set(session.tenantId);
-          this.view.set('console');
-          this.activeConsoleSection.set('dashboard');
-          this.isConsoleMenuOpen.set(false);
-          this.clearConsoleErrors();
-          this.statusMessage.set('Cuenta de administrador creada. Cargando datos de la firma...');
-          this.registerForm.email = '';
-          this.registerForm.password = '';
+        next: (organization) => {
           this.registerForm.firmName = '';
-          this.isSubmitting.set(false);
-          this.loadConsultations();
-          this.loadSettings();
+          void this.auth
+            .switchToOrganization(organization.organizationId)
+            .then(() => this.loadSession())
+            .catch(() => {
+              this.errorMessage.set(
+                'La firma fue creada. Vuelve a iniciar sesion para activar la organizacion.',
+              );
+              this.isSubmitting.set(false);
+            });
         },
         error: () => {
           this.errorMessage.set(
-            'No se pudo crear la cuenta. Verifica los datos e intenta nuevamente.',
-          );
-          this.isSubmitting.set(false);
-        },
-      });
-  }
-
-  login(): void {
-    const email = this.loginForm.email.trim().toLowerCase();
-    const password = this.loginForm.password;
-
-    if (!email || !password) {
-      this.errorMessage.set('Completa email y password para iniciar sesion.');
-      return;
-    }
-
-    this.isSubmitting.set(true);
-    this.errorMessage.set('');
-    this.http
-      .post<SessionResponse>(this.apiConfig.url('/api/auth/login'), {
-        email,
-        password,
-      })
-      .subscribe({
-        next: (session) => {
-          this.sessionEmail.set(session.email);
-          this.tenantId.set(session.tenantId);
-          this.view.set('console');
-          this.activeConsoleSection.set('dashboard');
-          this.isConsoleMenuOpen.set(false);
-          this.clearConsoleErrors();
-          this.statusMessage.set('Sesion iniciada. Cargando datos de la firma...');
-          this.loginForm.email = '';
-          this.loginForm.password = '';
-          this.isSubmitting.set(false);
-          this.loadConsultations();
-          this.loadSettings();
-        },
-        error: (error: HttpErrorResponse) => {
-          this.errorMessage.set(
-            error.status === 401
-              ? 'Credenciales invalidas. Verifica tu email y contrasena.'
-              : 'No se pudo iniciar sesion. Intenta nuevamente.',
+            'No se pudo configurar la firma. Verifica los datos e intenta nuevamente.',
           );
           this.isSubmitting.set(false);
         },
@@ -368,7 +331,35 @@ export class App {
     this.copyStatus.set('');
     this.isConsoleMenuOpen.set(false);
     this.clearConsoleErrors();
-    this.showLanding();
+    this.auth.signOut();
+  }
+
+  private loadSession(): void {
+    this.isLoading.set(true);
+    this.http.get<SessionResponse>(this.apiConfig.url('/api/session')).subscribe({
+      next: (session) => {
+        this.tenantId.set(session.tenantId);
+        this.sessionEmail.set(this.auth.user()?.email ?? '');
+        this.view.set('console');
+        this.activeConsoleSection.set('dashboard');
+        this.isConsoleMenuOpen.set(false);
+        this.clearConsoleErrors();
+        this.statusMessage.set('Sesion segura iniciada. Cargando datos de la firma...');
+        this.isSubmitting.set(false);
+        this.isLoading.set(false);
+        this.loadConsultations();
+        this.loadSettings();
+      },
+      error: (error: HttpErrorResponse) => {
+        this.isLoading.set(false);
+        this.isSubmitting.set(false);
+        if (error.status === 403 && !this.auth.hasOrganization()) {
+          this.view.set('register');
+          return;
+        }
+        this.errorMessage.set('No se pudo cargar la sesion de la firma.');
+      },
+    });
   }
 
   toggleConsoleMenu(): void {
@@ -414,7 +405,7 @@ export class App {
     this.consultationsErrorMessage.set('');
     this.http
       .get<ConsultationListResponse>(
-        this.apiConfig.url(`/api/admin/tenants/${this.tenantId()}/consultations`),
+        this.apiConfig.url('/api/consultations'),
       )
       .subscribe({
         next: (response) => {
@@ -438,7 +429,7 @@ export class App {
     this.settingsErrorMessage.set('');
     this.settingsLoaded.set(false);
     this.http
-      .get<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`))
+      .get<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'))
       .subscribe({
         next: (settings) => {
           this.tenantSettings.set(settings);
@@ -534,7 +525,7 @@ export class App {
     this.isSubmitting.set(true);
     this.settingsErrorMessage.set('');
     this.http
-      .put<TenantSettingsResponse>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/settings`), {
+      .put<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'), {
         lawyers,
         routingRules,
       })
@@ -734,7 +725,7 @@ export class App {
     this.isSubmitting.set(true);
     this.consultationsErrorMessage.set('');
     this.http
-      .post<Consultation>(this.apiConfig.url(`/api/tenants/${this.tenantId()}/consultations`), {
+      .post<Consultation>(this.apiConfig.url('/api/consultations'), {
         clientName: this.form.clientName.trim(),
         clientEmail: this.form.clientEmail.trim(),
         summary: this.form.summary.trim(),

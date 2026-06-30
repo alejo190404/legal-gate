@@ -1,16 +1,13 @@
 package com.legalgate.gateway;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
@@ -21,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,197 +26,70 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest
 @AutoConfigureMockMvc
 class ProxyIntegrationTests {
-
     private static HttpServer backend;
-    private static ExecutorService backendExecutor;
-
-    @Autowired
-    private MockMvc mockMvc;
+    private static ExecutorService executor;
+    @Autowired MockMvc mockMvc;
 
     @BeforeAll
     static void startBackend() throws IOException {
         backend = HttpServer.create(new InetSocketAddress(0), 0);
-        backend.createContext("/api/status", ProxyIntegrationTests::respondWithCase);
-        backend.createContext("/api/auth/register", ProxyIntegrationTests::respondWithRegistration);
-        backend.createContext("/api/auth/login", ProxyIntegrationTests::respondWithLogin);
-        backend.createContext("/api/tenants/firma-demo/consultations", ProxyIntegrationTests::respondWithCase);
-        backendExecutor = Executors.newSingleThreadExecutor();
-        backend.setExecutor(backendExecutor);
+        backend.createContext("/api/session", ProxyIntegrationTests::echoHeaders);
+        executor = Executors.newSingleThreadExecutor();
+        backend.setExecutor(executor);
         backend.start();
     }
 
     @AfterAll
     static void stopBackend() {
-        if (backend != null) {
-            backend.stop(0);
-        }
-        if (backendExecutor != null) {
-            backendExecutor.shutdownNow();
-        }
+        if (backend != null) backend.stop(0);
+        if (executor != null) executor.shutdownNow();
     }
 
     @DynamicPropertySource
-    static void gatewayProperties(DynamicPropertyRegistry registry) {
-        registry.add("legalgate.gateway.forwarded-token", () -> "internal-service-token");
-        registry.add("legalgate.gateway.backend.base-url", () -> "http://localhost:" + backend.getAddress().getPort());
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("legalgate.gateway.backend.base-url",
+                () -> "http://localhost:" + backend.getAddress().getPort());
     }
 
     @Test
-    void prototypeRequestsAreProxiedToConfiguredBackendWithoutSharedSecret() throws Exception {
-        mockMvc.perform(get("/api/backend/api/status?include=summary"))
+    void proxyRebuildsTrustedHeadersAndStripsSpoofedValues() throws Exception {
+        mockMvc.perform(get("/api/session")
+                        .header("X-LegalGate-User-Id", "attacker")
+                        .header("X-LegalGate-Organization-Id", "org_attacker")
+                        .with(jwt().jwt(token -> token
+                                .subject("user_real")
+                                .claim("sid", "session_real")
+                                .claim("org_id", "org_real")
+                                .claim("role", "firm_admin"))
+                                .authorities(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"))))
                 .andExpect(status().isOk())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(jsonPath("$.id").value("42"))
-                .andExpect(jsonPath("$.path").value("/api/status"))
-                .andExpect(jsonPath("$.query").value("include=summary"))
-                .andExpect(jsonPath("$.gatewayToken").value("internal-service-token"));
+                .andExpect(jsonPath("$.user").value("user_real"))
+                .andExpect(jsonPath("$.organization").value("org_real"))
+                .andExpect(jsonPath("$.session").value("session_real"))
+                .andExpect(jsonPath("$.role").value("firm_admin"))
+                .andExpect(jsonPath("$.serviceToken").value("test-service-token"))
+                .andExpect(jsonPath("$.authorization").isEmpty());
     }
 
-    @Test
-    void registrationRequestsAreProxiedPubliclyToConfiguredBackend() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/register")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "StrongPass2026!",
-                                  "firmName": "Firma Test"
-                                }
-                                """))
-                .andExpect(status().isCreated())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(jsonPath("$.email").value("owner@firma.test"))
-                .andExpect(jsonPath("$.tenantId").value("firma-test"))
-                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
-    }
-
-    @Test
-    void loginRequestsAreProxiedPubliclyToConfiguredBackend() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/login")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "StrongPass2026!"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(jsonPath("$.email").value("owner@firma.test"))
-                .andExpect(jsonPath("$.tenantId").value("firma-test"))
-                .andExpect(jsonPath("$.displayName").value("Firma Test admin"))
-                .andExpect(jsonPath("$.role").value("FIRM_ADMIN"));
-    }
-
-    @Test
-    void downstreamRegistrationErrorsKeepTheirOriginalStatusAndBody() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/register")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner+taken@firma.test",
-                                  "password": "StrongPass2026!",
-                                  "firmName": "Firma Test"
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(jsonPath("$.error").value("email_already_registered"))
-                .andExpect(jsonPath("$.message").value("Email is already registered."));
-    }
-
-    @Test
-    void downstreamLoginErrorsKeepTheirOriginalStatusAndBody() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/login")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "WrongPass2026!"
-                                }
-                                """))
-                .andExpect(status().isUnauthorized())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(jsonPath("$.error").value("invalid_credentials"))
-                .andExpect(jsonPath("$.message").value("Email or password is incorrect."));
-    }
-
-    @Test
-    void downstreamHttpErrorsArePreservedInsteadOfBeingFlattenedToGatewayFallback() throws Exception {
-        mockMvc.perform(post("/api/backend/api/tenants/firma-demo/consultations")
-                        .contentType("application/json")
-                        .content("{\"name\":\"client\"}"))
-                .andExpect(status().isMethodNotAllowed())
-                .andExpect(header().string("X-Proxied-By", "legal-gate-gateway"))
-                .andExpect(content().string(""));
-    }
-
-    private static void respondWithRegistration(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-        String requestBody;
-        try (InputStream requestStream = exchange.getRequestBody()) {
-            requestBody = new String(requestStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        if (requestBody.contains("taken")) {
-            byte[] errorResponse = "{\"error\":\"email_already_registered\",\"message\":\"Email is already registered.\"}"
-                    .getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(409, errorResponse.length);
-            exchange.getResponseBody().write(errorResponse);
-            exchange.close();
-            return;
-        }
-        String body = "{\"email\":\"owner@firma.test\",\"tenantId\":\"firma-test\",\"displayName\":\"Firma Test admin\",\"role\":\"FIRM_ADMIN\"}";
-        byte[] response = body.getBytes(StandardCharsets.UTF_8);
+    private static void echoHeaders(HttpExchange exchange) throws IOException {
+        String body = """
+                {"user":"%s","organization":"%s","session":"%s","role":"%s","serviceToken":"%s","authorization":"%s"}
+                """.formatted(
+                header(exchange, "X-LegalGate-User-Id"),
+                header(exchange, "X-LegalGate-Organization-Id"),
+                header(exchange, "X-LegalGate-Session-Id"),
+                header(exchange, "X-LegalGate-Role"),
+                header(exchange, "X-LegalGate-Service-Token"),
+                header(exchange, "Authorization"));
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.getResponseHeaders().set("Location", "/api/admin/tenants/firma-test/consultations");
-        exchange.sendResponseHeaders(201, response.length);
-        exchange.getResponseBody().write(response);
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
         exchange.close();
     }
 
-    private static void respondWithLogin(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-        String requestBody;
-        try (InputStream requestStream = exchange.getRequestBody()) {
-            requestBody = new String(requestStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        if (requestBody.contains("WrongPass")) {
-            byte[] errorResponse = "{\"error\":\"invalid_credentials\",\"message\":\"Email or password is incorrect.\"}"
-                    .getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(401, errorResponse.length);
-            exchange.getResponseBody().write(errorResponse);
-            exchange.close();
-            return;
-        }
-        String body = "{\"email\":\"owner@firma.test\",\"tenantId\":\"firma-test\",\"displayName\":\"Firma Test admin\",\"role\":\"FIRM_ADMIN\"}";
-        byte[] response = body.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, response.length);
-        exchange.getResponseBody().write(response);
-        exchange.close();
-    }
-
-    private static void respondWithCase(HttpExchange exchange) throws IOException {
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-        String token = exchange.getRequestHeaders().getFirst("X-LegalGate-Service-Token");
-        String body = "{\"id\":\"42\",\"path\":\"" + exchange.getRequestURI().getPath()
-                + "\",\"query\":\"" + exchange.getRequestURI().getRawQuery()
-                + "\",\"gatewayToken\":\"" + token + "\"}";
-        byte[] response = body.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, response.length);
-        exchange.getResponseBody().write(response);
-        exchange.close();
+    private static String header(HttpExchange exchange, String name) {
+        String value = exchange.getRequestHeaders().getFirst(name);
+        return value == null ? "" : value;
     }
 }

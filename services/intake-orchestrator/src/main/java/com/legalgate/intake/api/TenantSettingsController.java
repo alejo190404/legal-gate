@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.service.TenantContextResolver;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Valid;
 import jakarta.validation.Validator;
@@ -12,7 +13,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,29 +21,40 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-@RequestMapping("/api/tenants/{tenantId}/settings")
+@RequestMapping("/api/tenant/settings")
 public class TenantSettingsController {
 
     private final IntakeService intakeService;
     private final ObjectMapper objectMapper;
     private final Validator validator;
+    private final TenantContextResolver tenantContextResolver;
 
-    public TenantSettingsController(IntakeService intakeService, ObjectMapper objectMapper, Validator validator) {
+    public TenantSettingsController(
+            IntakeService intakeService,
+            ObjectMapper objectMapper,
+            Validator validator,
+            TenantContextResolver tenantContextResolver
+    ) {
         this.intakeService = intakeService;
         this.objectMapper = objectMapper;
         this.validator = validator;
+        this.tenantContextResolver = tenantContextResolver;
     }
 
     @GetMapping
-    public TenantSettingsResponse settings(@PathVariable String tenantId) {
+    public TenantSettingsResponse settings(
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId
+    ) {
+        String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
         return intakeService.settingsForTenant(tenantId);
     }
 
     @PutMapping
     public TenantSettingsResponse saveSettings(
-            @PathVariable String tenantId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @Valid @RequestBody JsonNode payload
     ) {
+        String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
         if (payload.has("intakeEmail")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "system_managed_intake_email");
         }

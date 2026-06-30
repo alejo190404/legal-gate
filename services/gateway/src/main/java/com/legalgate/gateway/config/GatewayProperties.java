@@ -6,8 +6,6 @@ import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import com.legalgate.gateway.auth.AuthMode;
-
 @ConfigurationProperties(prefix = "legalgate.gateway")
 public class GatewayProperties {
 
@@ -18,11 +16,6 @@ public class GatewayProperties {
     private String forwardedToken;
 
     private Duration requestTimeout = Duration.ofSeconds(3);
-
-    /**
-     * TODO(workos): switch to WORKOS when JWT validation is implemented and required.
-     */
-    private AuthMode authMode = AuthMode.PUBLIC_PROTOTYPE;
 
     private final Backend backend = new Backend();
     private final Cors cors = new Cors();
@@ -42,14 +35,6 @@ public class GatewayProperties {
 
     public void setRequestTimeout(Duration requestTimeout) {
         this.requestTimeout = requestTimeout;
-    }
-
-    public AuthMode getAuthMode() {
-        return authMode;
-    }
-
-    public void setAuthMode(AuthMode authMode) {
-        this.authMode = authMode;
     }
 
     public Backend getBackend() {
@@ -119,9 +104,17 @@ public class GatewayProperties {
     }
 
     public static class Workos {
+        private String clientId;
         private String issuer;
-        private String audience;
         private String jwksUrl;
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public void setClientId(String clientId) {
+            this.clientId = clientId;
+        }
 
         public String getIssuer() {
             return issuer;
@@ -129,14 +122,6 @@ public class GatewayProperties {
 
         public void setIssuer(String issuer) {
             this.issuer = issuer;
-        }
-
-        public String getAudience() {
-            return audience;
-        }
-
-        public void setAudience(String audience) {
-            this.audience = audience;
         }
 
         public String getJwksUrl() {

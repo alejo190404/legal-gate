@@ -9,6 +9,7 @@ import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +20,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 @RestController
-@RequestMapping("/api/backend")
 public class BackendProxyController {
 
     private static final List<String> HOP_BY_HOP_HEADERS = List.of(
@@ -43,8 +43,18 @@ public class BackendProxyController {
         this.webClient = webClientBuilder.build();
     }
 
-    @RequestMapping({"", "/**"})
-    public ResponseEntity<?> proxy(HttpServletRequest request, @RequestBody(required = false) byte[] body) {
+    @RequestMapping({
+            "/api/session",
+            "/api/onboarding/organization",
+            "/api/tenant/settings",
+            "/api/consultations",
+            "/api/consultations/**"
+    })
+    public ResponseEntity<?> proxy(
+            HttpServletRequest request,
+            @RequestBody(required = false) byte[] body,
+            JwtAuthenticationToken authentication
+    ) {
         if (!properties.hasBackendBaseUrl()) {
             return FallbackController.backendUnavailable();
         }
@@ -54,7 +64,7 @@ public class BackendProxyController {
             ResponseEntity<byte[]> backendResponse = webClient
                     .method(HttpMethod.valueOf(request.getMethod()))
                     .uri(targetUri)
-                    .headers(headers -> copyForwardableHeaders(request, headers))
+                    .headers(headers -> copyForwardableHeaders(request, headers, authentication))
                     .bodyValue(body == null ? new byte[0] : body)
                     .exchangeToMono(response -> response.toEntity(byte[].class))
                     .block(timeout());
@@ -79,11 +89,8 @@ public class BackendProxyController {
     }
 
     private URI buildTargetUri(HttpServletRequest request) {
-        String gatewayPrefix = request.getContextPath() + "/api/backend";
         String requestUri = request.getRequestURI();
-        String downstreamPath = requestUri.startsWith(gatewayPrefix)
-                ? requestUri.substring(gatewayPrefix.length())
-                : requestUri;
+        String downstreamPath = requestUri;
         if (!StringUtils.hasText(downstreamPath)) {
             downstreamPath = "/";
         }
@@ -96,21 +103,40 @@ public class BackendProxyController {
         return builder.build(true).toUri();
     }
 
-    private void copyForwardableHeaders(HttpServletRequest request, HttpHeaders headers) {
+    private void copyForwardableHeaders(
+            HttpServletRequest request,
+            HttpHeaders headers,
+            JwtAuthenticationToken authentication
+    ) {
         Collections.list(request.getHeaderNames()).forEach(headerName -> {
-            if (!isHopByHopHeader(headerName)) {
+            if (!isHopByHopHeader(headerName) && !isUntrustedSecurityHeader(headerName)) {
                 headers.put(headerName, Collections.list(request.getHeaders(headerName)));
             }
         });
-        if (properties.hasForwardedToken()) {
-            headers.set("X-LegalGate-Service-Token", properties.getForwardedToken());
-        }
+        headers.set("X-LegalGate-Service-Token", properties.getForwardedToken());
+        headers.set("X-LegalGate-User-Id", authentication.getToken().getSubject());
+        headers.set("X-LegalGate-Session-Id", authentication.getToken().getClaimAsString("sid"));
+        setIfPresent(headers, "X-LegalGate-Organization-Id",
+                authentication.getToken().getClaimAsString("org_id"));
+        setIfPresent(headers, "X-LegalGate-Role",
+                authentication.getToken().getClaimAsString("role"));
         headers.set("X-Forwarded-Host", request.getServerName());
         headers.set("X-Forwarded-Proto", request.getScheme());
     }
 
     private boolean isHopByHopHeader(String headerName) {
         return HOP_BY_HOP_HEADERS.stream().anyMatch(disallowed -> disallowed.equalsIgnoreCase(headerName));
+    }
+
+    private boolean isUntrustedSecurityHeader(String headerName) {
+        return HttpHeaders.AUTHORIZATION.equalsIgnoreCase(headerName)
+                || headerName.regionMatches(true, 0, "X-LegalGate-", 0, "X-LegalGate-".length());
+    }
+
+    private void setIfPresent(HttpHeaders headers, String name, String value) {
+        if (StringUtils.hasText(value)) {
+            headers.set(name, value);
+        }
     }
 
     private Duration timeout() {

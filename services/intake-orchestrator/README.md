@@ -33,11 +33,13 @@ Smoke-test the service:
 
 ## Endpoints
 
-- `GET /api/status`
-- `GET /api/tenants/{tenantId}/settings`
-- `PUT /api/tenants/{tenantId}/settings`
-- `POST /api/tenants/{tenantId}/consultations`
-- `GET /api/admin/tenants/{tenantId}/consultations`
+Every endpoint except health probes requires `X-LegalGate-Service-Token`. Browser-facing calls also
+receive trusted identity headers from Gateway.
+
+- `POST /api/onboarding/organization`
+- `GET /api/session`
+- `GET|PUT /api/tenant/settings`
+- `GET|POST /api/consultations`
 - `POST /api/internal/inbound-emails`
 
 The inbound email endpoint currently logs validated events only. It does not create consultations yet.

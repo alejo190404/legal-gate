@@ -22,7 +22,10 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                false
+                false,
+                "test-service-token",
+                "sk_test",
+                "https://api.workos.com"
         );
 
         assertThat(properties.canonicalIntakeEmail("firma-demo"))
@@ -44,7 +47,10 @@ class IntakePropertiesTests {
                 null,
                 null,
                 null,
-                false
+                false,
+                "test-service-token",
+                "sk_test",
+                "https://api.workos.com"
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("must not use .local");

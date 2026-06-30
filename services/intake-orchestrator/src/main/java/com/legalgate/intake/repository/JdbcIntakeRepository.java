@@ -11,8 +11,7 @@ import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.NotificationStatus;
-import com.legalgate.intake.model.RegistrationResponse;
-import com.legalgate.intake.model.StoredUserCredentials;
+import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.sql.ResultSet;
@@ -27,7 +26,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.PreparedStatementCallback;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -51,48 +49,63 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public RegistrationResponse registerFirmOwner(String firmSlug, String firmName, String email, String hashedPassword, String role, String intakeEmail) {
+    public Optional<TenantProvisioning> tenantForOrganization(String organizationId) {
+        return queryTenant("select * from app_find_tenant_by_workos_organization(?)", organizationId);
+    }
+
+    @Override
+    public Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId) {
+        return queryTenant("select * from app_find_tenant_by_provisioning_owner(?)", ownerId);
+    }
+
+    @Override
+    public TenantProvisioning startTenantProvisioning(String ownerId, String displayName, String slug, String intakeEmail) {
+        Optional<TenantProvisioning> existing = tenantForProvisioningOwner(ownerId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
         try {
             return transactionTemplate.execute(status -> {
-                setTenantContext(firmSlug);
-                UUID firmId = createTenant(firmSlug, firmName);
+                setTenantContext(slug);
+                UUID id = jdbcTemplate.queryForObject("""
+                        insert into tenants (slug, display_name, provisioning_owner_id, provisioning_status)
+                        values (?, ?, ?, 'PENDING')
+                        returning id
+                        """, UUID.class, slug, displayName, ownerId);
                 jdbcTemplate.update("""
                         insert into tenant_settings (tenant_id, intake_email, routing_rules, updated_at)
                         values (?, ?, '[]'::jsonb, now())
-                        """, firmId, intakeEmail);
-                jdbcTemplate.update("""
-                        insert into users (firm_id, email, full_name, role, hashed_password, is_active)
-                        values (?, ?, ?, ?, ?, true)
-                        """, firmId, email, firmName + " admin", role, hashedPassword);
-                return new RegistrationResponse(email, firmSlug, firmName + " admin", role);
+                        """, id, intakeEmail);
+                return new TenantProvisioning(id.toString(), slug, displayName, null, "PENDING", ownerId);
             });
         } catch (DuplicateKeyException ex) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, duplicateRegistrationReason(ex), ex);
+            return tenantForProvisioningOwner(ownerId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "firm_already_exists", ex));
         }
     }
 
     @Override
-    public Optional<StoredUserCredentials> findActiveUserByEmail(String email) {
-        return transactionTemplate.execute(status -> jdbcTemplate.query("""
-                        select email, tenant_id, display_name, role, hashed_password
-                        from app_find_active_user_for_login(?)
-                        """, (rs, rowNum) -> new StoredUserCredentials(
-                        rs.getString("email"),
-                        rs.getString("tenant_id"),
-                        rs.getString("display_name"),
-                        rs.getString("role"),
-                        rs.getString("hashed_password")
-                ), email).stream().findFirst());
+    public TenantProvisioning activateTenantProvisioning(String tenantId, String slug, String organizationId) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext(slug);
+            jdbcTemplate.update("""
+                    update tenants
+                    set workos_organization_id = ?, provisioning_status = 'ACTIVE', provisioning_error = null
+                    where id = ?
+                    """, organizationId, UUID.fromString(tenantId));
+            return tenantForOrganization(organizationId).orElseThrow();
+        });
     }
 
     @Override
-    public void recordSuccessfulLogin(String email) {
-        transactionTemplate.executeWithoutResult(status ->
-                jdbcTemplate.execute("select app_record_user_login(?)", (PreparedStatementCallback<Void>) ps -> {
-                    ps.setString(1, email);
-                    ps.execute();
-                    return null;
-                }));
+    public void failTenantProvisioning(String tenantId, String slug, String reason) {
+        transactionTemplate.executeWithoutResult(status -> {
+            setTenantContext(slug);
+            jdbcTemplate.update("""
+                    update tenants set provisioning_status = 'FAILED', provisioning_error = ?
+                    where id = ?
+                    """, truncate(reason, 1000), UUID.fromString(tenantId));
+        });
     }
 
     @Override
@@ -627,19 +640,26 @@ class JdbcIntakeRepository implements IntakeRepository {
         );
     }
 
+    private Optional<TenantProvisioning> queryTenant(String sql, String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> jdbcTemplate.query(sql, (rs, rowNum) ->
+                new TenantProvisioning(
+                        rs.getObject("id", UUID.class).toString(),
+                        rs.getString("slug"),
+                        rs.getString("display_name"),
+                        rs.getString("workos_organization_id"),
+                        rs.getString("provisioning_status"),
+                        rs.getString("provisioning_owner_id")
+                ), value).stream().findFirst());
+    }
+
     private UUID ensureTenant(String tenantSlug, String displayName) {
         return jdbcTemplate.queryForObject("""
                 insert into tenants (slug, display_name)
                 values (?, ?)
                 on conflict (slug) do update set display_name = excluded.display_name
-                returning id
-                """, UUID.class, tenantSlug, displayName);
-    }
-
-    private UUID createTenant(String tenantSlug, String displayName) {
-        return jdbcTemplate.queryForObject("""
-                insert into tenants (slug, display_name)
-                values (?, ?)
                 returning id
                 """, UUID.class, tenantSlug, displayName);
     }
@@ -650,17 +670,6 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     private String displayName(String tenantSlug) {
         return tenantSlug.replace('-', ' ');
-    }
-
-    private String duplicateRegistrationReason(DuplicateKeyException ex) {
-        String message = ex.getMostSpecificCause() == null ? ex.getMessage() : ex.getMostSpecificCause().getMessage();
-        if (message != null && message.contains("tenants_slug")) {
-            return "tenant_slug_already_registered";
-        }
-        if (message != null && message.contains("users_email")) {
-            return "email_already_registered";
-        }
-        return "tenant_or_email_already_registered";
     }
 
     private UUID uuidOrNull(String value) {

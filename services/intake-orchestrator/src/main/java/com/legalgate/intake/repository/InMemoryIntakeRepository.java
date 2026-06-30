@@ -6,11 +6,8 @@ import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
-import com.legalgate.intake.model.RegistrationResponse;
-import com.legalgate.intake.model.StoredUserCredentials;
-import com.legalgate.intake.model.TenantRoutingRule;
+import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantSettingsResponse;
-import com.legalgate.intake.model.UrgencyDefinition;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,72 +30,51 @@ class InMemoryIntakeRepository implements IntakeRepository {
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, EventResponse>> eventsByTenant = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, NotificationOutboxItem> notificationsByDedupeKey = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, StoredUserCredentials> usersByEmail = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Boolean> tenantsBySlug = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Instant> lastLoginAtByEmail = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, TenantProvisioning> tenantsByOwner = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, TenantProvisioning> tenantsByOrganization = new ConcurrentHashMap<>();
 
     @Override
-    public RegistrationResponse registerFirmOwner(
-            String firmSlug,
-            String firmName,
-            String email,
-            String hashedPassword,
-            String role,
-            String intakeEmail
-    ) {
-        if (tenantsBySlug.putIfAbsent(firmSlug, Boolean.TRUE) != null) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "tenant_slug_already_registered");
-        }
-        StoredUserCredentials user = new StoredUserCredentials(email, firmSlug, firmName + " admin", role, hashedPassword);
-        StoredUserCredentials existing = usersByEmail.putIfAbsent(email, user);
-        if (existing != null) {
-            tenantsBySlug.remove(firmSlug);
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "email_already_registered");
-        }
-        LawyerProfile lawyer = new LawyerProfile(
-                java.util.UUID.nameUUIDFromBytes(("lawyer:" + firmSlug + ":" + email).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(),
-                firmName + " abogado",
-                email,
-                true,
-                60,
-                defaultAvailability()
-        );
-        TenantRoutingRule rule = new TenantRoutingRule(
-                "Default intake route",
-                null,
-                List.of("audiencia", "captura", "tutela", "vencimiento"),
-                List.of(),
-                List.of("NORMAL", "URGENT"),
-                lawyer.id(),
-                List.of(
-                        new UrgencyDefinition("NORMAL", 1, 5, true),
-                        new UrgencyDefinition("URGENT", 2, 1, true)
-                ),
-                email
-        );
-        tenantSettings.put(firmSlug, new TenantSettingsResponse(
-                firmSlug,
-                rule.urgentKeywords(),
-                rule.consultationWindows(),
-                rule.urgencyLevels(),
-                rule.destinationEmail(),
-                intakeEmail,
-                List.of(rule),
-                List.of(lawyer)
-        ));
-        consultationsByTenant.putIfAbsent(firmSlug, new ArrayList<>());
-        eventsByTenant.putIfAbsent(firmSlug, new ConcurrentHashMap<>());
-        return user.toSession();
+    public Optional<TenantProvisioning> tenantForOrganization(String organizationId) {
+        return Optional.ofNullable(tenantsByOrganization.get(organizationId));
     }
 
     @Override
-    public Optional<StoredUserCredentials> findActiveUserByEmail(String email) {
-        return Optional.ofNullable(usersByEmail.get(email));
+    public Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId) {
+        return Optional.ofNullable(tenantsByOwner.get(ownerId));
     }
 
     @Override
-    public void recordSuccessfulLogin(String email) {
-        lastLoginAtByEmail.put(email, Instant.now());
+    public TenantProvisioning startTenantProvisioning(String ownerId, String displayName, String slug, String intakeEmail) {
+        return tenantsByOwner.computeIfAbsent(ownerId, ignored -> {
+            TenantProvisioning tenant = new TenantProvisioning(
+                    java.util.UUID.randomUUID().toString(), slug, displayName, null, "PENDING", ownerId);
+            tenantSettings.put(slug, new TenantSettingsResponse(
+                    slug, List.of(), List.of(), List.of(), null, intakeEmail, List.of(), List.of()));
+            consultationsByTenant.putIfAbsent(slug, new ArrayList<>());
+            eventsByTenant.putIfAbsent(slug, new ConcurrentHashMap<>());
+            return tenant;
+        });
+    }
+
+    @Override
+    public TenantProvisioning activateTenantProvisioning(String tenantId, String slug, String organizationId) {
+        TenantProvisioning current = tenantsByOwner.values().stream()
+                .filter(tenant -> tenant.id().equals(tenantId))
+                .findFirst()
+                .orElseThrow();
+        TenantProvisioning active = new TenantProvisioning(
+                current.id(), current.slug(), current.displayName(), organizationId, "ACTIVE", current.ownerId());
+        tenantsByOwner.put(current.ownerId(), active);
+        tenantsByOrganization.put(organizationId, active);
+        return active;
+    }
+
+    @Override
+    public void failTenantProvisioning(String tenantId, String slug, String reason) {
+        tenantsByOwner.replaceAll((owner, tenant) -> tenant.id().equals(tenantId)
+                ? new TenantProvisioning(tenant.id(), tenant.slug(), tenant.displayName(),
+                        tenant.organizationId(), "FAILED", tenant.ownerId())
+                : tenant);
     }
 
     @Override

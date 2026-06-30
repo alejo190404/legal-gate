@@ -1,6 +1,5 @@
 package com.legalgate.intake.api;
 
-import com.legalgate.intake.service.InvalidCredentialsException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -13,15 +12,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-
-    @ExceptionHandler(InvalidCredentialsException.class)
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public Map<String, Object> handleInvalidCredentials(InvalidCredentialsException exception) {
-        return Map.of(
-                "error", "invalid_credentials",
-                "message", "Email or password is incorrect."
-        );
-    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

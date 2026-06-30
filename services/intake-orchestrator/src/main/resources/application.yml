@@ -25,6 +25,9 @@ legalgate:
     notifications-from-email: ${LEGALGATE_NOTIFICATIONS_FROM_EMAIL:agenda@legal-gate.co}
     notifications-from-name: ${LEGALGATE_NOTIFICATIONS_FROM_NAME:LegalGate Agenda}
     outbound-test-mode: ${LEGALGATE_OUTBOUND_TEST_MODE:false}
+    internal-service-token: ${LEGALGATE_INTERNAL_SERVICE_TOKEN:}
+    workos-api-key: ${WORKOS_API_KEY:}
+    workos-api-base-url: ${WORKOS_API_BASE_URL:https://api.workos.com}
 
 server:
   port: ${PORT:8081}

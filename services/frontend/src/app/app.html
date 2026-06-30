@@ -207,31 +207,8 @@
           ← Volver a la landing
         </button>
         <p class="eyebrow">Acceso administrador</p>
-        <h1 id="login-title">Ingresa a LegalGate</h1>
-        <p>Accede con tu cuenta de administrador para revisar intake, urgencia y notificaciones.</p>
-
-        <form (submit)="login(); $event.preventDefault()">
-          <label for="loginEmail">Email</label>
-          <input
-            id="loginEmail"
-            name="loginEmail"
-            [(ngModel)]="loginForm.email"
-            autocomplete="username"
-          />
-
-          <label for="loginPassword">Password</label>
-          <input
-            id="loginPassword"
-            name="loginPassword"
-            [(ngModel)]="loginForm.password"
-            type="password"
-            autocomplete="current-password"
-          />
-
-          <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
-            {{ isSubmitting() ? 'Ingresando...' : 'Entrar a la consola' }}
-          </button>
-        </form>
+        <h1 id="login-title">Redirigiendo a acceso seguro</h1>
+        <p>WorkOS gestiona el inicio de sesión, verificación de email y recuperación de contraseña.</p>
 
         <div class="status-banner" [class.has-error]="errorMessage()">
           <strong>{{ errorMessage() || statusMessage() }}</strong>
@@ -248,10 +225,10 @@
           ← Volver a la landing
         </button>
         <p class="eyebrow">Registro de firma</p>
-        <h1 id="register-title">Crea tu cuenta en LegalGate</h1>
+        <h1 id="register-title">Configura tu firma</h1>
         <p>
-          Registra la cuenta administradora de tu firma. Un usuario no es un abogado: la asociación
-          con abogados se configura más adelante.
+          Tu cuenta segura ya está lista. Ingresa el nombre de la firma para terminar la
+          configuración.
         </p>
 
         <form (submit)="register(); $event.preventDefault()">
@@ -263,31 +240,14 @@
             autocomplete="organization"
           />
 
-          <label for="registerEmail">Email</label>
-          <input
-            id="registerEmail"
-            name="registerEmail"
-            [(ngModel)]="registerForm.email"
-            autocomplete="username"
-          />
-
-          <label for="registerPassword">Password</label>
-          <input
-            id="registerPassword"
-            name="registerPassword"
-            [(ngModel)]="registerForm.password"
-            type="password"
-            autocomplete="new-password"
-          />
-
           <button class="btn btn-primary" type="submit" [disabled]="isSubmitting()">
-            {{ isSubmitting() ? 'Creando cuenta…' : 'Crear cuenta administradora' }}
+            {{ isSubmitting() ? 'Configurando firma…' : 'Crear firma' }}
           </button>
         </form>
 
         <div class="status-banner" [class.has-error]="errorMessage()">
           <strong>{{ errorMessage() || statusMessage() }}</strong>
-          <span>Sin email ni asociación de abogados todavía</span>
+          <span>La cuenta administradora se gestiona con WorkOS</span>
         </div>
       </section>
     </main>

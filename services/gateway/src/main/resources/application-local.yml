@@ -1,4 +1,3 @@
 legalgate:
   gateway:
-    auth-mode: ${LEGALGATE_AUTH_MODE:PUBLIC_PROTOTYPE}
-    forwarded-token: ${GATEWAY_FORWARDED_TOKEN:local-dev-service-token}
+    forwarded-token: ${LEGALGATE_INTERNAL_SERVICE_TOKEN:}

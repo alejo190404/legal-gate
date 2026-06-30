@@ -1,10 +1,7 @@
 package com.legalgate.gateway;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,136 +9,45 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(properties = "legalgate.gateway.backend.base-url=")
 @AutoConfigureMockMvc
-@TestPropertySource(properties = {
-        "legalgate.gateway.backend.base-url=",
-        "legalgate.gateway.forwarded-token=test-service-token",
-        "legalgate.gateway.cors.allowed-origins=http://localhost:4200,https://app.example.test"
-})
 class GatewayApplicationTests {
-
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired MockMvc mockMvc;
 
     @Test
-    void statusEndpointIsPublicAndDescribesGatewayWhenNoBackendIsConfigured() throws Exception {
-        mockMvc.perform(get("/api/status"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.service").value("legal-gate-gateway"))
-                .andExpect(jsonPath("$.status").value("UP"))
-                .andExpect(jsonPath("$.backendConfigured").value(false));
+    void healthAndStatusArePublic() throws Exception {
+        mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/status")).andExpect(status().isOk());
     }
 
     @Test
-    void healthEndpointIsPublic() throws Exception {
-        mockMvc.perform(get("/actuator/health"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UP"));
-    }
-
-    @Test
-    void prototypeGatewayFacadeReturnsFallbackWithoutSharedSecretWhenBackendIsNotConfigured() throws Exception {
-        mockMvc.perform(get("/api/backend/api/status"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value(503))
-                .andExpect(jsonPath("$.error").value("service_unavailable"))
-                .andExpect(jsonPath("$.service").value("backend"))
-                .andExpect(jsonPath("$.message").value("LegalGate backend is not connected yet."));
-    }
-
-    @Test
-    void registrationFacadeIsPublicDuringPrototypeMode() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/register")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "StrongPass2026!",
-                                  "firmName": "Firma Test"
-                                }
-                                """))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("service_unavailable"));
-    }
-
-    @Test
-    void registrationFacadeAcceptsTrailingSlashWithoutAuthentication() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/register/")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "StrongPass2026!",
-                                  "firmName": "Firma Test"
-                                }
-                                """))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("service_unavailable"));
-    }
-
-    @Test
-    void loginFacadeIsPublicDuringPrototypeMode() throws Exception {
-        mockMvc.perform(post("/api/backend/api/auth/login")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "email": "owner@firma.test",
-                                  "password": "StrongPass2026!"
-                                }
-                                """))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("service_unavailable"));
-    }
-
-    @Test
-    void tenantSettingsReadFacadeIsPublicDuringPrototypeMode() throws Exception {
-        mockMvc.perform(get("/api/backend/api/tenants/firma-demo/settings"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("service_unavailable"));
-    }
-
-    @Test
-    void unsupportedPrototypeRoutesAreNotPublic() throws Exception {
-        mockMvc.perform(get("/api/backend/internal/admin-only"))
+    void businessRoutesRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/session"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("unauthorized"));
     }
 
     @Test
-    void corsPreflightAllowsConfiguredFrontendOrigin() throws Exception {
-        mockMvc.perform(options("/api/backend/api/tenants/firma-demo/consultations")
-                        .header("Origin", "https://app.example.test")
-                        .header("Access-Control-Request-Method", "POST")
-                        .header("Access-Control-Request-Headers", "Content-Type"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example.test"))
-                .andExpect(header().string("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
+    void organizationAndFirmAdminAreRequired() throws Exception {
+        mockMvc.perform(get("/api/session").with(jwt().jwt(token -> token
+                        .subject("user_1").claim("sid", "session_1").claim("role", "firm_admin"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/session").with(jwt().jwt(token -> token
+                        .subject("user_1").claim("sid", "session_1").claim("org_id", "org_1")
+                        .claim("role", "member"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
-    void corsPreflightAllowsVercelPreviewOriginForPublicRegistration() throws Exception {
-        mockMvc.perform(options("/api/backend/api/auth/register")
-                        .header("Origin", "https://legal-gate-git-feat-basic-user-registration-alejo190404.vercel.app")
-                        .header("Access-Control-Request-Method", "POST")
-                        .header("Access-Control-Request-Headers", "Content-Type"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "https://legal-gate-git-feat-basic-user-registration-alejo190404.vercel.app"))
-                .andExpect(header().string("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"));
-    }
-
-    @Test
-    void securityHeadersAreAppliedToPublicResponses() throws Exception {
-        String frameOptions = mockMvc.perform(get("/api/status"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andReturn()
-                .getResponse()
-                .getHeader("X-Frame-Options");
-
-        assertThat(frameOptions).isEqualTo("DENY");
+    void oldTenantAndPasswordRoutesAreNotFoundForAuthenticatedUsers() throws Exception {
+        mockMvc.perform(get("/api/auth/login").with(jwt()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tenants/old/settings").with(jwt()))
+                .andExpect(status().isNotFound());
     }
 }
