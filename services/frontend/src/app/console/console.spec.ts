@@ -3,11 +3,11 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { App } from './app';
-import { AuthService } from './auth/auth.service';
-import { ApiConfigService } from './config/api-config.service';
+import { ConsoleComponent } from './console';
+import { AuthService } from '../auth/auth.service';
+import { ApiConfigService } from '../config/api-config.service';
 
-describe('App WorkOS authentication flow', () => {
+describe('ConsoleComponent session + billing flow', () => {
   const user = signal<any>(null);
   const hasOrganization = signal(false);
   const auth = {
@@ -26,7 +26,7 @@ describe('App WorkOS authentication flow', () => {
     hasOrganization.set(false);
     vi.clearAllMocks();
     await TestBed.configureTestingModule({
-      imports: [App],
+      imports: [ConsoleComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -38,31 +38,10 @@ describe('App WorkOS authentication flow', () => {
 
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
-  it('keeps the landing public and contains no local password form', () => {
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
-    const html = fixture.nativeElement as HTMLElement;
-
-    expect(html.querySelector('.landing-shell')).toBeTruthy();
-    expect(html.querySelector('input[type="password"]')).toBeFalsy();
-    expect(html.textContent).not.toContain('LegalGateDemo2026!');
-  });
-
-  it('uses AuthKit redirects for sign-in and sign-up', () => {
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
-
-    fixture.componentInstance.showLogin();
-    fixture.componentInstance.showRegister();
-
-    expect(auth.signIn).toHaveBeenCalledOnce();
-    expect(auth.signUp).toHaveBeenCalledOnce();
-  });
-
   it('restores an organization session and only calls tenant-neutral APIs', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(ConsoleComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
 
@@ -104,7 +83,7 @@ describe('App WorkOS authentication flow', () => {
   it('routes an organization without entitlement to billing before protected APIs', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(ConsoleComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
 
@@ -135,7 +114,7 @@ describe('App WorkOS authentication flow', () => {
   });
 
   it('resets a plan selection that is absent from a refreshed catalog', () => {
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(ConsoleComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.componentInstance.selectedPlanCode.set('retired');
 
@@ -157,7 +136,7 @@ describe('App WorkOS authentication flow', () => {
   });
 
   it('rotates checkout idempotency after a terminal client error', () => {
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(ConsoleComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.componentInstance.tenantId.set('tenant-1');
     fixture.componentInstance.selectedPlanCode.set('monthly');
