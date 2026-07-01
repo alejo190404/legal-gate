@@ -740,7 +740,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       displayName: lawyer.displayName.trim(),
       email: lawyer.email.trim().toLowerCase(),
       meetingUrl: lawyer.meetingUrl.trim() || null,
-      active: true,
+      active: lawyer.active,
       defaultEventDurationMinutes: Number(lawyer.defaultEventDurationMinutes),
       availabilityWindows: lawyer.availabilityWindows.map((window) => ({
         weekday: Number(window.weekday),
