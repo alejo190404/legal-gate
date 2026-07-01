@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiConfigService } from '../config/api-config.service';
 import { AuthService } from '../auth/auth.service';
@@ -232,7 +232,7 @@ interface BillingCheckoutAttempt {
   imports: [FormsModule, LoadingScreenComponent],
   templateUrl: './console.html',
 })
-export class ConsoleComponent implements OnInit {
+export class ConsoleComponent implements OnInit, OnDestroy {
   private static readonly checkoutAttemptStorageKey = 'legalgate-active-checkout';
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
@@ -334,6 +334,12 @@ export class ConsoleComponent implements OnInit {
       this.view.set('register');
       this.statusMessage.set('Completa el nombre de tu firma para terminar la configuracion.');
     }
+  }
+
+  ngOnDestroy(): void {
+    // ConsoleComponent is now routable, so cancel the billing-return poll if the
+    // router tears it down while a poll is still pending.
+    this.clearBillingReturnPoll();
   }
 
   register(): void {
