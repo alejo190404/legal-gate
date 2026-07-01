@@ -16,10 +16,6 @@ class MercadoPagoWebhookSignatureValidatorTests {
         String dataId = "payment-123";
         String requestId = "request-123";
         String timestamp = "1704908010";
-        String manifest = "id:" + dataId + ";request-id:" + requestId + ";ts:" + timestamp + ";";
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        String hash = HexFormat.of().formatHex(mac.doFinal(manifest.getBytes(StandardCharsets.UTF_8)));
 
         MercadoPagoWebhookSignatureValidator validator = new MercadoPagoWebhookSignatureValidator(
                 new BillingProperties(
@@ -27,7 +23,32 @@ class MercadoPagoWebhookSignatureValidatorTests {
                         "https://app.example.test", Duration.ofSeconds(3), Duration.ofMinutes(5),
                         Duration.ofHours(24), Duration.ofDays(7)));
 
-        assertThat(validator.isValid(dataId, requestId, "ts=" + timestamp + ",v1=" + hash)).isTrue();
+        assertThat(validator.isValid(dataId, requestId, signature(secret, dataId, requestId, timestamp))).isTrue();
         assertThat(validator.isValid(dataId, requestId, "ts=" + timestamp + ",v1=deadbeef")).isFalse();
+    }
+
+    @Test
+    void treatsMissingRequestIdAsEmptyForSignatureValidation() throws Exception {
+        String secret = "webhook-secret";
+        String dataId = "payment-123";
+        String timestamp = "1704908010";
+        MercadoPagoWebhookSignatureValidator validator = new MercadoPagoWebhookSignatureValidator(
+                new BillingProperties(
+                        true, false, "token", secret, "https://api.example.test",
+                        "https://app.example.test", Duration.ofSeconds(3), Duration.ofMinutes(5),
+                        Duration.ofHours(24), Duration.ofDays(7)));
+
+        assertThat(validator.isValid(dataId, null, signature(secret, dataId, null, timestamp))).isTrue();
+    }
+
+    private static String signature(String secret, String dataId, String requestId, String timestamp)
+            throws Exception {
+        String manifest = "id:" + dataId.toLowerCase() + ";"
+                + (requestId == null ? "" : "request-id:" + requestId + ";")
+                + "ts:" + timestamp + ";";
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        String hash = HexFormat.of().formatHex(mac.doFinal(manifest.getBytes(StandardCharsets.UTF_8)));
+        return "ts=" + timestamp + ",v1=" + hash;
     }
 }

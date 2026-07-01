@@ -14,9 +14,10 @@ public class MercadoPagoWebhookSignatureValidator {
 
     public boolean isValid(String dataId, String requestId, String signature) {
         if (!properties.enabled() || blank(signature) || blank(dataId)) return false;
+        String effectiveRequestId = blank(requestId) ? "" : requestId;
         try {
             WebhookSignatureValidator.validate(
-                    signature, requestId, dataId, properties.mercadoPagoWebhookSecret());
+                    signature, effectiveRequestId, dataId, properties.mercadoPagoWebhookSecret());
             return true;
         } catch (MPInvalidWebhookSignatureException | IllegalArgumentException ignored) {
             return false;

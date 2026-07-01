@@ -46,3 +46,9 @@ public interface BillingRepository {
     void completeAmountTransition(Subscription subscription);
     void failAmountTransition(Subscription subscription, String error);
 }
+
+class CouponCapacityExceededException extends RuntimeException {
+    CouponCapacityExceededException() {
+        super("coupon_redemption_limit_reached");
+    }
+}

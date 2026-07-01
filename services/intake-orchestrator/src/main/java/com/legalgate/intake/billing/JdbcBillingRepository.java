@@ -125,6 +125,9 @@ class JdbcBillingRepository implements BillingRepository {
             String payerEmail, String idempotencyKey, Instant expiresAt
     ) {
         return inTenant(tenantSlug, () -> {
+            if (coupon != null) {
+                reserveCouponCapacity(tenantSlug, coupon.id(), Instant.now());
+            }
             UUID tenantId = jdbc.queryForObject("select id from tenants where slug = ?", UUID.class, tenantSlug);
             UUID id = UUID.randomUUID();
             jdbc.update("""
@@ -492,6 +495,39 @@ class JdbcBillingRepository implements BillingRepository {
         jdbc.queryForObject("select set_config('app.tenant_slug', ?, true)", String.class, tenantSlug);
     }
 
+    private void reserveCouponCapacity(String tenantSlug, UUID couponId, Instant now) {
+        setContext("__worker__");
+        try {
+            CouponRedemptionState state = jdbc.query("""
+                    select max_redemptions, redemption_count
+                    from coupons
+                    where id = ?
+                      and active
+                      and (valid_from is null or valid_from <= ?)
+                      and (valid_until is null or valid_until > ?)
+                    for update
+                    """, (rs, row) -> new CouponRedemptionState(
+                    (Integer) rs.getObject("max_redemptions"),
+                    rs.getInt("redemption_count")),
+                    couponId, Timestamp.from(now), Timestamp.from(now))
+                    .stream().findFirst()
+                    .orElseThrow(CouponCapacityExceededException::new);
+            if (state.maxRedemptions() == null) return;
+            Integer pendingReservations = jdbc.queryForObject("""
+                    select count(*)
+                    from subscriptions
+                    where coupon_id = ?
+                      and status = 'PENDING'
+                      and pending_expires_at > ?
+                    """, Integer.class, couponId, Timestamp.from(now));
+            if (state.redemptionCount() + pendingReservations >= state.maxRedemptions()) {
+                throw new CouponCapacityExceededException();
+            }
+        } finally {
+            setContext(tenantSlug);
+        }
+    }
+
     private String subscriptionSelect() {
         return """
                 select s.*, p.version as plan_version, p.description as plan_description,
@@ -566,5 +602,8 @@ class JdbcBillingRepository implements BillingRepository {
     private static String truncate(String value) {
         if (value == null) return null;
         return value.length() <= 2000 ? value : value.substring(0, 2000);
+    }
+
+    private record CouponRedemptionState(Integer maxRedemptions, int redemptionCount) {
     }
 }

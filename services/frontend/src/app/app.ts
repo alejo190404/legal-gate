@@ -237,6 +237,7 @@ export class App implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
   readonly auth = inject(AuthService);
+  private billingReturnPollHandle: number | null = null;
 
   // A single component preserves the existing landing/console UX while AuthKit owns auth redirects.
   readonly view = signal<ViewName>('landing');
@@ -393,6 +394,7 @@ export class App implements OnInit {
   }
 
   logout(): void {
+    this.clearBillingReturnPoll();
     this.sessionEmail.set('');
     this.tenantId.set('');
     this.consultations.set([]);
@@ -596,17 +598,26 @@ export class App implements OnInit {
   }
 
   private pollBillingReturn(attempt = 0): void {
+    if (!this.tenantId()) {
+      this.clearBillingReturnPoll();
+      return;
+    }
     if (attempt >= 30 || this.billingStatus()?.entitled) {
+      this.clearBillingReturnPoll();
       if (!this.billingStatus()?.entitled) {
         this.billingMessage.set('El pago sigue pendiente. Puedes actualizar el estado en unos minutos.');
       }
       return;
     }
-    window.setTimeout(() => {
+    this.clearBillingReturnPoll();
+    this.billingReturnPollHandle = window.setTimeout(() => {
+      this.billingReturnPollHandle = null;
+      if (!this.tenantId()) return;
       this.http
         .get<BillingStatus>(this.apiConfig.url('/api/billing/subscription'))
         .subscribe({
           next: (status) => {
+            if (!this.tenantId()) return;
             this.billingStatus.set(status);
             if (status.entitled) {
               window.history.replaceState({}, '', window.location.pathname);
@@ -618,9 +629,17 @@ export class App implements OnInit {
               this.pollBillingReturn(attempt + 1);
             }
           },
-          error: () => this.pollBillingReturn(attempt + 1),
+          error: () => {
+            if (this.tenantId()) this.pollBillingReturn(attempt + 1);
+          },
         });
     }, 2000);
+  }
+
+  private clearBillingReturnPoll(): void {
+    if (this.billingReturnPollHandle == null) return;
+    window.clearTimeout(this.billingReturnPollHandle);
+    this.billingReturnPollHandle = null;
   }
 
   private clearProtectedTenantData(): void {

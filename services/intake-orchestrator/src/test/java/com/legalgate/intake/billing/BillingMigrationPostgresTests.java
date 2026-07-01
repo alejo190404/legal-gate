@@ -3,11 +3,16 @@ package com.legalgate.intake.billing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.legalgate.intake.billing.BillingModels.Coupon;
+import com.legalgate.intake.billing.BillingModels.Plan;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -141,6 +146,31 @@ class BillingMigrationPostgresTests {
 
         assertThat(firstReplica.claimAmountTransitionCandidates(1)).hasSize(1);
         assertThat(secondReplica.claimAmountTransitionCandidates(1)).isEmpty();
+    }
+
+    @Test
+    void pendingCheckoutReservesFiniteCouponCapacityAcrossTenants() throws Exception {
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    insert into tenants (slug, display_name, provisioning_status)
+                    values ('tenant-c', 'Tenant C', 'ACTIVE'), ('tenant-d', 'Tenant D', 'ACTIVE');
+                    insert into coupons (
+                      code, discount_type, discount_value, duration, max_redemptions
+                    ) values ('LIMITED1', 'PERCENTAGE', 10, 'ONCE', 1);
+                    """);
+        }
+        JdbcBillingRepository repository = billingRepository();
+        Plan plan = repository.activePlan("monthly").orElseThrow();
+        Coupon coupon = repository.validCoupon("LIMITED1", Instant.now()).orElseThrow();
+
+        repository.createPending(
+                "tenant-c", plan, coupon, new BigDecimal("90000.00"),
+                "payer-c@example.com", "limited-c", Instant.now().plus(Duration.ofHours(1)));
+
+        assertThatThrownBy(() -> repository.createPending(
+                "tenant-d", plan, coupon, new BigDecimal("90000.00"),
+                "payer-d@example.com", "limited-d", Instant.now().plus(Duration.ofHours(1))))
+                .isInstanceOf(CouponCapacityExceededException.class);
     }
 
     private static int countForContext(Connection connection, String tenant) throws SQLException {

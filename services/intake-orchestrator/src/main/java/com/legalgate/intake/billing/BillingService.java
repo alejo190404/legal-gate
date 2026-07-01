@@ -115,6 +115,8 @@ public class BillingService {
             pending = repository.createPending(
                     tenantSlug, quote.plan(), coupon, quote.recurringAmountCop(), payerEmail,
                     idempotencyKey.trim(), Instant.now().plus(properties.pendingCheckoutTtl()));
+        } catch (CouponCapacityExceededException exhausted) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_coupon", exhausted);
         } catch (DuplicateKeyException conflict) {
             return repository.subscriptionByIdempotency(tenantSlug, idempotencyKey.trim())
                     .map(value -> recoverOrReturn(value, idempotencyKey.trim()))
@@ -151,8 +153,8 @@ public class BillingService {
             repository.cancel(subscription.id(), tenantSlug, Instant.now());
             return accessService.status(tenantSlug);
         }
-        provider.cancel(subscription.providerSubscriptionId());
         repository.cancel(subscription.id(), tenantSlug, Instant.now());
+        provider.cancel(subscription.providerSubscriptionId());
         return accessService.status(tenantSlug);
     }
 
