@@ -610,6 +610,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             if (this.isDestroyed || !this.tenantId()) return;
             this.billingStatus.set(status);
             if (status.entitled) {
+              this.clearCheckoutAttempt();
               window.history.replaceState({}, '', window.location.pathname);
               this.billingMessage.set('Pago confirmado. Tu acceso ya esta activo.');
               this.view.set('console');
@@ -741,7 +742,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       displayName: lawyer.displayName.trim(),
       email: lawyer.email.trim().toLowerCase(),
       meetingUrl: lawyer.meetingUrl.trim() || null,
-      active: true,
+      active: lawyer.active,
       defaultEventDurationMinutes: Number(lawyer.defaultEventDurationMinutes),
       availabilityWindows: lawyer.availabilityWindows.map((window) => ({
         weekday: Number(window.weekday),
