@@ -2,6 +2,7 @@ package com.legalgate.mail.service;
 
 import com.legalgate.mail.config.MailIngressProperties;
 import com.legalgate.mail.model.InboundEmailReceived;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -19,13 +20,14 @@ public class InboundEmailClient {
         this.serviceToken = properties.intakeOrchestrator().serviceToken();
     }
 
-    public void send(InboundEmailReceived event) {
-        restClient.post()
+    public String send(InboundEmailReceived event) {
+        JsonNode response = restClient.post()
                 .uri("/api/internal/inbound-emails")
                 .header("X-LegalGate-Service-Token", serviceToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(event)
                 .retrieve()
-                .toBodilessEntity();
+                .body(JsonNode.class);
+        return response == null ? "received" : response.path("status").asText("received");
     }
 }

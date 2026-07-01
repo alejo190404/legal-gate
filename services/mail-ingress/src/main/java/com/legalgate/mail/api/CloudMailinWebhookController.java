@@ -2,6 +2,7 @@ package com.legalgate.mail.api;
 
 import com.legalgate.mail.model.CloudMailinMessage;
 import com.legalgate.mail.model.InboundEmailReceived;
+import com.legalgate.mail.model.InboundEmailIngestionResult;
 import com.legalgate.mail.service.BasicAuthVerifier;
 import com.legalgate.mail.service.CloudMailinIngestionService;
 import jakarta.validation.Valid;
@@ -41,9 +42,10 @@ class CloudMailinWebhookController {
                     .body(Map.of("error", "unauthorized"));
         }
 
-        InboundEmailReceived event = cloudMailinIngestionService.ingest(message);
+        InboundEmailIngestionResult result = cloudMailinIngestionService.ingest(message);
+        InboundEmailReceived event = result.event();
         return ResponseEntity.ok(Map.of(
-                "status", "received",
+                "status", result.status(),
                 "eventId", event.eventId(),
                 "tenantId", event.tenantId()
         ));

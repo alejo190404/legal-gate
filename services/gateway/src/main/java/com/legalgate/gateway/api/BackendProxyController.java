@@ -47,6 +47,8 @@ public class BackendProxyController {
             "/api/session",
             "/api/onboarding/organization",
             "/api/tenant/settings",
+            "/api/billing",
+            "/api/billing/**",
             "/api/consultations",
             "/api/consultations/**"
     })
@@ -67,7 +69,7 @@ public class BackendProxyController {
                     .headers(headers -> copyForwardableHeaders(request, headers, authentication))
                     .bodyValue(body == null ? new byte[0] : body)
                     .exchangeToMono(response -> response.toEntity(byte[].class))
-                    .block(timeout());
+                    .block(timeout(request.getRequestURI()));
 
             if (backendResponse == null) {
                 return FallbackController.backendUnavailable();
@@ -142,7 +144,12 @@ public class BackendProxyController {
         }
     }
 
-    private Duration timeout() {
+    private Duration timeout(String requestUri) {
+        if ("/api/billing".equals(requestUri)
+                || (requestUri != null && requestUri.startsWith("/api/billing/"))) {
+            return properties.getBillingRequestTimeout() == null
+                    ? Duration.ofSeconds(10) : properties.getBillingRequestTimeout();
+        }
         return properties.getRequestTimeout() == null ? Duration.ofSeconds(3) : properties.getRequestTimeout();
     }
 

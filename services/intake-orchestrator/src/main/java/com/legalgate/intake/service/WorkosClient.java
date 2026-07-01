@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
@@ -60,6 +61,23 @@ public class WorkosClient {
                     .retrieve().body(JsonNode.class);
             return response == null ? Optional.empty() : Optional.ofNullable(response.path("id").textValue());
         } catch (HttpClientErrorException.NotFound ignored) {
+            return Optional.empty();
+        }
+    }
+
+    public Optional<String> userEmail(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode response = restClient.get()
+                    .uri("/user_management/users/{userId}", userId)
+                    .retrieve().body(JsonNode.class);
+            String email = response == null ? null : response.path("email").textValue();
+            return email == null || email.isBlank()
+                    ? Optional.empty()
+                    : Optional.of(email.trim().toLowerCase(java.util.Locale.ROOT));
+        } catch (RestClientException ignored) {
             return Optional.empty();
         }
     }

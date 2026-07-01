@@ -253,6 +253,92 @@
     </main>
   }
 
+  @case ('billing') {
+    <main class="billing-shell">
+      <header class="billing-topbar">
+        <a class="brand" href="/" aria-label="LegalGate">
+          <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
+          <span>LegalGate</span>
+        </a>
+        <button class="link-button inverse" type="button" (click)="logout()">Cerrar sesion</button>
+      </header>
+      <section class="billing-page" aria-labelledby="billing-page-title">
+        <div class="billing-intro">
+          <p class="eyebrow">FACTURACION DE LA FIRMA</p>
+          <h1 id="billing-page-title">Activa LegalGate</h1>
+          <p>
+            La suscripcion cubre toda tu organizacion. El pago se completa de forma segura en
+            Mercado Pago.
+          </p>
+        </div>
+
+        @if (billingMessage()) {
+          <div class="status-banner"><strong>{{ billingMessage() }}</strong></div>
+        }
+        @if (billingError()) {
+          <div class="panel-error"><strong>{{ billingError() }}</strong></div>
+        }
+        @if (billingStatus(); as status) {
+          <article class="billing-status-card pixel-card">
+            <span class="pill">{{ status.status }}</span>
+            <strong>{{ status.message }}</strong>
+            @if (status.accessEndsAt) {
+              <small>Acceso hasta {{ formatDate(status.accessEndsAt) }}</small>
+            }
+          </article>
+        }
+
+        <div class="billing-plan-grid">
+          @for (plan of billingPlans(); track plan.id) {
+            <button
+              class="billing-plan-card pixel-card"
+              type="button"
+              [class.is-selected]="selectedPlanCode() === plan.code"
+              (click)="selectBillingPlan(plan.code)"
+            >
+              <span>{{ plan.interval === 'YEARLY' ? 'Anual' : 'Mensual' }}</span>
+              <strong>{{ plan.displayName }}</strong>
+              <em>{{ formatCop(plan.priceCop) }}</em>
+              <small>{{ plan.description }}</small>
+            </button>
+          } @empty {
+            @if (!isBillingLoading()) {
+              <p class="empty-state">No hay planes activos. Contacta al administrador de LegalGate.</p>
+            }
+          }
+        </div>
+
+        @if (billingPlans().length) {
+          <div class="billing-checkout pixel-card">
+            <label for="couponCode">Cupon (opcional)</label>
+            <input
+              id="couponCode"
+              name="couponCode"
+              [ngModel]="couponCode()"
+              (ngModelChange)="couponCode.set($event); billingQuote.set(null)"
+              autocomplete="off"
+            />
+            <div class="billing-actions">
+              <button class="btn btn-secondary" type="button" (click)="quoteBilling()" [disabled]="isBillingLoading()">
+                Calcular precio
+              </button>
+              <button class="btn btn-primary" type="button" (click)="checkoutBilling()" [disabled]="isBillingLoading()">
+                {{ isBillingLoading() ? 'Procesando...' : 'Continuar a Mercado Pago' }}
+              </button>
+            </div>
+            @if (billingQuote(); as quote) {
+              <dl class="billing-quote">
+                <div><dt>Precio</dt><dd>{{ formatCop(quote.originalAmountCop) }}</dd></div>
+                <div><dt>Descuento</dt><dd>-{{ formatCop(quote.discountAmountCop) }}</dd></div>
+                <div><dt>Total recurrente</dt><dd>{{ formatCop(quote.recurringAmountCop) }}</dd></div>
+              </dl>
+            }
+          </div>
+        }
+      </section>
+    </main>
+  }
+
   @case ('console') {
     <main class="console-shell" [class.menu-open]="isConsoleMenuOpen()">
       <button
@@ -823,6 +909,52 @@
             </form>
           </section>
         </div>
+
+        <section id="billing" class="panel-card billing-console-panel" aria-labelledby="billing-console-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Suscripcion</p>
+              <h2 id="billing-console-title">Facturacion</h2>
+            </div>
+            @if (billingStatus(); as status) {
+              <span class="pill">{{ status.status }}</span>
+            }
+          </div>
+          @if (billingStatus(); as status) {
+            <p>{{ status.message }}</p>
+            @if (status.subscription; as subscription) {
+              <dl class="billing-details">
+                <div><dt>Plan</dt><dd>{{ subscription.plan.displayName }}</dd></div>
+                <div><dt>Cobro recurrente</dt><dd>{{ formatCop(subscription.currentAmountCop) }}</dd></div>
+                <div><dt>Proxima fecha / acceso</dt><dd>{{ status.accessEndsAt ? formatDate(status.accessEndsAt) : 'Pendiente' }}</dd></div>
+                <div><dt>Cupon</dt><dd>{{ subscription.coupon?.code || 'Sin cupon' }}</dd></div>
+              </dl>
+              @if (status.payments.length) {
+                <div class="billing-payment-list">
+                  <h3>Historial de pagos</h3>
+                  @for (payment of status.payments; track payment.providerPaymentId) {
+                    <div>
+                      <span>{{ payment.paidAt ? formatDate(payment.paidAt) : 'Pendiente' }}</span>
+                      <strong>{{ formatCop(payment.amountCop) }}</strong>
+                      <em>{{ payment.status }}</em>
+                    </div>
+                  }
+                </div>
+              }
+              @if (!subscription.cancelAtPeriodEnd && subscription.status !== 'CANCELED') {
+                <button class="btn btn-secondary" type="button" (click)="cancelBilling()" [disabled]="isBillingLoading()">
+                  Cancelar renovacion
+                </button>
+              }
+            }
+            @if (billingMessage()) {
+              <div class="status-banner"><strong>{{ billingMessage() }}</strong></div>
+            }
+            @if (billingError()) {
+              <div class="panel-error"><strong>{{ billingError() }}</strong></div>
+            }
+          }
+        </section>
       </section>
 
       @if (isTutorialOpen()) {

@@ -32,6 +32,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -52,8 +53,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/api/status", "/error").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/webhooks/mercadopago").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/onboarding/organization").authenticated()
-                        .requestMatchers("/api/session", "/api/tenant/settings", "/api/consultations", "/api/consultations/**")
+                        .requestMatchers("/api/session", "/api/tenant/settings", "/api/billing", "/api/billing/**",
+                                "/api/consultations", "/api/consultations/**")
                         .access((authentication, context) -> {
                             if (!(authentication.get() instanceof JwtAuthenticationToken token)) {
                                 return new AuthorizationDecision(false);
@@ -65,6 +68,12 @@ public class SecurityConfig {
                         })
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
+                        .bearerTokenResolver(request -> {
+                            if ("/api/webhooks/mercadopago".equals(request.getRequestURI())) {
+                                return null;
+                            }
+                            return new DefaultBearerTokenResolver().resolve(request);
+                        })
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         .authenticationEntryPoint((request, response, exception) ->
                                 writeError(objectMapper, response, 401, "unauthorized",
@@ -130,7 +139,8 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(properties.getCors().getAllowedOrigins());
         configuration.setAllowedOriginPatterns(properties.getCors().getAllowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));
+        configuration.setAllowedHeaders(List.of(
+                "Authorization", "Content-Type", "X-Requested-With", "Idempotency-Key"));
         configuration.setExposedHeaders(List.of("Location", "X-Proxied-By"));
         configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);

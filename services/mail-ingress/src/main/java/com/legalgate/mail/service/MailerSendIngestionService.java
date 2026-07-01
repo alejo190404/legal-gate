@@ -1,6 +1,7 @@
 package com.legalgate.mail.service;
 
 import com.legalgate.mail.model.InboundEmailReceived;
+import com.legalgate.mail.model.InboundEmailIngestionResult;
 import com.legalgate.mail.model.MailerSendWebhook;
 import com.legalgate.mail.model.NormalizedInboundEmail;
 import java.util.LinkedHashSet;
@@ -18,7 +19,7 @@ public class MailerSendIngestionService {
         this.inboundEmailIngestionService = inboundEmailIngestionService;
     }
 
-    public InboundEmailReceived ingest(MailerSendWebhook webhook) {
+    public InboundEmailIngestionResult ingest(MailerSendWebhook webhook) {
         MailerSendWebhook.Data data = webhook.data();
         return inboundEmailIngestionService.ingest(new NormalizedInboundEmail(
                 recipientsFor(data),

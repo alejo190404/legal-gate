@@ -16,6 +16,7 @@ public class GatewayProperties {
     private String forwardedToken;
 
     private Duration requestTimeout = Duration.ofSeconds(3);
+    private Duration billingRequestTimeout = Duration.ofSeconds(10);
 
     private final Backend backend = new Backend();
     private final Cors cors = new Cors();
@@ -35,6 +36,14 @@ public class GatewayProperties {
 
     public void setRequestTimeout(Duration requestTimeout) {
         this.requestTimeout = requestTimeout;
+    }
+
+    public Duration getBillingRequestTimeout() {
+        return billingRequestTimeout;
+    }
+
+    public void setBillingRequestTimeout(Duration billingRequestTimeout) {
+        this.billingRequestTimeout = billingRequestTimeout;
     }
 
     public Backend getBackend() {

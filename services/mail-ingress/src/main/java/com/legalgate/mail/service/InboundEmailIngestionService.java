@@ -1,6 +1,7 @@
 package com.legalgate.mail.service;
 
 import com.legalgate.mail.model.InboundEmailReceived;
+import com.legalgate.mail.model.InboundEmailIngestionResult;
 import com.legalgate.mail.model.NormalizedInboundEmail;
 import java.time.Instant;
 import java.util.UUID;
@@ -24,7 +25,7 @@ public class InboundEmailIngestionService {
         this.inboundEmailClient = inboundEmailClient;
     }
 
-    public InboundEmailReceived ingest(NormalizedInboundEmail email) {
+    public InboundEmailIngestionResult ingest(NormalizedInboundEmail email) {
         if (email.recipients() == null || email.recipients().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "missing_recipient");
         }
@@ -50,13 +51,15 @@ public class InboundEmailIngestionService {
         );
 
         try {
-            inboundEmailClient.send(event);
+            String downstreamStatus = inboundEmailClient.send(event);
+            String status = "ignored_subscription_inactive".equals(downstreamStatus)
+                    ? downstreamStatus : "received";
+            return new InboundEmailIngestionResult(event, status);
         } catch (RestClientResponseException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "intake_orchestrator_request_failed", ex);
         } catch (RestClientException ex) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "intake_orchestrator_unavailable", ex);
         }
 
-        return event;
     }
 }

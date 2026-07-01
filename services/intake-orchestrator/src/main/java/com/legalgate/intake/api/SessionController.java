@@ -22,7 +22,7 @@ public class SessionController {
             @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @RequestHeader("X-LegalGate-Role") String role
     ) {
-        TenantProvisioning tenant = resolver.requireActiveTenant(organizationId);
+        TenantProvisioning tenant = resolver.requireProvisioningActiveTenant(organizationId);
         return new SessionResponse(
                 userId, sessionId, organizationId, tenant.slug(), tenant.displayName(), role);
     }

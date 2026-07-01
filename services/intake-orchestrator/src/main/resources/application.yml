@@ -11,6 +11,17 @@ spring:
     validate-on-migrate: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:false}
 
 legalgate:
+  billing:
+    enabled: ${LEGALGATE_BILLING_ENABLED:false}
+    enforcement-enabled: ${LEGALGATE_BILLING_ENFORCEMENT_ENABLED:false}
+    mercado-pago-access-token: ${MERCADOPAGO_ACCESS_TOKEN:}
+    mercado-pago-webhook-secret: ${MERCADOPAGO_WEBHOOK_SECRET:}
+    mercado-pago-api-url: ${MERCADOPAGO_API_URL:https://api.mercadopago.com}
+    return-url: ${LEGALGATE_BILLING_RETURN_URL:}
+    provider-timeout: ${MERCADOPAGO_PROVIDER_TIMEOUT:8s}
+    reconciliation-interval: ${LEGALGATE_BILLING_RECONCILIATION_INTERVAL:5m}
+    pending-checkout-ttl: ${LEGALGATE_BILLING_PENDING_CHECKOUT_TTL:24h}
+    grace-period: ${LEGALGATE_BILLING_GRACE_PERIOD:7d}
   intake:
     persistence: ${LEGALGATE_INTAKE_PERSISTENCE:memory}
     seed-demo-data: ${LEGALGATE_SEED_DEMO_DATA:false}

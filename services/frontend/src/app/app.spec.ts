@@ -21,6 +21,7 @@ describe('App WorkOS authentication flow', () => {
   };
 
   beforeEach(async () => {
+    sessionStorage.clear();
     user.set(null);
     hasOrganization.set(false);
     vi.clearAllMocks();
@@ -73,6 +74,16 @@ describe('App WorkOS authentication flow', () => {
       displayName: 'Firma 1',
       role: 'firm_admin',
     });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: false,
+      enforcementEnabled: false,
+      entitled: true,
+      status: 'DISABLED',
+      subscription: null,
+      payments: [],
+      accessEndsAt: null,
+      message: 'Billing is disabled for this environment.',
+    });
     http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1',
@@ -88,5 +99,81 @@ describe('App WorkOS authentication flow', () => {
 
     expect(fixture.componentInstance.view()).toBe('console');
     expect(fixture.componentInstance.tenantId()).toBe('firma-1');
+  });
+
+  it('routes an organization without entitlement to billing before protected APIs', () => {
+    user.set({ id: 'user_1', email: 'admin@firma.test' });
+    hasOrganization.set(true);
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    http.expectOne('/api/session').flush({
+      userId: 'user_1',
+      sessionId: 'session_1',
+      organizationId: 'org_1',
+      tenantId: 'firma-1',
+      displayName: 'Firma 1',
+      role: 'firm_admin',
+    });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: true,
+      enforcementEnabled: true,
+      entitled: false,
+      status: 'SUBSCRIPTION_REQUIRED',
+      subscription: null,
+      payments: [],
+      accessEndsAt: null,
+      message: 'Choose a plan.',
+    });
+    http.expectOne('/api/billing/plans').flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.view()).toBe('billing');
+    http.expectNone('/api/consultations');
+    http.expectNone('/api/tenant/settings');
+  });
+
+  it('resets a plan selection that is absent from a refreshed catalog', () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance.selectedPlanCode.set('retired');
+
+    fixture.componentInstance.loadBillingPlans();
+    http.expectOne('/api/billing/plans').flush([
+      {
+        id: 'plan-1',
+        code: 'monthly',
+        version: 2,
+        displayName: 'Monthly',
+        description: null,
+        interval: 'MONTHLY',
+        priceCop: 100000,
+      },
+    ]);
+
+    expect(fixture.componentInstance.selectedPlanCode()).toBe('monthly');
+    expect(fixture.componentInstance.billingQuote()).toBeNull();
+  });
+
+  it('rotates checkout idempotency after a terminal client error', () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance.tenantId.set('tenant-1');
+    fixture.componentInstance.selectedPlanCode.set('monthly');
+
+    fixture.componentInstance.checkoutBilling();
+    const first = http.expectOne('/api/billing/checkout');
+    const firstKey = first.request.headers.get('Idempotency-Key');
+    first.flush({}, { status: 400, statusText: 'Bad Request' });
+
+    fixture.componentInstance.checkoutBilling();
+    const second = http.expectOne('/api/billing/checkout');
+    const secondKey = second.request.headers.get('Idempotency-Key');
+    second.flush({}, { status: 400, statusText: 'Bad Request' });
+
+    expect(firstKey).toBeTruthy();
+    expect(secondKey).toBeTruthy();
+    expect(secondKey).not.toBe(firstKey);
   });
 });
