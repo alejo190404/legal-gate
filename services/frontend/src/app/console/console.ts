@@ -608,6 +608,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             if (!this.tenantId()) return;
             this.billingStatus.set(status);
             if (status.entitled) {
+              this.clearCheckoutAttempt();
               window.history.replaceState({}, '', window.location.pathname);
               this.billingMessage.set('Pago confirmado. Tu acceso ya esta activo.');
               this.view.set('console');
