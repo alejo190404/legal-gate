@@ -1,8 +1,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, HostListener, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiConfigService } from '../config/api-config.service';
 import { AuthService } from '../auth/auth.service';
+import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 
 type ViewName = 'loading' | 'register' | 'billing' | 'console';
@@ -238,6 +238,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   private readonly apiConfig = inject(ApiConfigService);
   readonly auth = inject(AuthService);
   private billingReturnPollHandle: number | null = null;
+  private isDestroyed = false;
 
   // The guard guarantees an authenticated user, so the console opens on the
   // branded loading screen while the session and billing calls resolve.
@@ -337,6 +338,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.isDestroyed = true;
     // ConsoleComponent is now routable, so cancel the billing-return poll if the
     // router tears it down while a poll is still pending.
     this.clearBillingReturnPoll();
@@ -586,7 +588,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   }
 
   private pollBillingReturn(attempt = 0): void {
-    if (!this.tenantId()) {
+    if (this.isDestroyed || !this.tenantId()) {
       this.clearBillingReturnPoll();
       return;
     }
@@ -599,13 +601,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     }
     this.clearBillingReturnPoll();
     this.billingReturnPollHandle = window.setTimeout(() => {
-      this.billingReturnPollHandle = null;
+      if (this.isDestroyed || !this.tenantId()) return;
       if (!this.tenantId()) return;
       this.http
         .get<BillingStatus>(this.apiConfig.url('/api/billing/subscription'))
         .subscribe({
           next: (status) => {
-            if (!this.tenantId()) return;
+            if (this.isDestroyed || !this.tenantId()) return;
             this.billingStatus.set(status);
             if (status.entitled) {
               window.history.replaceState({}, '', window.location.pathname);
@@ -618,7 +620,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             }
           },
           error: () => {
-            if (this.tenantId()) this.pollBillingReturn(attempt + 1);
+            if (!this.isDestroyed && this.tenantId()) this.pollBillingReturn(attempt + 1);
           },
         });
     }, 2000);
@@ -757,7 +759,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         name: rule.name.trim() || `Route ${index + 1}`,
         description: rule.description.trim() || null,
         urgentKeywords: this.csvValues(rule.urgentKeywords),
-        consultationWindows: [],
+        consultationWindows: this.csvValues(rule.consultationWindows),
         urgencyLevels: urgencyDefinitions.map((item) => item.name.trim()),
         lawyerId: rule.lawyerId || primaryLawyerId,
         urgencyDefinitions: urgencyDefinitions.map((item) => ({
