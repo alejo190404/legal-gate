@@ -158,6 +158,7 @@ create table billing_webhook_events (
     processing_attempts integer not null default 0,
     last_error text,
     next_attempt_at timestamptz not null default now(),
+    processing_claimed_until timestamptz,
     received_at timestamptz not null default now(),
     processed_at timestamptz,
     constraint billing_webhook_events_provider_unique unique (provider_event_id, event_type),
@@ -165,7 +166,7 @@ create table billing_webhook_events (
 );
 
 create index idx_billing_webhook_events_pending
-    on billing_webhook_events (status, next_attempt_at, received_at);
+    on billing_webhook_events (status, next_attempt_at, processing_claimed_until, received_at);
 
 create or replace function prevent_billing_plan_mutation()
 returns trigger

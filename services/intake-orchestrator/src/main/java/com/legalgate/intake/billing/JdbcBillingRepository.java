@@ -211,14 +211,19 @@ class JdbcBillingRepository implements BillingRepository {
         return inWorker(() -> jdbc.query("""
                 with claimed as (
                   select id from billing_webhook_events
-                  where status in ('PENDING','FAILED') and next_attempt_at <= now()
+                  where (
+                      status in ('PENDING','FAILED') and next_attempt_at <= now()
+                      or status = 'PROCESSING' and processing_claimed_until < now()
+                    )
                     and processing_attempts < 8
                   order by received_at
                   for update skip locked
                   limit ?
                 )
                 update billing_webhook_events e
-                set status = 'PROCESSING', processing_attempts = processing_attempts + 1
+                set status = 'PROCESSING',
+                    processing_attempts = processing_attempts + 1,
+                    processing_claimed_until = now() + interval '5 minutes'
                 from claimed where e.id = claimed.id
                 returning e.id, e.event_type, e.action, e.resource_id,
                           e.raw_body::text as raw_body, e.processing_attempts
@@ -235,7 +240,8 @@ class JdbcBillingRepository implements BillingRepository {
     public void completeWebhook(UUID eventId) {
         jdbc.update("""
                 update billing_webhook_events
-                set status = 'PROCESSED', processed_at = now(), last_error = null
+                set status = 'PROCESSED', processed_at = now(), last_error = null,
+                    processing_claimed_until = null
                 where id = ?
                 """, eventId);
     }
@@ -246,7 +252,8 @@ class JdbcBillingRepository implements BillingRepository {
         long delaySeconds = Math.min(3600, 15L * (1L << Math.min(attempts, 7)));
         jdbc.update("""
                 update billing_webhook_events
-                set status = ?, last_error = ?, next_attempt_at = now() + (? * interval '1 second')
+                set status = ?, last_error = ?, next_attempt_at = now() + (? * interval '1 second'),
+                    processing_claimed_until = null
                 where id = ?
                 """, status, truncate(error), delaySeconds, eventId);
     }

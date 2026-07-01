@@ -3,8 +3,10 @@ package com.legalgate.intake.billing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legalgate.intake.billing.BillingModels.Coupon;
 import com.legalgate.intake.billing.BillingModels.Plan;
+import com.legalgate.intake.billing.BillingModels.WebhookEvent;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -13,6 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -146,6 +149,31 @@ class BillingMigrationPostgresTests {
 
         assertThat(firstReplica.claimAmountTransitionCandidates(1)).hasSize(1);
         assertThat(secondReplica.claimAmountTransitionCandidates(1)).isEmpty();
+    }
+
+    @Test
+    void expiredWebhookProcessingClaimsCanBeRetried() throws Exception {
+        JdbcBillingRepository repository = billingRepository();
+        repository.insertWebhook(
+                "webhook-claim-timeout", "payment", "payment.updated", "payment-1",
+                "request-1", new ObjectMapper().readTree("{}"));
+
+        List<WebhookEvent> claimed = repository.claimWebhookBatch(1);
+        assertThat(claimed).hasSize(1);
+        assertThat(repository.claimWebhookBatch(1)).isEmpty();
+
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    update billing_webhook_events
+                    set processing_claimed_until = now() - interval '1 second'
+                    where provider_event_id = 'webhook-claim-timeout'
+                    """);
+        }
+
+        List<WebhookEvent> retried = repository.claimWebhookBatch(1);
+        assertThat(retried).hasSize(1);
+        assertThat(retried.get(0).id()).isEqualTo(claimed.get(0).id());
+        assertThat(retried.get(0).attempts()).isEqualTo(claimed.get(0).attempts() + 1);
     }
 
     @Test
