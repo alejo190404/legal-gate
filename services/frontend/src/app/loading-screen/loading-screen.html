@@ -1,0 +1,33 @@
+<div class="lg-loading" role="status" aria-live="polite">
+  <div class="lg-panel pixel-card">
+    <div class="lg-logo">
+      <img class="lg-logo-mark" src="/assets/logo-mark.svg" alt="LegalGate" />
+    </div>
+
+    <p class="lg-eyebrow">{{ eyebrow }}</p>
+    <h1 class="lg-title">{{ title }}</h1>
+
+    <div class="lg-chase" aria-hidden="true">
+      @for (pos of cells; track $index) {
+        @if (pos < 0) {
+          <span class="lg-chase-cell is-gap"></span>
+        } @else {
+          <span class="lg-chase-cell" [style.animation-delay.ms]="pos * 130"></span>
+        }
+      }
+    </div>
+
+    @if (error()) {
+      <p class="lg-error">{{ error() }}</p>
+      <button class="btn btn-primary" type="button" (click)="retry.emit()">Reintentar</button>
+    } @else {
+      <p class="lg-status">
+        <span class="lg-step">{{ stepLabel() }}</span>
+        <span class="lg-message">{{ message() }}</span
+        ><span class="lg-cursor" aria-hidden="true"></span>
+      </p>
+    }
+
+    <p class="lg-note">{{ note }}</p>
+  </div>
+</div>

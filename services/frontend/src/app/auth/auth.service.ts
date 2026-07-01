@@ -23,7 +23,7 @@ export class AuthService {
 
   async initialize(): Promise<void> {
     this.client = await createClient(this.config.getWorkosClientId(), {
-      redirectUri: window.location.origin,
+      redirectUri: `${window.location.origin}/dashboard`,
     });
     this.user.set(this.client.getUser());
     if (this.user()) {
