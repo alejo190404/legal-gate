@@ -2,8 +2,11 @@ package com.legalgate.intake.billing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.mockito.ArgumentMatchers;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
 class BillingServiceTests {
@@ -143,22 +147,41 @@ class BillingServiceTests {
     }
 
     @Test
-    void cancelMarksLocalSubscriptionBeforeCallingProvider() {
-        Subscription subscription = new Subscription(
+    void cancelCallsProviderBeforeMarkingLocalSubscription() {
+        Subscription subscription = activeSubscription();
+        when(repository.currentSubscription("tenant")).thenReturn(Optional.of(subscription));
+
+        service.cancel("tenant");
+
+        InOrder ordered = inOrder(provider, repository);
+        ordered.verify(provider).cancel("provider-subscription-1");
+        ordered.verify(repository).cancel(
+                ArgumentMatchers.eq(subscription.id()),
+                ArgumentMatchers.eq("tenant"),
+                ArgumentMatchers.any());
+    }
+
+    @Test
+    void cancelLeavesLocalSubscriptionActiveWhenProviderFails() {
+        Subscription subscription = activeSubscription();
+        when(repository.currentSubscription("tenant")).thenReturn(Optional.of(subscription));
+        doThrow(new RestClientException("mercado pago unreachable"))
+                .when(provider).cancel("provider-subscription-1");
+
+        assertThatThrownBy(() -> service.cancel("tenant"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("provider_cancel_failed");
+
+        verify(repository, never()).cancel(
+                ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any());
+    }
+
+    private Subscription activeSubscription() {
+        return new Subscription(
                 UUID.randomUUID(), UUID.randomUUID(), "tenant", monthly, null,
                 monthly.priceCop(), monthly.priceCop(), "ACTIVE", "authorized",
                 "provider-subscription-1", "https://checkout.example.test",
                 "payer@example.com", Instant.now(), Instant.now().plus(Duration.ofDays(30)),
                 null, null, null, false, 1, false, "attempt-1", Instant.now());
-        when(repository.currentSubscription("tenant")).thenReturn(Optional.of(subscription));
-
-        service.cancel("tenant");
-
-        InOrder ordered = inOrder(repository, provider);
-        ordered.verify(repository).cancel(
-                ArgumentMatchers.eq(subscription.id()),
-                ArgumentMatchers.eq("tenant"),
-                ArgumentMatchers.any());
-        ordered.verify(provider).cancel("provider-subscription-1");
     }
 }
