@@ -36,6 +36,18 @@ class EmailTemplateRendererTests {
         assertThat(html).doesNotContain("{{");
     }
 
+    @Test
+    void clientTemplateHandlesNullScheduleWithoutThrowing() {
+        EventResponse openEnded = new EventResponse(
+                "event-1", "lawyer-1", "Ana Abogada", "ana@firm.co",
+                "Tutela", "URGENT", 1, null, 100,
+                null, null, "SCHEDULED", "SYSTEM");
+
+        String html = renderer.renderClient(consultation(), openEnded);
+
+        assertThat(html).doesNotContain("{{");
+    }
+
     private ConsultationResponse consultation() {
         return new ConsultationResponse(
                 "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a",

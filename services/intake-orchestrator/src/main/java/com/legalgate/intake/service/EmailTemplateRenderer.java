@@ -55,15 +55,15 @@ public class EmailTemplateRenderer {
     }
 
     String renderClient(ConsultationResponse consultation, EventResponse event) {
-        ZonedDateTime start = ZonedDateTime.ofInstant(event.scheduledStart(), BUSINESS_ZONE);
-        ZonedDateTime end = ZonedDateTime.ofInstant(event.scheduledEnd(), BUSINESS_ZONE);
+        ZonedDateTime start = event.scheduledStart() == null ? null : ZonedDateTime.ofInstant(event.scheduledStart(), BUSINESS_ZONE);
+        ZonedDateTime end = event.scheduledEnd() == null ? null : ZonedDateTime.ofInstant(event.scheduledEnd(), BUSINESS_ZONE);
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("client_first_name", firstName(consultation.clientName()));
-        fields.put("date_day", start.format(DAY));
-        fields.put("date_month", start.format(MONTH));
-        fields.put("date_year", start.format(YEAR));
-        fields.put("time_range", start.format(TIME) + "–" + end.format(TIME));
-        fields.put("timezone", start.format(ZONE));
+        fields.put("date_day", start == null ? "" : start.format(DAY));
+        fields.put("date_month", start == null ? "" : start.format(MONTH));
+        fields.put("date_year", start == null ? "" : start.format(YEAR));
+        fields.put("time_range", timeRange(start, end));
+        fields.put("timezone", start == null ? "" : start.format(ZONE));
         fields.put("duration", durationLabel(event.scheduledStart(), event.scheduledEnd()));
         fields.put("lawyer_name", firstNonBlank(event.lawyerDisplayName(), "Abogado LegalGate"));
         fields.put("summary", nullToEmpty(consultation.summary()));
@@ -103,6 +103,13 @@ public class EmailTemplateRenderer {
             base += "–" + ZonedDateTime.ofInstant(end, BUSINESS_ZONE).format(TIME);
         }
         return base + " (" + zonedStart.format(ZONE) + ")";
+    }
+
+    private String timeRange(ZonedDateTime start, ZonedDateTime end) {
+        if (start == null) {
+            return "";
+        }
+        return end == null ? start.format(TIME) : start.format(TIME) + "–" + end.format(TIME);
     }
 
     private String durationLabel(Instant start, Instant end) {
