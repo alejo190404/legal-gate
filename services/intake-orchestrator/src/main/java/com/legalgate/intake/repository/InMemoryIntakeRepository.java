@@ -217,6 +217,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                     notification.recipientEmail(),
                     notification.subject(),
                     notification.body(),
+                    notification.htmlBody(),
                     notification.icsContent(),
                     "PENDING",
                     0,
@@ -242,7 +243,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                     NotificationOutboxItem claimed = new NotificationOutboxItem(
                             notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
                             notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
-                            notification.icsContent(), "SENDING", notification.attempts(), notification.providerMessageId(),
+                            notification.htmlBody(), notification.icsContent(), "SENDING", notification.attempts(), notification.providerMessageId(),
                             notification.lastError(), notification.createdAt(), now, now.plusSeconds(NOTIFICATION_LEASE_SECONDS)
                     );
                     entry.setValue(claimed);
@@ -257,7 +258,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 ? new NotificationOutboxItem(
                         notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
                         notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
-                        notification.icsContent(), "SENT", notification.attempts(), providerMessageId, null,
+                        notification.htmlBody(), notification.icsContent(), "SENT", notification.attempts(), providerMessageId, null,
                         notification.createdAt(), Instant.now(), notification.nextAttemptAt()
                 )
                 : notification);
@@ -275,7 +276,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
             return new NotificationOutboxItem(
                     notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
                     notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
-                    notification.icsContent(), exhausted ? "DEAD" : "FAILED", attempts, notification.providerMessageId(),
+                    notification.htmlBody(), notification.icsContent(), exhausted ? "DEAD" : "FAILED", attempts, notification.providerMessageId(),
                     errorMessage, notification.createdAt(), now, exhausted ? now : now.plusSeconds(retryDelaySeconds(attempts))
             );
         });

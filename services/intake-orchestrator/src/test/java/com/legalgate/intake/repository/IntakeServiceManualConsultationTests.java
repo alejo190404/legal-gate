@@ -13,6 +13,7 @@ import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
+import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.IntakeService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,7 @@ class IntakeServiceManualConsultationTests {
     }
 
     private IntakeService seededService(InMemoryIntakeRepository repository, ConsultationClassifierClient classifier) {
-        IntakeService service = new IntakeService(repository, properties(), classifier);
+        IntakeService service = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer());
         service.saveSettings(TENANT, new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "General", "General intake", List.of(), List.of("manana"),
