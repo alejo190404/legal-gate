@@ -336,12 +336,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly workspaceNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
     { id: 'inbox', icon: 'inbox', label: 'Bandeja de intake' },
     { id: 'rules', icon: 'route', label: 'Reglas de enrutamiento' },
-    { id: 'calendar', icon: 'calendar', label: 'Consultas', wip: true },
     { id: 'templates', icon: 'mail', label: 'Plantillas de correo', wip: true },
   ];
   readonly configureNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
     { id: 'team', icon: 'users', label: 'Equipo' },
-    { id: 'availability', icon: 'clock', label: 'Disponibilidad', wip: true },
     { id: 'settings', icon: 'gear', label: 'Ajustes' },
     { id: 'billing', icon: 'file', label: 'Facturacion' },
   ];
