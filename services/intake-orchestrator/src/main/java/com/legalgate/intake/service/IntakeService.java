@@ -96,21 +96,39 @@ public class IntakeService {
 
     public ConsultationResponse createConsultation(String tenantId, CreateConsultationRequest request) {
         TenantSettingsResponse settings = settingsFor(tenantId);
-        TenantRoutingRule routingRule = routingRuleForSummary(request.summary(), routingRulesFor(settings));
-        List<String> matchedKeywords = matchUrgentKeywords(request.summary(), routingRule.urgentKeywords());
-        String preferredWindow = preferredWindowFor(request.preferredWindow(), routingRule.consultationWindows());
-        List<String> urgencyLevels = urgencyLevelsFor(routingRule);
-        String urgency = matchedKeywords.isEmpty() ? urgencyLevels.get(0) : urgencyLevels.get(urgencyLevels.size() - 1);
+        List<TenantRoutingRule> routingRules = routingRulesFor(settings);
+        TenantRoutingRule primaryRoute = primaryRoutingRule(routingRules);
+        ConsultationClassifierResponse classifierResponse;
+        try {
+            classifierResponse = consultationClassifierClient.classify(classifierRequestForManual(request, routingRules));
+        } catch (ClassifierUnavailableException ex) {
+            return saveManualConsultation(tenantId, settings, request, primaryRoute, urgencyLevelsFor(primaryRoute).get(0),
+                    new ClassificationResult("LLM_FAILED", List.of(), null,
+                            "Gemini classification was not available; routed to primary route for lawyer review.", null));
+        }
+        if (!isValidClassifierResponse(classifierResponse, routingRules)) {
+            return saveManualConsultation(tenantId, settings, request, primaryRoute, urgencyLevelsFor(primaryRoute).get(0),
+                    new ClassificationResult("LLM_INVALID_RESPONSE", List.of(), null,
+                            "Gemini classification could not be validated; routed to primary route for lawyer review.", null));
+        }
+        TenantRoutingRule selectedRoute = routingRules.get(classifierResponse.routeIndex());
+        return saveManualConsultation(tenantId, settings, request, selectedRoute, classifierResponse.urgency().trim(),
+                new ClassificationResult("LLM_CLASSIFIED", List.of(), sanitizeNullable(classifierResponse.concept()),
+                        sanitizeNullable(classifierResponse.explanation()), classifierResponse.confidence()));
+    }
+
+    private ConsultationResponse saveManualConsultation(String tenantId, TenantSettingsResponse settings,
+            CreateConsultationRequest request, TenantRoutingRule route, String urgency, ClassificationResult classification) {
+        String preferredWindow = preferredWindowFor(request.preferredWindow(), route.consultationWindows());
         Instant createdAt = Instant.now();
-        SchedulingResult scheduled = scheduleEvent(tenantId, settings, routingRule, urgency, createdAt, "LEGALGATE");
+        SchedulingResult scheduled = scheduleEvent(tenantId, settings, route, urgency, createdAt, "LEGALGATE");
         EventResponse event = scheduled.event();
         String consultationId = UUID.randomUUID().toString();
         ConsultationResponse consultation = new ConsultationResponse(
                 consultationId, tenantId, request.clientName().trim(), request.clientEmail().trim(), request.summary().trim(),
-                preferredWindow, "RECEIVED", urgency, routingRule.name(), event.lawyerEmail(),
-                new ClassificationResult("MANUAL_REVIEW", matchedKeywords, null,
-                        "Pending LLM classification; routed to " + routingRule.name() + " for lawyer review.", null),
-                new NotificationStatus(true, true, destinationEmailFor(settings, routingRule), preferredWindow),
+                preferredWindow, "RECEIVED", urgency, route.name(), event.lawyerEmail(),
+                classification,
+                new NotificationStatus(true, true, destinationEmailFor(settings, route), preferredWindow),
                 null, null, createdAt, event.id(), event
         );
         return intakeRepository.saveConsultation(
@@ -493,6 +511,26 @@ public class IntakeService {
     }
 
     private ConsultationClassifierRequest classifierRequestFor(InboundEmailReceived event, List<TenantRoutingRule> routingRules) {
+        return new ConsultationClassifierRequest(
+                new ConsultationClassifierRequest.InboundEmail(
+                        event.subject(), event.plain(), event.html(), firstNonBlank(event.headerFrom(), event.envelopeFrom(), clientEmailFor(event)),
+                        event.recipients() == null ? List.of() : event.recipients(), event.messageId()
+                ),
+                routesFor(routingRules), intakeProperties.consultationClassifierSystemPrompt(), intakeProperties.consultationClassifierPromptVersion()
+        );
+    }
+
+    private ConsultationClassifierRequest classifierRequestForManual(CreateConsultationRequest request, List<TenantRoutingRule> routingRules) {
+        return new ConsultationClassifierRequest(
+                new ConsultationClassifierRequest.InboundEmail(
+                        "Consulta: " + request.clientName().trim(), request.summary().trim(), null,
+                        request.clientEmail().trim(), List.of(), null
+                ),
+                routesFor(routingRules), intakeProperties.consultationClassifierSystemPrompt(), intakeProperties.consultationClassifierPromptVersion()
+        );
+    }
+
+    private List<ConsultationClassifierRequest.Route> routesFor(List<TenantRoutingRule> routingRules) {
         List<ConsultationClassifierRequest.Route> routes = new ArrayList<>();
         for (int index = 0; index < routingRules.size(); index++) {
             TenantRoutingRule rule = routingRules.get(index);
@@ -501,13 +539,7 @@ public class IntakeService {
                     rule.urgentKeywords(), rule.consultationWindows(), urgencyLevelsFor(rule)
             ));
         }
-        return new ConsultationClassifierRequest(
-                new ConsultationClassifierRequest.InboundEmail(
-                        event.subject(), event.plain(), event.html(), firstNonBlank(event.headerFrom(), event.envelopeFrom(), clientEmailFor(event)),
-                        event.recipients() == null ? List.of() : event.recipients(), event.messageId()
-                ),
-                routes, intakeProperties.consultationClassifierSystemPrompt(), intakeProperties.consultationClassifierPromptVersion()
-        );
+        return routes;
     }
 
     private boolean isValidClassifierResponse(ConsultationClassifierResponse response, List<TenantRoutingRule> routingRules) {
@@ -747,10 +779,6 @@ public class IntakeService {
         return lawyers.stream().filter(lawyer -> email.equalsIgnoreCase(lawyer.email())).map(LawyerProfile::id).findFirst().orElse(null);
     }
 
-    private TenantRoutingRule routingRuleForSummary(String summary, List<TenantRoutingRule> routingRules) {
-        return routingRules.stream().filter(rule -> !matchUrgentKeywords(summary, rule.urgentKeywords()).isEmpty()).findFirst().orElse(primaryRoutingRule(routingRules));
-    }
-
     private TenantRoutingRule primaryRoutingRule(List<TenantRoutingRule> routingRules) {
         return routingRules == null || routingRules.isEmpty() ? DEFAULT_ROUTING_RULE : routingRules.get(0);
     }
@@ -873,14 +901,6 @@ public class IntakeService {
 
     private String sanitizeEmail(String email) {
         return email == null || email.isBlank() ? null : email.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private List<String> matchUrgentKeywords(String summary, List<String> urgentKeywords) {
-        if (urgentKeywords == null) {
-            return List.of();
-        }
-        String normalizedSummary = normalize(summary);
-        return urgentKeywords.stream().filter(keyword -> normalizedSummary.contains(normalize(keyword))).toList();
     }
 
     private List<String> sanitize(List<String> values) {

@@ -951,10 +951,6 @@
               <label for="ccSummary">Resumen</label>
               <textarea id="ccSummary" name="ccSummary" rows="3" [(ngModel)]="form.summary"></textarea>
             </div>
-            <div class="form-field">
-              <label for="ccWindow">Ventana preferida (opcional)</label>
-              <input id="ccWindow" name="ccWindow" [(ngModel)]="form.preferredWindow" />
-            </div>
             @if (consultationsErrorMessage()) {
               <div class="panel-error"><strong>{{ consultationsErrorMessage() }}</strong></div>
             }
