@@ -30,6 +30,11 @@ app-console {
     transform: translate(2px, 2px);
     box-shadow: 2px 2px 0 0 var(--stone-950);
   }
+
+  &:not(:disabled):active {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 0 var(--stone-950);
+  }
 }
 
 .btn-primary,
@@ -623,9 +628,9 @@ app-console {
 
 .console-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 248px 1fr;
   min-height: 100vh;
-  background: linear-gradient(135deg, rgba(250, 84, 16, 0.08), transparent 28%), var(--bg-app);
+  background: var(--bg-app);
 }
 
 .sidebar {
@@ -633,64 +638,80 @@ app-console {
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   height: 100vh;
-  padding: 28px;
-  background: var(--stone-950);
-  color: var(--fg-on-dark);
-  border-right: 2px solid var(--stone-950);
+  padding: 18px 14px;
+  background: var(--bg-surface);
+  color: var(--fg-1);
+  border-right: 1.5px solid var(--border-ink);
 
   .brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    color: white;
-    font-size: 20px;
+    gap: 10px;
+    padding: 0 4px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg-1);
+    font-size: 19px;
     font-weight: 700;
+    letter-spacing: -0.02em;
     text-decoration: none;
 
     img {
-      width: 34px;
-      height: 34px;
+      width: 28px;
+      height: 28px;
     }
   }
 
   nav {
     display: grid;
-    gap: 10px;
+    gap: 2px;
 
     button {
+      position: relative;
       width: 100%;
-      padding: 12px 14px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 9px 12px;
+      border: 1.5px solid transparent;
       background: transparent;
-      color: var(--stone-100);
+      color: var(--fg-2);
       cursor: pointer;
       font: inherit;
-      font-weight: 700;
+      font-size: 14px;
+      font-weight: 600;
       text-align: left;
       text-decoration: none;
+      transition: background var(--dur-fast) var(--ease);
     }
 
     button:hover,
     button:focus-visible {
-      border-color: white;
+      background: var(--bg-hover);
+      color: var(--fg-1);
       outline: 0;
     }
 
     button.is-active {
+      background: var(--bg-active);
+      color: var(--fg-1);
+    }
+
+    button.is-active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
       background: var(--brand);
-      border-color: white;
-      color: white;
     }
   }
 }
 
 .tenant-card {
   margin-top: auto;
-  padding: 18px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 14px;
+  background: var(--bg-sunken);
+  border: 1.5px solid var(--border-ink);
 
   span,
   small,
@@ -700,15 +721,23 @@ app-console {
 
   span,
   small {
-    color: var(--stone-300);
+    color: var(--fg-3);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   strong {
     margin: 8px 0;
-    color: white;
-    font-size: 22px;
+    color: var(--fg-1);
+    font-family: var(--font-mono);
+    font-size: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .link-button {
+    margin-top: 6px;
   }
 }
 
