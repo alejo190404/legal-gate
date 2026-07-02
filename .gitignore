@@ -1,6 +1,8 @@
 target/
 .mvn/wrapper/maven-wrapper.jar
 .idea/
+.agents/
+.claude/
 .vscode/
 *.iml
 *.log

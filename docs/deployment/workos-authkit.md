@@ -13,13 +13,19 @@ Use separate WorkOS staging and production environments. In each environment:
 3. Require email verification and leave the Hosted UI password-reset flow enabled.
 4. Under Authorization roles, use single-role mode. Create the environment role with slug
    `firm_admin` and make it the default role. Do not rename the slug.
-5. Add exact CORS origins for the application:
+5. Add exact CORS origins for the application (unchanged by routing — the SDK still calls the
+   Gateway from the origin root):
    - Local: `http://localhost:4200`
    - Production: the exact HTTPS frontend origin, for example `https://www.legal-gate.co`
    - Add the exact staging origin separately. Avoid wildcard production origins.
-6. Add the same origins as redirect URIs. The SPA SDK redirects to the origin root, so register
-   `http://localhost:4200` and the exact production/staging origin without a callback suffix.
-7. Set the application homepage and post-logout URL to the corresponding frontend origin.
+6. Add redirect URIs that point at the `/dashboard` route. The SPA SDK now uses
+   `redirectUri: <origin>/dashboard`, so register the exact `/dashboard` URL for every deployed
+   origin, otherwise login fails with `redirect_uri` mismatch:
+   - Local: `http://localhost:4200/dashboard`
+   - Production: `https://www.legal-gate.co/dashboard`
+   - Add the exact staging `/dashboard` URL separately. Avoid wildcard production origins.
+7. Set the application homepage and post-logout URL to the corresponding frontend origin root.
+   Sign-out returns to `/` (the public landing), so keep the post-logout URL at the origin root.
 8. Create a server API key for Intake. Never put this key in Vercel or browser configuration.
 
 No custom JWT template, FGA model, social login, enterprise SSO, organization switching UI, or
