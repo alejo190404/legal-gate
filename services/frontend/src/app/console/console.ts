@@ -4,9 +4,18 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
+import { PixelIconComponent } from './pixel-icon';
 
 type ViewName = 'loading' | 'register' | 'billing' | 'console';
-type ConsoleSection = 'dashboard' | 'consultas' | 'configuracion' | 'billing';
+type ConsoleView =
+  | 'inbox'
+  | 'rules'
+  | 'calendar'
+  | 'templates'
+  | 'team'
+  | 'availability'
+  | 'settings'
+  | 'billing';
 
 interface ClassificationResult {
   label: string;
@@ -229,8 +238,9 @@ interface BillingCheckoutAttempt {
 
 @Component({
   selector: 'app-console',
-  imports: [FormsModule, LoadingScreenComponent],
+  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent],
   templateUrl: './console.html',
+  styleUrl: './console.scss',
 })
 export class ConsoleComponent implements OnInit, OnDestroy {
   private static readonly checkoutAttemptStorageKey = 'legalgate-active-checkout';
@@ -248,8 +258,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly consultations = signal<Consultation[]>([]);
   readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
   readonly settingsLoaded = signal(false);
-  readonly activeConsoleSection = signal<ConsoleSection>('dashboard');
+  readonly activeView = signal<ConsoleView>('inbox');
+  readonly userDisplayName = signal('');
+  readonly inboxFilter = signal<string>('all');
+  readonly inboxQuery = signal('');
+  readonly selectedConsultationId = signal<string | null>(null);
   readonly isConsoleMenuOpen = signal(false);
+  readonly isCreateOpen = signal(false);
   readonly isTutorialOpen = signal(false);
   readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
@@ -315,12 +330,66 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return this.tenantSettings()?.intakeEmail || 'No disponible';
   });
   readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
-  readonly consoleSections: ReadonlyArray<{ id: ConsoleSection; label: string }> = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'consultas', label: 'Consultas' },
-    { id: 'configuracion', label: 'Configuracion' },
-    { id: 'billing', label: 'Facturacion' },
+  // App-kit navigation: a Workspace group and a Configure group, mirroring the
+  // "Firm Console" in Claude Design. `wip` screens render the design-system
+  // Work-in-progress placeholder instead of a built feature.
+  readonly workspaceNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
+    { id: 'inbox', icon: 'inbox', label: 'Bandeja de intake' },
+    { id: 'rules', icon: 'route', label: 'Reglas de enrutamiento' },
+    { id: 'calendar', icon: 'calendar', label: 'Consultas', wip: true },
+    { id: 'templates', icon: 'mail', label: 'Plantillas de correo', wip: true },
   ];
+  readonly configureNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
+    { id: 'team', icon: 'users', label: 'Equipo' },
+    { id: 'availability', icon: 'clock', label: 'Disponibilidad', wip: true },
+    { id: 'settings', icon: 'gear', label: 'Ajustes' },
+    { id: 'billing', icon: 'file', label: 'Facturacion' },
+  ];
+
+  readonly statusChips: ReadonlyArray<{ id: string; label: string }> = [
+    { id: 'all', label: 'Todas' },
+    { id: 'new', label: 'Nuevas' },
+    { id: 'classified', label: 'Clasificadas' },
+    { id: 'scheduled', label: 'Agendadas' },
+    { id: 'confirmed', label: 'Confirmadas' },
+    { id: 'unrouted', label: 'Sin ruta' },
+  ];
+
+  readonly tenCells = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+  private readonly viewMeta: Record<ConsoleView, { crumb: string; title: string }> = {
+    inbox: { crumb: 'Espacio de trabajo', title: 'Bandeja de intake' },
+    rules: { crumb: 'Configurar', title: 'Reglas de enrutamiento' },
+    calendar: { crumb: 'Espacio de trabajo', title: 'Consultas' },
+    templates: { crumb: 'Configurar', title: 'Plantillas de correo' },
+    team: { crumb: 'Configurar', title: 'Equipo' },
+    availability: { crumb: 'Configurar', title: 'Disponibilidad' },
+    settings: { crumb: 'Configurar', title: 'Ajustes' },
+    billing: { crumb: 'Configurar', title: 'Facturacion' },
+  };
+
+  readonly filteredConsultations = computed(() => {
+    const filter = this.inboxFilter();
+    const query = this.inboxQuery().trim().toLowerCase();
+    let list = this.consultations();
+    if (filter !== 'all') {
+      list = list.filter((consultation) => this.statusKey(consultation) === filter);
+    }
+    if (query) {
+      list = list.filter((consultation) =>
+        [consultation.clientName, consultation.clientEmail, consultation.id, consultation.summary]
+          .join(' ')
+          .toLowerCase()
+          .includes(query),
+      );
+    }
+    return list;
+  });
+
+  readonly selectedConsultation = computed(() => {
+    const id = this.selectedConsultationId();
+    return id ? (this.consultations().find((consultation) => consultation.id === id) ?? null) : null;
+  });
 
   ngOnInit(): void {
     const user = this.auth.user();
@@ -399,6 +468,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.billingError.set('');
     this.clearCheckoutAttempt();
     this.isConsoleMenuOpen.set(false);
+    this.activeView.set('inbox');
+    this.selectedConsultationId.set(null);
+    this.inboxFilter.set('all');
+    this.isCreateOpen.set(false);
     this.clearConsoleErrors();
     this.auth.signOut();
   }
@@ -411,7 +484,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       next: (session) => {
         this.tenantId.set(session.tenantId);
         this.sessionEmail.set(this.auth.user()?.email ?? '');
-        this.activeConsoleSection.set('dashboard');
+        this.userDisplayName.set(session.displayName ?? '');
+        this.activeView.set('inbox');
+        this.selectedConsultationId.set(null);
+        this.inboxFilter.set('all');
         this.isConsoleMenuOpen.set(false);
         this.clearConsoleErrors();
         this.statusMessage.set('Sesion segura iniciada. Validando suscripcion...');
@@ -659,29 +735,132 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.isConsoleMenuOpen.set(false);
   }
 
-  goToConsoleSection(section: ConsoleSection): void {
-    this.activeConsoleSection.set(section);
+  setView(view: ConsoleView): void {
+    this.activeView.set(view);
     this.closeConsoleMenu();
-    document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  @HostListener('window:scroll')
-  updateActiveConsoleSection(): void {
-    if (this.view() !== 'console') {
-      return;
+  viewTitle(): string {
+    return this.viewMeta[this.activeView()].title;
+  }
+
+  viewCrumb(): string {
+    return this.viewMeta[this.activeView()].crumb;
+  }
+
+  navCount(id: ConsoleView): number | null {
+    switch (id) {
+      case 'inbox':
+        return this.totalConsultations();
+      case 'rules':
+        return this.settingsForm.routingRules.length;
+      case 'team':
+        return this.settingsForm.lawyers.length;
+      default:
+        return null;
     }
+  }
 
-    const threshold = 140;
-    const visibleSection = this.consoleSections.reduce<ConsoleSection>((current, section) => {
-      const element = document.getElementById(section.id);
-      if (!element) {
-        return current;
-      }
+  selectConsultation(id: string): void {
+    this.selectedConsultationId.set(id);
+  }
 
-      return element.getBoundingClientRect().top <= threshold ? section.id : current;
-    }, 'dashboard');
+  closeDetail(): void {
+    this.selectedConsultationId.set(null);
+  }
 
-    this.activeConsoleSection.set(visibleSection);
+  setInboxFilter(id: string): void {
+    this.inboxFilter.set(id);
+  }
+
+  statusCount(id: string): number {
+    const all = this.consultations();
+    return id === 'all' ? all.length : all.filter((consultation) => this.statusKey(consultation) === id).length;
+  }
+
+  // Derive one of the design-system workflow stages from the real consultation
+  // fields (event schedule + assignment + classification confidence).
+  statusKey(consultation: Consultation): string {
+    const event = consultation.event;
+    const eventStatus = (event?.status ?? '').toUpperCase();
+    const consultationStatus = (consultation.status ?? '').toUpperCase();
+    if (event?.scheduledStart) {
+      return event.scheduledWithinSla === true ||
+        eventStatus.includes('CONFIRM') ||
+        consultationStatus.includes('CONFIRM')
+        ? 'confirmed'
+        : 'scheduled';
+    }
+    if (event?.lawyerDisplayName || event?.lawyerEmail || consultation.assignedLawyerEmail) {
+      return 'classified';
+    }
+    const confidence = consultation.classification?.confidence;
+    if (confidence != null && confidence < 0.5) {
+      return 'unrouted';
+    }
+    if (consultationStatus.includes('UNROUT') || consultationStatus.includes('FAIL')) {
+      return 'unrouted';
+    }
+    return 'new';
+  }
+
+  badgeClass(consultation: Consultation): string {
+    return 'badge st-' + this.statusKey(consultation);
+  }
+
+  statusLabel(consultation: Consultation): string {
+    return (
+      {
+        new: 'Nuevo',
+        classified: 'Clasificado',
+        scheduled: 'Agendado',
+        confirmed: 'Confirmado',
+        unrouted: 'Sin ruta',
+      }[this.statusKey(consultation)] ?? 'Nuevo'
+    );
+  }
+
+  leadLawyer(consultation: Consultation): string | null {
+    return (
+      consultation.event?.lawyerDisplayName ||
+      consultation.event?.lawyerEmail ||
+      consultation.assignedLawyerEmail ||
+      null
+    );
+  }
+
+  confidencePercent(consultation: Consultation): number | null {
+    const value = consultation.classification?.confidence;
+    return value == null ? null : Math.round(value * 100);
+  }
+
+  confidenceFilled(consultation: Consultation): number {
+    const value = consultation.classification?.confidence;
+    return value == null ? 0 : Math.round(value * 10);
+  }
+
+  confidenceLow(consultation: Consultation): boolean {
+    const value = consultation.classification?.confidence;
+    return value != null && value < 0.5;
+  }
+
+  initials(value: string | null | undefined): string {
+    const parts = (value ?? '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) {
+      return '—';
+    }
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  openCreate(): void {
+    this.isCreateOpen.set(true);
+  }
+
+  closeCreate(): void {
+    this.isCreateOpen.set(false);
   }
 
   @HostListener('window:keydown.escape')
@@ -1033,6 +1212,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           this.form.clientEmail = '';
           this.form.summary = '';
           this.form.preferredWindow = '';
+          this.isCreateOpen.set(false);
+          this.selectedConsultationId.set(consultation.id);
           this.isSubmitting.set(false);
         },
         error: (error: HttpErrorResponse) =>
