@@ -1205,7 +1205,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         next: (consultation) => {
           this.consultations.update((items) => [consultation, ...items]);
           this.consultationsErrorMessage.set('');
-          this.statusMessage.set('Consulta creada y enrutada para revision del equipo legal.');
+          this.statusMessage.set('Consulta creada, clasificada y agendada.');
           this.form.clientName = '';
           this.form.clientEmail = '';
           this.form.summary = '';
