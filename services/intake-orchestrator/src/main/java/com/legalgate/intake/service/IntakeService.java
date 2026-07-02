@@ -72,11 +72,14 @@ public class IntakeService {
     private final IntakeRepository intakeRepository;
     private final IntakeProperties intakeProperties;
     private final ConsultationClassifierClient consultationClassifierClient;
+    private final EmailTemplateRenderer emailTemplateRenderer;
 
-    public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties, ConsultationClassifierClient consultationClassifierClient) {
+    public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties,
+            ConsultationClassifierClient consultationClassifierClient, EmailTemplateRenderer emailTemplateRenderer) {
         this.intakeRepository = intakeRepository;
         this.intakeProperties = intakeProperties;
         this.consultationClassifierClient = consultationClassifierClient;
+        this.emailTemplateRenderer = emailTemplateRenderer;
     }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
@@ -389,6 +392,7 @@ public class IntakeService {
                     consultation.id(), event.id(), type, "LAWYER", event.lawyerEmail(),
                     subjectFor(type, consultation, event),
                     lawyerEmailBody(consultation, event),
+                    emailTemplateRenderer.renderLawyer(consultation, event),
                     ics
             ));
         }
@@ -397,6 +401,7 @@ public class IntakeService {
                     consultation.id(), event.id(), type, "CLIENT", consultation.clientEmail(),
                     subjectFor(type, consultation, event),
                     clientEmailBody(consultation, event),
+                    emailTemplateRenderer.renderClient(consultation, event),
                     ics
             ));
         }

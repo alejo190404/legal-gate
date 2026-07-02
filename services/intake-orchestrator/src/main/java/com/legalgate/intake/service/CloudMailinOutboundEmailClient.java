@@ -4,6 +4,7 @@ import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -37,25 +38,29 @@ class CloudMailinOutboundEmailClient {
             throw new IllegalStateException("CloudMailin outbound credentials are not configured.");
         }
 
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("from", intakeProperties.notificationsFromName() + " <" + intakeProperties.notificationsFromEmail() + ">");
+        payload.put("to", notification.recipientEmail());
+        payload.put("test_mode", intakeProperties.outboundTestMode());
+        payload.put("subject", notification.subject());
+        payload.put("plain", notification.body());
+        if (notification.htmlBody() != null && !notification.htmlBody().isBlank()) {
+            payload.put("html", notification.htmlBody());
+        }
+        payload.put("tags", List.of("legalgate", "consultation", "tenant:" + tagValue(notification.tenantId()), notification.type(), notification.recipientRole()));
+        payload.put("attachments", List.of(Map.of(
+                "file_name", "legalgate-consultation.ics",
+                "content", Base64.getEncoder().encodeToString(notification.icsContent().getBytes(StandardCharsets.UTF_8)),
+                "content_type", "text/calendar; method=REQUEST; charset=UTF-8"
+        )));
+
         @SuppressWarnings("unchecked")
         Map<String, Object> response = restClient.post()
                 .uri("https://api.cloudmailin.com/api/v0.1/{username}/messages",
                         UriUtils.encodePathSegment(intakeProperties.cloudmailinSmtpUsername().trim(), StandardCharsets.UTF_8))
                 .headers(headers -> headers.setBearerAuth(intakeProperties.cloudmailinApiToken().trim()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "from", intakeProperties.notificationsFromName() + " <" + intakeProperties.notificationsFromEmail() + ">",
-                        "to", notification.recipientEmail(),
-                        "test_mode", intakeProperties.outboundTestMode(),
-                        "subject", notification.subject(),
-                        "plain", notification.body(),
-                        "tags", List.of("legalgate", "consultation", "tenant:" + tagValue(notification.tenantId()), notification.type(), notification.recipientRole()),
-                        "attachments", List.of(Map.of(
-                                "file_name", "legalgate-consultation.ics",
-                                "content", Base64.getEncoder().encodeToString(notification.icsContent().getBytes(StandardCharsets.UTF_8)),
-                                "content_type", "text/calendar; method=REQUEST; charset=UTF-8"
-                        ))
-                ))
+                .body(payload)
                 .retrieve()
                 .body(Map.class);
 

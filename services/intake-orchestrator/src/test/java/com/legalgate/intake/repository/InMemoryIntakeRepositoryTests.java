@@ -37,6 +37,17 @@ class InMemoryIntakeRepositoryTests {
                 .isEqualTo("Second");
     }
 
+    @Test
+    void htmlBodySurvivesQueueAndClaim() {
+        InMemoryIntakeRepository repository = new InMemoryIntakeRepository();
+        repository.queueNotifications("tenant-a", List.of(notification("First")));
+
+        assertThat(repository.claimPendingNotifications(1))
+                .singleElement()
+                .extracting(NotificationOutboxItem::htmlBody)
+                .isEqualTo("<p>Body</p>");
+    }
+
     private NotificationOutboxItem notification(String subject) {
         return new NotificationOutboxItem(
                 "11111111-1111-1111-1111-111111111111",
@@ -46,6 +57,7 @@ class InMemoryIntakeRepositoryTests {
                 "client@example.com",
                 subject,
                 "Body",
+                "<p>Body</p>",
                 "BEGIN:VCALENDAR\nEND:VCALENDAR"
         );
     }

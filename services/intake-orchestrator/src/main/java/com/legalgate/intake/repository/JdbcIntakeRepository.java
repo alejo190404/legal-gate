@@ -361,7 +361,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                         for update skip locked
                     )
                     returning id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                              subject, body, ics_content, status, attempts, provider_message_id, last_error,
+                              subject, body, html_body, ics_content, status, attempts, provider_message_id, last_error,
                               created_at, updated_at, next_attempt_at
                     """, this::mapNotification, MAX_NOTIFICATION_ATTEMPTS, Math.max(1, limit));
             return notifications;
@@ -599,8 +599,8 @@ class JdbcIntakeRepository implements IntakeRepository {
             jdbcTemplate.update("""
                     insert into notification_outbox (
                       tenant_id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                      subject, body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
+                      subject, body, html_body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
                     on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role)
                     where status in ('PENDING', 'SENDING', 'FAILED')
                     do nothing
@@ -614,6 +614,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                     notification.recipientEmail(),
                     notification.subject(),
                     notification.body(),
+                    notification.htmlBody(),
                     notification.icsContent());
         }
     }
@@ -629,6 +630,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("recipient_email"),
                 rs.getString("subject"),
                 rs.getString("body"),
+                rs.getString("html_body"),
                 rs.getString("ics_content"),
                 rs.getString("status"),
                 rs.getInt("attempts"),
