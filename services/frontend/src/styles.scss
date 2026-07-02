@@ -1,13 +1,22 @@
-/* LegalGate global design tokens — adapted from the exported design system. */
+/* LegalGate — Color & Type Foundations (canonical, synced from the design system
+   "LegalGate Design System" · colors_and_type.css). Product CSS references the
+   SEMANTIC tokens below, never the raw scales. */
 :root {
+  /* Orange — the brand primary ("Gate Orange"). */
   --orange-50: #fff4ed;
   --orange-100: #ffe3d1;
   --orange-200: #ffc2a1;
-  --orange-500: #fa5410;
+  --orange-300: #ff9a67;
+  --orange-400: #ff7333;
+  --orange-500: #fa5410; /* PRIMARY — Gate Orange */
   --orange-600: #db4205;
   --orange-700: #b23404;
+  --orange-800: #802603;
+  --orange-900: #4f1802;
+
+  /* Stone — warm-tinted neutrals. "Paper" at the top, "ink" at the bottom. */
   --stone-0: #ffffff;
-  --stone-50: #faf8f4;
+  --stone-50: #faf8f4; /* app paper */
   --stone-100: #f3efe8;
   --stone-150: #ece7dd;
   --stone-200: #e2dbce;
@@ -18,7 +27,9 @@
   --stone-700: #4a443a;
   --stone-800: #322e27;
   --stone-900: #1f1c18;
-  --stone-950: #15120f;
+  --stone-950: #15120f; /* ink */
+
+  /* Semantic accents / consultation-workflow stage colors. */
   --green-500: #2e7d54;
   --green-50: #e7f2ec;
   --amber-500: #c98a09;
@@ -30,24 +41,99 @@
   --violet-500: #6a4c93;
   --violet-50: #ede7f3;
 
+  /* --- SEMANTIC TOKENS --- */
+  /* Brand */
   --brand: var(--orange-500);
   --brand-hover: var(--orange-600);
+  --brand-press: var(--orange-700);
   --brand-subtle: var(--orange-50);
+  --brand-border: var(--orange-200);
+  --on-brand: #ffffff;
+
+  /* Foreground / text */
   --fg-1: var(--stone-950);
   --fg-2: var(--stone-700);
   --fg-3: var(--stone-500);
+  --fg-4: var(--stone-400);
   --fg-on-dark: var(--stone-50);
+
+  /* Background / surface */
   --bg-app: var(--stone-50);
   --bg-surface: var(--stone-0);
   --bg-sunken: var(--stone-100);
+  --bg-hover: var(--stone-100);
+  --bg-active: var(--stone-150);
   --bg-inverse: var(--stone-950);
+
+  /* Lines */
   --border: var(--stone-200);
-  --border-ink: var(--stone-950);
+  --border-strong: var(--stone-300);
+  --border-ink: var(--stone-950); /* signature 1.5px ink hairline */
   --divider: var(--stone-150);
+
+  /* Focus ring */
   --ring: var(--orange-500);
+
+  /* Status (semantic + workflow stages) */
+  --status-new-fg: var(--violet-500);        --status-new-bg: var(--violet-50);
+  --status-classified-fg: var(--blue-500);   --status-classified-bg: var(--blue-50);
+  --status-scheduled-fg: var(--amber-500);   --status-scheduled-bg: var(--amber-50);
+  --status-confirmed-fg: var(--green-500);   --status-confirmed-bg: var(--green-50);
+  --status-unrouted-fg: var(--red-500);      --status-unrouted-bg: var(--red-50);
+
+  /* --- TYPE --- */
   --font-sans: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --text-display: 64px;  --lh-display: 0.98; --ls-display: -0.03em;
+  --text-h1: 44px;       --lh-h1: 1.04;      --ls-h1: -0.025em;
+  --text-h2: 32px;       --lh-h2: 1.08;      --ls-h2: -0.02em;
+  --text-h3: 24px;       --lh-h3: 1.15;      --ls-h3: -0.015em;
+  --text-h4: 19px;       --lh-h4: 1.25;      --ls-h4: -0.01em;
+  --text-lg: 17px;       --lh-lg: 1.5;
+  --text-base: 15px;     --lh-base: 1.55;
+  --text-sm: 13px;       --lh-sm: 1.5;
+  --text-xs: 12px;       --lh-xs: 1.4;
+  --text-2xs: 11px;      --lh-2xs: 1.35;
+
+  /* Mono label — the "system voice": tags, timestamps, IDs, keystrokes. */
+  --label-size: 11px;
+  --label-tracking: 0.12em;
+  --label-weight: 500;
+
+  /* --- SPACING (4px base grid) --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* --- RADII — pixel-native: mostly ZERO. --- */
+  --radius-0: 0px;
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-full: 999px;
+
+  /* --- ELEVATION — flat by default; depth from ink hairline + hard offset. --- */
+  --shadow-none: none;
+  --shadow-hairline: 0 0 0 1px var(--border);
+  --shadow-pixel: 3px 3px 0 0 var(--stone-950);
+  --shadow-pixel-brand: 3px 3px 0 0 var(--orange-500);
+  --shadow-raised: 0 1px 0 0 var(--border-strong), 0 2px 0 0 var(--stone-100);
+  --shadow-overlay: 0 8px 0 0 rgba(21, 18, 15, 0.04), 0 2px 24px -8px rgba(21, 18, 15, 0.35);
+
+  /* --- MOTION — quick, mechanical, no bounce. --- */
   --ease: cubic-bezier(0.2, 0, 0.1, 1);
+  --dur-fast: 90ms;
+  --dur: 150ms;
+  --dur-slow: 240ms;
 }
 
 * {
