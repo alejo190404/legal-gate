@@ -1,5 +1,21 @@
 package com.legalgate.intake.billing;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legalgate.intake.billing.BillingModels.CheckoutResponse;
@@ -9,22 +25,8 @@ import com.legalgate.intake.billing.BillingModels.Quote;
 import com.legalgate.intake.billing.BillingModels.Status;
 import com.legalgate.intake.billing.BillingModels.Subscription;
 import com.legalgate.intake.billing.BillingModels.WebhookEvent;
-import com.legalgate.intake.service.WorkosClient;
 import com.legalgate.intake.config.IntakeProperties;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
-import java.util.List;
-import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.server.ResponseStatusException;
+import com.legalgate.intake.service.WorkosClient;
 
 @Service
 public class BillingService {
@@ -130,6 +132,8 @@ public class BillingService {
             attachProviderResponse(pending, created);
             return response(repository.subscriptionByIdempotency(tenantSlug, idempotencyKey.trim()).orElse(pending));
         } catch (RestClientException ambiguous) {
+            log.warn("Mercado Pago createPending failed tenant={} externalReference={}",              
+            tenantSlug, pending.id(), ambiguous);  
             Optional<JsonNode> recovered = safeFind(pending.id().toString());
             if (recovered.isPresent()) {
                 attachProviderResponse(pending, recovered.get());
