@@ -14,6 +14,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -153,12 +154,24 @@ public class BillingService {
         Subscription subscription = repository.currentSubscription(tenantSlug)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "subscription_not_found"));
         if ("CANCELED".equals(subscription.status())) return accessService.status(tenantSlug);
-        if (subscription.providerSubscriptionId() == null) {
-            repository.cancel(subscription.id(), tenantSlug, Instant.now());
-            return accessService.status(tenantSlug);
+        // Cancel at the provider first; only mark the local subscription canceled once Mercado
+        // Pago confirms. A provider failure must leave the DB untouched so the row never claims
+        // CANCELED while automatic billing continues.
+        if (subscription.providerSubscriptionId() != null) {
+            try {
+                provider.cancel(subscription.providerSubscriptionId());
+            } catch (RestClientResponseException rejected) {
+                log.error("Mercado Pago cancel rejected tenant={} preapproval={} status={} body={}",
+                        tenantSlug, subscription.providerSubscriptionId(),
+                        rejected.getStatusCode(), rejected.getResponseBodyAsString(), rejected);
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "provider_cancel_failed", rejected);
+            } catch (RestClientException unreachable) {
+                log.error("Mercado Pago cancel failed tenant={} preapproval={}",
+                        tenantSlug, subscription.providerSubscriptionId(), unreachable);
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "provider_cancel_failed", unreachable);
+            }
         }
         repository.cancel(subscription.id(), tenantSlug, Instant.now());
-        provider.cancel(subscription.providerSubscriptionId());
         return accessService.status(tenantSlug);
     }
 
