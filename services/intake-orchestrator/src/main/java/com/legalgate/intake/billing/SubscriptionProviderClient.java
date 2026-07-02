@@ -1,15 +1,17 @@
 package com.legalgate.intake.billing;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.legalgate.intake.billing.BillingModels.Quote;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.legalgate.intake.billing.BillingModels.Quote;
 
 @Component
 public class SubscriptionProviderClient {
@@ -95,7 +97,7 @@ public class SubscriptionProviderClient {
         ensureEnabled();
         restClient.put().uri("/preapproval/{id}", providerId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("status", "canceled"))
+                .body(Map.of("status", "cancelled"))
                 .retrieve().toBodilessEntity();
     }
 
