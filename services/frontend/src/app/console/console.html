@@ -408,8 +408,6 @@
 
                     @if (c.event; as ev) {
                       <div class="section-h">Evento y SLA</div>
-                      <div class="detail-row"><span class="k">Estado</span><span class="tag">{{ ev.status }}</span></div>
-                      <div class="detail-row"><span class="k">Prioridad</span><span class="tag">{{ priorityLabel(c) }}</span></div>
                       <div class="detail-row">
                         <span class="k">SLA</span>
                         <span class="mono" style="font-size: 13px">{{ ev.urgencyName }} · {{ ev.slaDays }}d</span>
@@ -419,28 +417,6 @@
                         <span class="mono" style="font-size: 13px">{{ eventScheduleLabel(c) }}</span>
                       </div>
                     }
-
-                    <div class="section-h">Notificaciones</div>
-                    <div class="detail-row">
-                      <span class="k">Correo</span>
-                      <span class="mono" style="font-size: 13px">{{ c.notifications.emailQueued ? 'en cola' : '—' }}</span>
-                    </div>
-                    <div class="detail-row">
-                      <span class="k">Calendario</span>
-                      <span class="mono" style="font-size: 13px"
-                        >{{ c.notifications.calendarUpdateQueued ? 'en cola' : '—' }}</span
-                      >
-                    </div>
-                  </div>
-
-                  <div class="confbar">
-                    @if (statusKey(c) === 'confirmed') {
-                      <span class="done"><pixel-icon name="check-double" [size]="18" />Consulta confirmada y registrada</span>
-                    } @else {
-                      <span class="mono" style="font-size: 12px; color: var(--fg-3)">Seguimiento del equipo legal</span>
-                    }
-                    <a class="btn ghost" [href]="'mailto:' + c.clientEmail"><pixel-icon name="send" [size]="15" />Responder</a>
-                    <div class="spacer"></div>
                   </div>
                 </section>
               }
@@ -504,15 +480,6 @@
                                   Eliminar
                                 </button>
                               }
-                              <button
-                                class="icon-button save-icon-button"
-                                type="submit"
-                                aria-label="Guardar"
-                                title="Guardar"
-                                [disabled]="
-                                  isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
-                                "
-                              >
                                 <span aria-hidden="true">&#10003;</span>
                               </button>
                             </div>
@@ -689,15 +656,6 @@
                                   Eliminar
                                 </button>
                               }
-                              <button
-                                class="icon-button save-icon-button"
-                                type="submit"
-                                aria-label="Guardar"
-                                title="Guardar"
-                                [disabled]="
-                                  isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
-                                "
-                              >
                                 <span aria-hidden="true">&#10003;</span>
                               </button>
                             </div>
@@ -951,17 +909,6 @@
             </div>
           }
 
-          @case ('calendar') {
-            <div class="empty">
-              <span class="wip-badge">Work in progress</span>
-              <pixel-icon name="calendar" [size]="52" color="var(--stone-300)" />
-              <div class="lg-h4">Consultas</div>
-              <div class="lg-small">
-                La vista de calendario semanal está en construcción. Conéctala a la agenda de la firma
-                para ver y confirmar horarios de consulta.
-              </div>
-            </div>
-          }
 
           @case ('templates') {
             <div class="empty">
@@ -975,17 +922,6 @@
             </div>
           }
 
-          @case ('availability') {
-            <div class="empty">
-              <span class="wip-badge">Work in progress</span>
-              <pixel-icon name="clock" [size]="52" color="var(--stone-300)" />
-              <div class="lg-h4">Disponibilidad</div>
-              <div class="lg-small">
-                La vista consolidada de disponibilidad está en construcción. Por ahora, configura las
-                horas de cada abogado en la sección Equipo.
-              </div>
-            </div>
-          }
         }
       </main>
 
