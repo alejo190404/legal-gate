@@ -125,622 +125,913 @@
   }
 
   @case ('console') {
-    <main class="console-shell" [class.menu-open]="isConsoleMenuOpen()">
+    <div class="shell" [class.menu-open]="isConsoleMenuOpen()">
       <button
-        class="mobile-menu-button"
+        class="fc-scrim"
         type="button"
-        [attr.aria-expanded]="isConsoleMenuOpen()"
-        aria-controls="console-sidebar"
-        (click)="toggleConsoleMenu()"
-      >
-        <span aria-hidden="true">☰</span>
-        <span>{{ isConsoleMenuOpen() ? 'Cerrar menú' : 'Menú' }}</span>
-      </button>
+        aria-label="Cerrar menú del panel"
+        (click)="closeConsoleMenu()"
+      ></button>
 
-      @if (isConsoleMenuOpen()) {
-        <button
-          class="sidebar-scrim"
-          type="button"
-          aria-label="Cerrar menú del panel"
-          (click)="closeConsoleMenu()"
-        ></button>
-      }
-
-      <aside id="console-sidebar" class="sidebar" aria-label="Navegación del panel">
-        <a
-          class="brand"
-          href="#top"
-          aria-label="LegalGate Console"
-          (click)="goToConsoleSection('dashboard')"
-        >
+      <aside class="side" aria-label="Navegación del panel">
+        <div class="side-logo">
           <img src="/assets/logo-mark.svg" alt="" aria-hidden="true" />
-          <span>LegalGate Console</span>
-        </a>
-        <nav aria-label="Secciones del panel">
-          @for (section of consoleSections; track section.id) {
-            <button
-              type="button"
-              [class.is-active]="activeConsoleSection() === section.id"
-              [attr.aria-current]="activeConsoleSection() === section.id ? 'page' : null"
-              (click)="goToConsoleSection(section.id)"
+          <b>LegalGate</b>
+        </div>
+
+        <button class="side-firm" type="button" (click)="setView('settings')" title="Ajustes de la firma">
+          <span class="mk">{{ initials(tenantId()) }}</span>
+          <span style="line-height: 1.3; min-width: 0; flex: 1">
+            <span
+              style="display: block; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
+              >{{ tenantId() || 'Tu firma' }}</span
             >
-              {{ section.label }}
+            <span class="lbl" style="font-size: 9px">Workspace</span>
+          </span>
+          <pixel-icon name="chevron-down" [size]="14" color="var(--fg-3)" />
+        </button>
+
+        <nav class="nav" aria-label="Secciones del panel">
+          @for (item of workspaceNav; track item.id) {
+            <button
+              class="nav-item"
+              type="button"
+              [class.active]="activeView() === item.id"
+              [attr.aria-current]="activeView() === item.id ? 'page' : null"
+              (click)="setView(item.id)"
+            >
+              <pixel-icon
+                [name]="item.icon"
+                [size]="18"
+                [color]="activeView() === item.id ? 'var(--brand)' : 'var(--fg-3)'"
+              />
+              <span>{{ item.label }}</span>
+              @if (item.wip) {
+                <span class="wip">WIP</span>
+              } @else if (navCount(item.id) !== null) {
+                <span class="cnt">{{ navCount(item.id) }}</span>
+              }
+            </button>
+          }
+          <div class="nav-sec lbl">Configurar</div>
+          @for (item of configureNav; track item.id) {
+            <button
+              class="nav-item"
+              type="button"
+              [class.active]="activeView() === item.id"
+              [attr.aria-current]="activeView() === item.id ? 'page' : null"
+              (click)="setView(item.id)"
+            >
+              <pixel-icon
+                [name]="item.icon"
+                [size]="18"
+                [color]="activeView() === item.id ? 'var(--brand)' : 'var(--fg-3)'"
+              />
+              <span>{{ item.label }}</span>
+              @if (item.wip) {
+                <span class="wip">WIP</span>
+              } @else if (navCount(item.id) !== null) {
+                <span class="cnt">{{ navCount(item.id) }}</span>
+              }
             </button>
           }
         </nav>
-        <div class="tenant-card">
-          <span>Tenant activo</span>
-          <strong>{{ tenantId() }}</strong>
-          <small>Sesión admin</small>
-          <button class="link-button" type="button" (click)="logout()">
-            Cerrar sesión
+
+        <div class="side-user">
+          <span class="avatar">{{ initials(userDisplayName() || sessionEmail()) }}</span>
+          <div style="line-height: 1.25; flex: 1; min-width: 0">
+            <div class="u-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
+              {{ userDisplayName() || sessionEmail() || 'Sesión' }}
+            </div>
+            <div class="lbl" style="font-size: 9px">Sesión admin</div>
+          </div>
+          <button class="iconbtn" type="button" aria-label="Cerrar sesión" title="Cerrar sesión" (click)="logout()">
+            <pixel-icon name="x" [size]="15" />
           </button>
         </div>
       </aside>
 
-      <section id="top" class="workspace">
+      <main class="main">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">INTAKE · ADMIN REVIEW</p>
-            <h1>Panel operativo de intake</h1>
-            <p>
-              Revisa las consultas recibidas, su urgencia y los datos clave para que el equipo legal
-              pueda priorizar el seguimiento.
-            </p>
-          </div>
           <button
-            class="btn btn-secondary"
+            class="fc-menu-btn"
             type="button"
-            (click)="loadConsultations()"
-            [disabled]="isLoading()"
+            [attr.aria-expanded]="isConsoleMenuOpen()"
+            (click)="toggleConsoleMenu()"
           >
-            {{ isLoading() ? 'Actualizando…' : 'Actualizar datos' }}
+            <span aria-hidden="true">☰</span>
           </button>
+          <div>
+            <div class="crumb">{{ viewCrumb() }}</div>
+            <h1>{{ viewTitle() }}</h1>
+          </div>
+          @if (activeView() === 'inbox') {
+            <div class="search">
+              <pixel-icon name="search" [size]="15" />
+              <input
+                [ngModel]="inboxQuery()"
+                (ngModelChange)="inboxQuery.set($event)"
+                name="inboxQuery"
+                placeholder="Buscar por cliente, correo o ID…"
+                aria-label="Buscar consultas"
+              />
+            </div>
+            <button
+              class="iconbtn"
+              type="button"
+              title="Actualizar"
+              aria-label="Actualizar consultas"
+              (click)="loadConsultations()"
+              [disabled]="isLoading()"
+            >
+              <pixel-icon name="check-double" [size]="16" />
+            </button>
+            <button class="btn" type="button" (click)="openCreate()">
+              <pixel-icon name="plus" [size]="15" />Nueva consulta
+            </button>
+          } @else {
+            <div class="spacer"></div>
+          }
         </header>
 
-        <section id="dashboard" class="metric-grid" aria-label="Resumen del intake">
-          <article class="metric-card">
-            <span>Total</span><strong>{{ totalConsultations() }}</strong
-            ><small>{{ totalConsultations() }} consultas cargadas</small>
-          </article>
-          <article class="metric-card is-urgent">
-            <span>Urgentes</span><strong>{{ urgentConsultations() }}</strong
-            ><small>Ultimo nivel configurado</small>
-          </article>
-          <article class="metric-card">
-            <span>Email intake</span><strong>{{ configuredIntakeEmail() }}</strong
-            ><small>Entrada principal</small>
-          </article>
-          <article class="metric-card">
-            <span>Último caso</span>
-            @if (latestConsultation(); as latest) {
-              <strong>{{ latest.clientName }}</strong
-              ><small>{{ formatDate(latest.createdAt) }}</small>
-            } @else {
-              <strong>—</strong><small>Sin consultas</small>
-            }
-          </article>
-        </section>
+        @switch (activeView()) {
+          @case ('inbox') {
+            <div class="inbox" [class.split]="selectedConsultation()">
+              <div class="list-wrap">
+                <div class="filterbar">
+                  @for (chip of statusChips; track chip.id) {
+                    <button
+                      class="fchip"
+                      type="button"
+                      [class.on]="inboxFilter() === chip.id"
+                      (click)="setInboxFilter(chip.id)"
+                    >
+                      @if (chip.id !== 'all') {
+                        <span [class]="'dot st-' + chip.id"></span>
+                      }
+                      {{ chip.label }}<span class="n">{{ statusCount(chip.id) }}</span>
+                    </button>
+                  }
+                  <div class="spacer"></div>
+                  <button class="iconbtn" type="button" title="Filtros" aria-label="Filtros">
+                    <pixel-icon name="filter" [size]="16" />
+                  </button>
+                  <button class="iconbtn" type="button" title="Orden" aria-label="Orden">
+                    <pixel-icon name="sliders" [size]="16" />
+                  </button>
+                </div>
 
-        <div class="content-grid">
-          <section id="consultas" class="panel-card cases-panel" aria-labelledby="cases-title">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Admin review</p>
-                <h2 id="cases-title">Bandeja de consultas</h2>
+                @if (consultationsErrorMessage()) {
+                  <div class="panel-error" style="margin: 16px 18px 0">
+                    <strong>{{ consultationsErrorMessage() }}</strong>
+                    <span>No pudimos actualizar la bandeja. Intenta de nuevo.</span>
+                  </div>
+                }
+
+                @if (isLoading()) {
+                  <div class="empty">
+                    <pixel-icon name="inbox" [size]="48" color="var(--stone-300)" />
+                    <div class="lg-h4">Cargando consultas…</div>
+                    <div class="lg-small">Trayendo la bandeja desde el servicio de intake.</div>
+                  </div>
+                } @else if (!filteredConsultations().length) {
+                  <div class="empty">
+                    <pixel-icon name="inbox" [size]="48" color="var(--stone-300)" />
+                    <div class="lg-h4">No hay consultas en esta vista</div>
+                    <div class="lg-small">
+                      Los correos de clientes aparecen aquí segundos después de llegar a tu bandeja de
+                      intake.
+                    </div>
+                  </div>
+                } @else {
+                  <div class="list">
+                    @for (c of filteredConsultations(); track c.id) {
+                      <button
+                        class="lead"
+                        type="button"
+                        [class.sel]="selectedConsultationId() === c.id"
+                        (click)="selectConsultation(c.id)"
+                      >
+                        <span class="avatar">{{ initials(c.clientName) }}</span>
+                        <span style="min-width: 0; display: block">
+                          <span class="who" style="display: block">{{ c.clientName }}</span>
+                          <span class="meta" style="display: block">{{ c.clientEmail }} · {{ c.id.slice(0, 8) }}</span>
+                          <span class="snip" style="display: block">{{ c.summary }}</span>
+                          <span class="row">
+                            @if (c.classification.label) {
+                              <span class="tag">{{ c.classification.label }}</span>
+                            }
+                            @if (leadLawyer(c); as lw) {
+                              <span class="route">→ {{ lw }}</span>
+                            } @else {
+                              <span class="route none">→ sin asignar</span>
+                            }
+                          </span>
+                        </span>
+                        <span class="right">
+                          <span [class]="badgeClass(c)"><span class="dot"></span>{{ statusLabel(c) }}</span>
+                          <span class="time">{{ formatDate(c.createdAt) }}</span>
+                        </span>
+                      </button>
+                    }
+                  </div>
+                }
               </div>
-              <span class="pill">{{ totalConsultations() }} consultas</span>
+
+              @if (selectedConsultation(); as c) {
+                <section class="detail">
+                  <div class="detail-hd">
+                    <div style="display: flex; gap: 12px; min-width: 0">
+                      <span class="avatar" style="width: 38px; height: 38px">{{ initials(c.clientName) }}</span>
+                      <div style="min-width: 0">
+                        <div class="who">{{ c.clientName }}</div>
+                        <div class="email">{{ c.clientEmail }}</div>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center">
+                      <span [class]="badgeClass(c)"><span class="dot"></span>{{ statusLabel(c) }}</span>
+                      <button class="iconbtn" type="button" (click)="closeDetail()" title="Cerrar" aria-label="Cerrar detalle">
+                        <pixel-icon name="x" [size]="15" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="detail-body">
+                    <div class="lbl" style="margin-bottom: 8px">
+                      {{ c.id.slice(0, 8) }} · recibido {{ formatDate(c.createdAt) }}
+                    </div>
+                    <div style="font-weight: 600; font-size: 15px; margin-bottom: 10px">
+                      {{ c.consultationType || c.classification.label || 'Consulta de intake' }}
+                    </div>
+                    <div class="email">{{ c.summary }}</div>
+
+                    <div class="section-h">Clasificación</div>
+                    <div class="detail-row">
+                      <span class="k">Área / concepto</span>
+                      <span class="tag">{{ c.classification.concept || c.classification.label || 'Por definir' }}</span>
+                    </div>
+                    @if (confidencePercent(c) !== null) {
+                      <div class="detail-row">
+                        <span class="k">Confianza</span>
+                        <span class="conf">
+                          @for (i of tenCells; track i) {
+                            <i [class.on]="i < confidenceFilled(c)" [class.low]="confidenceLow(c)"></i>
+                          }
+                          <span class="pct">{{ confidencePercent(c) }}%</span>
+                        </span>
+                      </div>
+                    }
+                    <div class="detail-row">
+                      <span class="k">Urgencia</span>
+                      <span class="tag">{{ urgencyLabel(c) }}</span>
+                    </div>
+                    @if (c.classification.matchedUrgentKeywords.length) {
+                      <div class="detail-row">
+                        <span class="k">Palabras clave</span>
+                        <span style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end">
+                          @for (kw of c.classification.matchedUrgentKeywords; track kw) {
+                            <span class="tag kw">{{ kw }}</span>
+                          }
+                        </span>
+                      </div>
+                    }
+                    <div class="detail-row">
+                      <span class="k">Asignada a</span>
+                      @if (leadLawyer(c); as lw) {
+                        <span style="font-size: 14px; font-weight: 500">{{ lw }}</span>
+                      } @else {
+                        <span class="route none" style="font-family: var(--font-mono); font-size: 12px; color: var(--red-500)"
+                          >sin asignar</span
+                        >
+                      }
+                    </div>
+
+                    @if (c.event; as ev) {
+                      <div class="section-h">Evento y SLA</div>
+                      <div class="detail-row"><span class="k">Estado</span><span class="tag">{{ ev.status }}</span></div>
+                      <div class="detail-row"><span class="k">Prioridad</span><span class="tag">{{ priorityLabel(c) }}</span></div>
+                      <div class="detail-row">
+                        <span class="k">SLA</span>
+                        <span class="mono" style="font-size: 13px">{{ ev.urgencyName }} · {{ ev.slaDays }}d</span>
+                      </div>
+                      <div class="detail-row">
+                        <span class="k">Agenda</span>
+                        <span class="mono" style="font-size: 13px">{{ eventScheduleLabel(c) }}</span>
+                      </div>
+                    }
+
+                    <div class="section-h">Notificaciones</div>
+                    <div class="detail-row">
+                      <span class="k">Correo</span>
+                      <span class="mono" style="font-size: 13px">{{ c.notifications.emailQueued ? 'en cola' : '—' }}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="k">Calendario</span>
+                      <span class="mono" style="font-size: 13px"
+                        >{{ c.notifications.calendarUpdateQueued ? 'en cola' : '—' }}</span
+                      >
+                    </div>
+                  </div>
+
+                  <div class="confbar">
+                    @if (statusKey(c) === 'confirmed') {
+                      <span class="done"><pixel-icon name="check-double" [size]="18" />Consulta confirmada y registrada</span>
+                    } @else {
+                      <span class="mono" style="font-size: 12px; color: var(--fg-3)">Seguimiento del equipo legal</span>
+                    }
+                    <a class="btn ghost" [href]="'mailto:' + c.clientEmail"><pixel-icon name="send" [size]="15" />Responder</a>
+                    <div class="spacer"></div>
+                  </div>
+                </section>
+              }
+            </div>
+          }
+
+          @case ('rules') {
+            <div class="page">
+              <div class="page-head">
+                <div>
+                  <div class="lg-h4">Reglas de enrutamiento</div>
+                  <div class="lg-small">
+                    Cada regla asigna abogado, palabras clave de urgencia y niveles de SLA. La primera
+                    coincidencia enruta la consulta.
+                  </div>
+                </div>
+              </div>
+
+              <form class="settings-form" (submit)="saveSettings(); $event.preventDefault()">
+                <section class="config-frame" aria-labelledby="rules-config-title">
+                  <div class="config-frame-header">
+                    <div>
+                      <p class="eyebrow">Reglas</p>
+                      <h3 id="rules-config-title">Reglas</h3>
+                    </div>
+                    <span class="config-count"
+                      >{{ activeRuleIndex() + 1 }} / {{ settingsForm.routingRules.length }}</span
+                    >
+                  </div>
+
+                  <div class="config-carousel">
+                    <button
+                      class="carousel-rail carousel-rail-prev"
+                      type="button"
+                      aria-label="Regla anterior"
+                      title="Anterior"
+                      [disabled]="activeRuleIndex() === 0"
+                      (click)="previousRoutingRule()"
+                    >
+                      <span aria-hidden="true">&lt;</span>
+                    </button>
+
+                    @for (rule of settingsForm.routingRules; track $index; let index = $index) {
+                      @if (index === activeRuleIndex()) {
+                        <section
+                          class="routing-rule config-card"
+                          aria-label="Regla de enrutamiento {{ index + 1 }}"
+                        >
+                          <div class="config-card-header">
+                            <div>
+                              <h4>Regla {{ index + 1 }}</h4>
+                              <span>{{ rule.name }}</span>
+                            </div>
+                            <div class="config-card-actions">
+                              @if (settingsForm.routingRules.length > 1) {
+                                <button
+                                  class="link-button"
+                                  type="button"
+                                  (click)="removeRoutingRule(index)"
+                                >
+                                  Eliminar
+                                </button>
+                              }
+                              <button
+                                class="icon-button save-icon-button"
+                                type="submit"
+                                aria-label="Guardar"
+                                title="Guardar"
+                                [disabled]="
+                                  isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
+                                "
+                              >
+                                <span aria-hidden="true">&#10003;</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div class="config-field-grid">
+                            <div class="form-field">
+                              <label [for]="'routeLawyer-' + index">Abogada</label>
+                              <select
+                                [id]="'routeLawyer-' + index"
+                                [name]="'routeLawyer-' + index"
+                                [(ngModel)]="rule.lawyerId"
+                                (ngModelChange)="syncRouteLawyer(rule)"
+                              >
+                                @for (lawyer of settingsForm.lawyers; track lawyer.id) {
+                                  <option [ngValue]="lawyer.id">
+                                    {{ lawyer.displayName || lawyer.email }}
+                                  </option>
+                                }
+                              </select>
+                              <small>{{ lawyerSummary(rule.lawyerId) }}</small>
+                            </div>
+                            <div class="form-field">
+                              <label [for]="'urgentKeywords-' + index">Palabras clave</label>
+                              <input
+                                [id]="'urgentKeywords-' + index"
+                                [name]="'urgentKeywords-' + index"
+                                [(ngModel)]="rule.urgentKeywords"
+                              />
+                            </div>
+                            <div class="form-field full-span">
+                              <label [for]="'routeDescription-' + index">Descripcion breve</label>
+                              <textarea
+                                [id]="'routeDescription-' + index"
+                                [name]="'routeDescription-' + index"
+                                [(ngModel)]="rule.description"
+                                rows="2"
+                              ></textarea>
+                            </div>
+                          </div>
+
+                          <div class="editor-table sla-table">
+                            <div class="editor-table-title">
+                              <label>Niveles de urgencia</label>
+                              <button
+                                class="link-button"
+                                type="button"
+                                (click)="addUrgencyDefinition(rule)"
+                              >
+                                Agregar urgencia
+                              </button>
+                            </div>
+                            <div class="sla-header" aria-hidden="true">
+                              <span>Nombre</span><span>SLA dias</span><span></span>
+                            </div>
+                            @for (
+                              urgency of rule.urgencyDefinitions;
+                              track $index;
+                              let urgencyIndex = $index
+                            ) {
+                              <div class="sla-row">
+                                <input
+                                  [name]="'urgencyName-' + index + '-' + urgencyIndex"
+                                  [(ngModel)]="urgency.name"
+                                  aria-label="Nombre"
+                                />
+                                <input
+                                  [name]="'urgencySla-' + index + '-' + urgencyIndex"
+                                  [(ngModel)]="urgency.slaDays"
+                                  type="number"
+                                  min="0"
+                                  aria-label="SLA dias"
+                                />
+                                <button
+                                  class="link-button"
+                                  type="button"
+                                  (click)="removeUrgencyDefinition(rule, urgencyIndex)"
+                                >
+                                  Eliminar
+                                </button>
+                              </div>
+                            }
+                          </div>
+                        </section>
+                      }
+                    }
+
+                    <button
+                      class="carousel-rail carousel-rail-next"
+                      [class.is-add]="isLastRoutingRule()"
+                      type="button"
+                      [attr.aria-label]="isLastRoutingRule() ? 'Agregar regla' : 'Regla siguiente'"
+                      [attr.title]="isLastRoutingRule() ? 'Agregar regla' : 'Siguiente'"
+                      (click)="isLastRoutingRule() ? addRoutingRule() : nextRoutingRule()"
+                    >
+                      <span aria-hidden="true">{{ isLastRoutingRule() ? '+' : '>' }}</span>
+                    </button>
+                  </div>
+                </section>
+
+                @if (settingsErrorMessage()) {
+                  <div class="panel-error">
+                    <strong>{{ settingsErrorMessage() }}</strong>
+                    <span>No se guardaron cambios en la configuracion.</span>
+                  </div>
+                }
+
+                <div class="settings-actions">
+                  <button
+                    class="btn"
+                    type="submit"
+                    [disabled]="isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()"
+                  >
+                    {{ isSubmitting() ? 'Guardando...' : 'Guardar reglas' }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          }
+
+          @case ('team') {
+            <div class="page">
+              <div class="page-head">
+                <div>
+                  <div class="lg-h4">Equipo</div>
+                  <div class="lg-small">
+                    Abogados de la firma, su contacto, enlace de reunión y ventanas de disponibilidad.
+                  </div>
+                </div>
+              </div>
+
+              <form class="settings-form" (submit)="saveSettings(); $event.preventDefault()">
+                <section class="config-frame" aria-labelledby="lawyers-config-title">
+                  <div class="config-frame-header">
+                    <div>
+                      <p class="eyebrow">Abogados</p>
+                      <h3 id="lawyers-config-title">Abogados</h3>
+                    </div>
+                    <span class="config-count"
+                      >{{ activeLawyerIndex() + 1 }} / {{ settingsForm.lawyers.length }}</span
+                    >
+                  </div>
+
+                  <div class="config-carousel">
+                    <button
+                      class="carousel-rail carousel-rail-prev"
+                      type="button"
+                      aria-label="Abogado anterior"
+                      title="Anterior"
+                      [disabled]="activeLawyerIndex() === 0"
+                      (click)="previousLawyer()"
+                    >
+                      <span aria-hidden="true">&lt;</span>
+                    </button>
+
+                    @for (lawyer of settingsForm.lawyers; track $index; let lawyerIndex = $index) {
+                      @if (lawyerIndex === activeLawyerIndex()) {
+                        <section
+                          class="lawyer-card config-card"
+                          aria-label="Abogado {{ lawyerIndex + 1 }}"
+                        >
+                          <div class="config-card-header">
+                            <div>
+                              <h4>Abogado {{ lawyerIndex + 1 }}</h4>
+                              <span>{{ lawyer.displayName || lawyer.email || 'Sin datos' }}</span>
+                            </div>
+                            <div class="config-card-actions">
+                              @if (settingsForm.lawyers.length > 1) {
+                                <button
+                                  class="link-button"
+                                  type="button"
+                                  (click)="removeLawyer(lawyerIndex)"
+                                >
+                                  Eliminar
+                                </button>
+                              }
+                              <button
+                                class="icon-button save-icon-button"
+                                type="submit"
+                                aria-label="Guardar"
+                                title="Guardar"
+                                [disabled]="
+                                  isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
+                                "
+                              >
+                                <span aria-hidden="true">&#10003;</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div class="config-field-grid">
+                            <div class="form-field">
+                              <label [for]="'lawyerName-' + lawyerIndex">Nombre</label>
+                              <input
+                                [id]="'lawyerName-' + lawyerIndex"
+                                [name]="'lawyerName-' + lawyerIndex"
+                                [(ngModel)]="lawyer.displayName"
+                              />
+                            </div>
+                            <div class="form-field">
+                              <label [for]="'lawyerEmail-' + lawyerIndex">Email</label>
+                              <input
+                                [id]="'lawyerEmail-' + lawyerIndex"
+                                [name]="'lawyerEmail-' + lawyerIndex"
+                                [(ngModel)]="lawyer.email"
+                                type="email"
+                              />
+                            </div>
+                            <div class="form-field">
+                              <label [for]="'lawyerMeeting-' + lawyerIndex">Meeting URL</label>
+                              <input
+                                [id]="'lawyerMeeting-' + lawyerIndex"
+                                [name]="'lawyerMeeting-' + lawyerIndex"
+                                [(ngModel)]="lawyer.meetingUrl"
+                                type="url"
+                              />
+                            </div>
+                            <div class="form-field duration-field">
+                              <label [for]="'lawyerDuration-' + lawyerIndex">Duracion</label>
+                              <input
+                                [id]="'lawyerDuration-' + lawyerIndex"
+                                [name]="'lawyerDuration-' + lawyerIndex"
+                                [(ngModel)]="lawyer.defaultEventDurationMinutes"
+                                type="number"
+                                min="15"
+                                step="15"
+                              />
+                            </div>
+                          </div>
+
+                          <div class="editor-table availability-table">
+                            <div class="editor-table-title">
+                              <label>Ventanas disponibles</label>
+                              <button
+                                class="link-button"
+                                type="button"
+                                (click)="addAvailabilityWindow(lawyer)"
+                              >
+                                Agregar ventana
+                              </button>
+                            </div>
+                            <div class="availability-header" aria-hidden="true">
+                              <span>Dia</span>
+                              <span>Inicio</span>
+                              <span>Fin</span>
+                              <span></span>
+                            </div>
+                            @for (
+                              window of lawyer.availabilityWindows;
+                              track $index;
+                              let windowIndex = $index
+                            ) {
+                              <div class="availability-row">
+                                <select
+                                  [name]="'weekday-' + lawyerIndex + '-' + windowIndex"
+                                  [(ngModel)]="window.weekday"
+                                  aria-label="Dia"
+                                >
+                                  <option [ngValue]="1">Lunes</option>
+                                  <option [ngValue]="2">Martes</option>
+                                  <option [ngValue]="3">Miercoles</option>
+                                  <option [ngValue]="4">Jueves</option>
+                                  <option [ngValue]="5">Viernes</option>
+                                  <option [ngValue]="6">Sabado</option>
+                                  <option [ngValue]="7">Domingo</option>
+                                </select>
+                                <input
+                                  [name]="'start-' + lawyerIndex + '-' + windowIndex"
+                                  [(ngModel)]="window.startTime"
+                                  type="time"
+                                  aria-label="Inicio"
+                                />
+                                <input
+                                  [name]="'end-' + lawyerIndex + '-' + windowIndex"
+                                  [(ngModel)]="window.endTime"
+                                  type="time"
+                                  aria-label="Fin"
+                                />
+                                <button
+                                  class="link-button"
+                                  type="button"
+                                  (click)="removeAvailabilityWindow(lawyer, windowIndex)"
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            }
+                          </div>
+                        </section>
+                      }
+                    }
+
+                    <button
+                      class="carousel-rail carousel-rail-next"
+                      [class.is-add]="isLastLawyer()"
+                      type="button"
+                      [attr.aria-label]="isLastLawyer() ? 'Agregar abogado' : 'Abogado siguiente'"
+                      [attr.title]="isLastLawyer() ? 'Agregar abogado' : 'Siguiente'"
+                      (click)="isLastLawyer() ? addLawyer() : nextLawyer()"
+                    >
+                      <span aria-hidden="true">{{ isLastLawyer() ? '+' : '>' }}</span>
+                    </button>
+                  </div>
+                </section>
+
+                @if (settingsErrorMessage()) {
+                  <div class="panel-error">
+                    <strong>{{ settingsErrorMessage() }}</strong>
+                    <span>No se guardaron cambios en la configuracion.</span>
+                  </div>
+                }
+
+                <div class="settings-actions">
+                  <button
+                    class="btn"
+                    type="submit"
+                    [disabled]="isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()"
+                  >
+                    {{ isSubmitting() ? 'Guardando...' : 'Guardar equipo' }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          }
+
+          @case ('settings') {
+            <div class="page">
+              <div class="page-head">
+                <div>
+                  <div class="lg-h4">Ajustes</div>
+                  <div class="lg-small">Conexión de la bandeja de intake y datos de la firma.</div>
+                </div>
+              </div>
+
+              <div class="settings-form">
+                <div class="readonly-intake-email" aria-live="polite">
+                  <span>Email LegalGate de intake</span>
+                  <strong>{{ configuredIntakeEmail() }}</strong>
+                  <div class="icon-actions">
+                    <button
+                      class="icon-button"
+                      type="button"
+                      aria-label="Copiar email LegalGate de intake"
+                      title="Copiar"
+                      [disabled]="!hasCanonicalIntakeEmail()"
+                      (click)="copyIntakeEmail()"
+                    >
+                      <span aria-hidden="true">⧉</span>
+                    </button>
+                    <button
+                      class="icon-button"
+                      type="button"
+                      aria-label="Abrir tutorial para reenviar correo personal"
+                      title="Tutorial"
+                      (click)="openTutorial()"
+                    >
+                      <span aria-hidden="true">✎</span>
+                    </button>
+                  </div>
+                  @if (copyStatus()) {
+                    <em>{{ copyStatus() }}</em>
+                  }
+                </div>
+
+                <div class="config-frame">
+                  <div class="config-frame-header">
+                    <div>
+                      <p class="eyebrow">Firma</p>
+                      <h3>Workspace</h3>
+                    </div>
+                    <span class="config-count">{{ tenantId() }}</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Sesión</label>
+                    <input [value]="userDisplayName() || sessionEmail()" readonly />
+                  </div>
+                </div>
+              </div>
+            </div>
+          }
+
+          @case ('billing') {
+            <div class="page">
+              <div class="page-head">
+                <div>
+                  <div class="lg-h4">Facturación</div>
+                  <div class="lg-small">Estado de la suscripción de la firma e historial de pagos.</div>
+                </div>
+              </div>
+
+              <section class="panel-card billing-console-panel" aria-labelledby="billing-console-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Suscripcion</p>
+                    <h2 id="billing-console-title">Facturacion</h2>
+                  </div>
+                  @if (billingStatus(); as status) {
+                    <span class="pill">{{ status.status }}</span>
+                  }
+                </div>
+                @if (billingStatus(); as status) {
+                  <p>{{ status.message }}</p>
+                  @if (status.subscription; as subscription) {
+                    <dl class="billing-details">
+                      <div><dt>Plan</dt><dd>{{ subscription.plan.displayName }}</dd></div>
+                      <div><dt>Cobro recurrente</dt><dd>{{ formatCop(subscription.currentAmountCop) }}</dd></div>
+                      <div><dt>Proxima fecha / acceso</dt><dd>{{ status.accessEndsAt ? formatDate(status.accessEndsAt) : 'Pendiente' }}</dd></div>
+                      <div><dt>Cupon</dt><dd>{{ subscription.coupon?.code || 'Sin cupon' }}</dd></div>
+                    </dl>
+                    @if (status.payments.length) {
+                      <div class="billing-payment-list">
+                        <h3>Historial de pagos</h3>
+                        @for (payment of status.payments; track payment.providerPaymentId) {
+                          <div>
+                            <span>{{ payment.paidAt ? formatDate(payment.paidAt) : 'Pendiente' }}</span>
+                            <strong>{{ formatCop(payment.amountCop) }}</strong>
+                            <em>{{ payment.status }}</em>
+                          </div>
+                        }
+                      </div>
+                    }
+                    @if (!subscription.cancelAtPeriodEnd && subscription.status !== 'CANCELED') {
+                      <button class="btn sec" type="button" (click)="cancelBilling()" [disabled]="isBillingLoading()">
+                        Cancelar renovacion
+                      </button>
+                    }
+                  }
+                  @if (billingMessage()) {
+                    <div class="status-banner"><strong>{{ billingMessage() }}</strong></div>
+                  }
+                  @if (billingError()) {
+                    <div class="panel-error"><strong>{{ billingError() }}</strong></div>
+                  }
+                }
+              </section>
+            </div>
+          }
+
+          @case ('calendar') {
+            <div class="empty">
+              <span class="wip-badge">Work in progress</span>
+              <pixel-icon name="calendar" [size]="52" color="var(--stone-300)" />
+              <div class="lg-h4">Consultas</div>
+              <div class="lg-small">
+                La vista de calendario semanal está en construcción. Conéctala a la agenda de la firma
+                para ver y confirmar horarios de consulta.
+              </div>
+            </div>
+          }
+
+          @case ('templates') {
+            <div class="empty">
+              <span class="wip-badge">Work in progress</span>
+              <pixel-icon name="mail" [size]="52" color="var(--stone-300)" />
+              <div class="lg-h4">Plantillas de correo</div>
+              <div class="lg-small">
+                Aquí vivirán las plantillas de confirmación, recordatorio y formulario de intake.
+                Conecta esta pantalla a tu almacén de plantillas.
+              </div>
+            </div>
+          }
+
+          @case ('availability') {
+            <div class="empty">
+              <span class="wip-badge">Work in progress</span>
+              <pixel-icon name="clock" [size]="52" color="var(--stone-300)" />
+              <div class="lg-h4">Disponibilidad</div>
+              <div class="lg-small">
+                La vista consolidada de disponibilidad está en construcción. Por ahora, configura las
+                horas de cada abogado en la sección Equipo.
+              </div>
+            </div>
+          }
+        }
+      </main>
+
+      @if (isCreateOpen()) {
+        <div class="modal-backdrop" role="presentation" (click)="closeCreate()"></div>
+        <section
+          class="tutorial-modal pixel-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Nueva consulta</p>
+              <h2 id="create-title">Crear consulta manual</h2>
+            </div>
+            <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="closeCreate()">
+              ×
+            </button>
+          </header>
+          <form class="settings-form" (submit)="createConsultation(); $event.preventDefault()">
+            <div class="form-field">
+              <label for="ccName">Nombre del cliente</label>
+              <input id="ccName" name="ccName" [(ngModel)]="form.clientName" autocomplete="name" />
+            </div>
+            <div class="form-field">
+              <label for="ccEmail">Correo</label>
+              <input id="ccEmail" name="ccEmail" type="email" [(ngModel)]="form.clientEmail" autocomplete="email" />
+            </div>
+            <div class="form-field">
+              <label for="ccSummary">Resumen</label>
+              <textarea id="ccSummary" name="ccSummary" rows="3" [(ngModel)]="form.summary"></textarea>
+            </div>
+            <div class="form-field">
+              <label for="ccWindow">Ventana preferida (opcional)</label>
+              <input id="ccWindow" name="ccWindow" [(ngModel)]="form.preferredWindow" />
             </div>
             @if (consultationsErrorMessage()) {
-              <div class="panel-error">
-                <strong>{{ consultationsErrorMessage() }}</strong>
-                <span>No pudimos actualizar la bandeja. Intenta de nuevo.</span>
-              </div>
+              <div class="panel-error"><strong>{{ consultationsErrorMessage() }}</strong></div>
             }
-            @if (isLoading()) {
-              <p class="empty-state">Cargando consultas desde el backend…</p>
-            } @else if (!consultations().length) {
-              <p class="empty-state">Todavía no hay consultas para revisar.</p>
-            } @else {
-              <div class="case-list">
-                @for (consultation of consultations(); track consultation.id) {
-                  <article class="case-card" [class.is-urgent]="isHighestUrgency(consultation)">
-                    <header>
-                      <div>
-                        <strong>{{ consultation.clientName }}</strong
-                        ><span>{{ consultation.clientEmail }}</span>
-                      </div>
-                      <em>{{ consultation.urgency }}</em>
-                    </header>
-                    <p>{{ consultation.summary }}</p>
-                    <dl>
-                      <div>
-                        <dt>Estado</dt>
-                        <dd>{{ consultation.status }}</dd>
-                      </div>
-                      <div>
-                        <dt>Tipo</dt>
-                        <dd>{{ consultation.consultationType || 'Por definir' }}</dd>
-                      </div>
-                      <div>
-                        <dt>Abogado</dt>
-                        <dd>
-                          {{
-                            consultation.event?.lawyerDisplayName ||
-                              consultation.event?.lawyerEmail ||
-                              consultation.assignedLawyerEmail ||
-                              'Por definir'
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Concepto</dt>
-                        <dd>{{ consultation.classification.concept || 'Por definir' }}</dd>
-                      </div>
-                      <div>
-                        <dt>Clasificación</dt>
-                        <dd>{{ consultation.classification.label }}</dd>
-                      </div>
-                      <div>
-                        <dt>Ventana</dt>
-                        <dd>{{ consultation.preferredWindow || 'Por definir' }}</dd>
-                      </div>
-                      <div>
-                        <dt>Creada</dt>
-                        <dd>{{ formatDate(consultation.createdAt) }}</dd>
-                      </div>
-                    </dl>
-                    <footer>
-                      <span class="tag">{{ urgencyLabel(consultation) }}</span>
-                      @for (
-                        keyword of consultation.classification.matchedUrgentKeywords;
-                        track keyword
-                      ) {
-                        <span class="tag is-keyword">{{ keyword }}</span>
-                      }
-                      <span class="tag">{{ consultation.event?.status || 'Sin evento' }}</span>
-                      <span class="tag">{{ priorityLabel(consultation) }}</span>
-                    </footer>
-                  </article>
-                }
-              </div>
-            }
-          </section>
-
-          <section
-            id="configuracion"
-            class="panel-card settings-panel"
-            aria-labelledby="settings-title"
-          >
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Configuracion</p>
-                <h2 id="settings-title">Reglas de enrutamiento</h2>
-              </div>
-              <span class="pill">{{ tenantId() }}</span>
-            </div>
-
-            <form class="settings-form" (submit)="saveSettings(); $event.preventDefault()">
-              <div class="readonly-intake-email" aria-live="polite">
-                <span>Email LegalGate de intake</span>
-                <strong>{{ configuredIntakeEmail() }}</strong>
-                <div class="icon-actions">
-                  <button
-                    class="icon-button"
-                    type="button"
-                    aria-label="Copiar email LegalGate de intake"
-                    title="Copiar"
-                    [disabled]="!hasCanonicalIntakeEmail()"
-                    (click)="copyIntakeEmail()"
-                  >
-                    <span aria-hidden="true">⧉</span>
-                  </button>
-                  <button
-                    class="icon-button"
-                    type="button"
-                    aria-label="Abrir tutorial para reenviar correo personal"
-                    title="Tutorial"
-                    (click)="openTutorial()"
-                  >
-                    <span aria-hidden="true">✎</span>
-                  </button>
-                </div>
-                @if (copyStatus()) {
-                  <em>{{ copyStatus() }}</em>
-                }
-              </div>
-
-              <section class="config-frame" aria-labelledby="lawyers-config-title">
-                <div class="config-frame-header">
-                  <div>
-                    <p class="eyebrow">Abogados</p>
-                    <h3 id="lawyers-config-title">Abogados</h3>
-                  </div>
-                  <span class="config-count"
-                    >{{ activeLawyerIndex() + 1 }} / {{ settingsForm.lawyers.length }}</span
-                  >
-                </div>
-
-                <div class="config-carousel">
-                  <button
-                    class="carousel-rail carousel-rail-prev"
-                    type="button"
-                    aria-label="Abogado anterior"
-                    title="Anterior"
-                    [disabled]="activeLawyerIndex() === 0"
-                    (click)="previousLawyer()"
-                  >
-                    <span aria-hidden="true">&lt;</span>
-                  </button>
-
-                  @for (lawyer of settingsForm.lawyers; track $index; let lawyerIndex = $index) {
-                    @if (lawyerIndex === activeLawyerIndex()) {
-                      <section
-                        class="lawyer-card config-card"
-                        aria-label="Abogado {{ lawyerIndex + 1 }}"
-                      >
-                        <div class="config-card-header">
-                          <div>
-                            <h4>Abogado {{ lawyerIndex + 1 }}</h4>
-                            <span>{{ lawyer.displayName || lawyer.email || 'Sin datos' }}</span>
-                          </div>
-                          <div class="config-card-actions">
-                            @if (settingsForm.lawyers.length > 1) {
-                              <button
-                                class="link-button"
-                                type="button"
-                                (click)="removeLawyer(lawyerIndex)"
-                              >
-                                Eliminar
-                              </button>
-                            }
-                            <button
-                              class="icon-button save-icon-button"
-                              type="submit"
-                              aria-label="Guardar"
-                              title="Guardar"
-                              [disabled]="
-                                isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
-                              "
-                            >
-                              <span aria-hidden="true">&#10003;</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div class="config-field-grid">
-                          <div class="form-field">
-                            <label [for]="'lawyerName-' + lawyerIndex">Nombre</label>
-                            <input
-                              [id]="'lawyerName-' + lawyerIndex"
-                              [name]="'lawyerName-' + lawyerIndex"
-                              [(ngModel)]="lawyer.displayName"
-                            />
-                          </div>
-                          <div class="form-field">
-                            <label [for]="'lawyerEmail-' + lawyerIndex">Email</label>
-                            <input
-                              [id]="'lawyerEmail-' + lawyerIndex"
-                              [name]="'lawyerEmail-' + lawyerIndex"
-                              [(ngModel)]="lawyer.email"
-                              type="email"
-                            />
-                          </div>
-                          <div class="form-field">
-                            <label [for]="'lawyerMeeting-' + lawyerIndex">Meeting URL</label>
-                            <input
-                              [id]="'lawyerMeeting-' + lawyerIndex"
-                              [name]="'lawyerMeeting-' + lawyerIndex"
-                              [(ngModel)]="lawyer.meetingUrl"
-                              type="url"
-                            />
-                          </div>
-                          <div class="form-field duration-field">
-                            <label [for]="'lawyerDuration-' + lawyerIndex">Duracion</label>
-                            <input
-                              [id]="'lawyerDuration-' + lawyerIndex"
-                              [name]="'lawyerDuration-' + lawyerIndex"
-                              [(ngModel)]="lawyer.defaultEventDurationMinutes"
-                              type="number"
-                              min="15"
-                              step="15"
-                            />
-                          </div>
-                        </div>
-
-                        <div class="editor-table availability-table">
-                          <div class="editor-table-title">
-                            <label>Ventanas disponibles</label>
-                            <button
-                              class="link-button"
-                              type="button"
-                              (click)="addAvailabilityWindow(lawyer)"
-                            >
-                              Agregar ventana
-                            </button>
-                          </div>
-                          <div class="availability-header" aria-hidden="true">
-                            <span>Dia</span>
-                            <span>Inicio</span>
-                            <span>Fin</span>
-                            <span></span>
-                          </div>
-                          @for (
-                            window of lawyer.availabilityWindows;
-                            track $index;
-                            let windowIndex = $index
-                          ) {
-                            <div class="availability-row">
-                              <select
-                                [name]="'weekday-' + lawyerIndex + '-' + windowIndex"
-                                [(ngModel)]="window.weekday"
-                                aria-label="Dia"
-                              >
-                                <option [ngValue]="1">Lunes</option>
-                                <option [ngValue]="2">Martes</option>
-                                <option [ngValue]="3">Miercoles</option>
-                                <option [ngValue]="4">Jueves</option>
-                                <option [ngValue]="5">Viernes</option>
-                                <option [ngValue]="6">Sabado</option>
-                                <option [ngValue]="7">Domingo</option>
-                              </select>
-                              <input
-                                [name]="'start-' + lawyerIndex + '-' + windowIndex"
-                                [(ngModel)]="window.startTime"
-                                type="time"
-                                aria-label="Inicio"
-                              />
-                              <input
-                                [name]="'end-' + lawyerIndex + '-' + windowIndex"
-                                [(ngModel)]="window.endTime"
-                                type="time"
-                                aria-label="Fin"
-                              />
-                              <button
-                                class="link-button"
-                                type="button"
-                                (click)="removeAvailabilityWindow(lawyer, windowIndex)"
-                              >
-                                Quitar
-                              </button>
-                            </div>
-                          }
-                        </div>
-                      </section>
-                    }
-                  }
-
-                  <button
-                    class="carousel-rail carousel-rail-next"
-                    [class.is-add]="isLastLawyer()"
-                    type="button"
-                    [attr.aria-label]="isLastLawyer() ? 'Agregar abogado' : 'Abogado siguiente'"
-                    [attr.title]="isLastLawyer() ? 'Agregar abogado' : 'Siguiente'"
-                    (click)="isLastLawyer() ? addLawyer() : nextLawyer()"
-                  >
-                    <span aria-hidden="true">{{ isLastLawyer() ? '+' : '>' }}</span>
-                  </button>
-                </div>
-              </section>
-
-              <section class="config-frame" aria-labelledby="rules-config-title">
-                <div class="config-frame-header">
-                  <div>
-                    <p class="eyebrow">Reglas</p>
-                    <h3 id="rules-config-title">Reglas</h3>
-                  </div>
-                  <span class="config-count"
-                    >{{ activeRuleIndex() + 1 }} / {{ settingsForm.routingRules.length }}</span
-                  >
-                </div>
-
-                <div class="config-carousel">
-                  <button
-                    class="carousel-rail carousel-rail-prev"
-                    type="button"
-                    aria-label="Regla anterior"
-                    title="Anterior"
-                    [disabled]="activeRuleIndex() === 0"
-                    (click)="previousRoutingRule()"
-                  >
-                    <span aria-hidden="true">&lt;</span>
-                  </button>
-
-                  @for (rule of settingsForm.routingRules; track $index; let index = $index) {
-                    @if (index === activeRuleIndex()) {
-                      <section
-                        class="routing-rule config-card"
-                        aria-label="Regla de enrutamiento {{ index + 1 }}"
-                      >
-                        <div class="config-card-header">
-                          <div>
-                            <h4>Regla {{ index + 1 }}</h4>
-                            <span>{{ rule.name }}</span>
-                          </div>
-                          <div class="config-card-actions">
-                            @if (settingsForm.routingRules.length > 1) {
-                              <button
-                                class="link-button"
-                                type="button"
-                                (click)="removeRoutingRule(index)"
-                              >
-                                Eliminar
-                              </button>
-                            }
-                            <button
-                              class="icon-button save-icon-button"
-                              type="submit"
-                              aria-label="Guardar"
-                              title="Guardar"
-                              [disabled]="
-                                isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()
-                              "
-                            >
-                              <span aria-hidden="true">&#10003;</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div class="config-field-grid">
-                          <div class="form-field">
-                            <label [for]="'routeLawyer-' + index">Abogada</label>
-                            <select
-                              [id]="'routeLawyer-' + index"
-                              [name]="'routeLawyer-' + index"
-                              [(ngModel)]="rule.lawyerId"
-                              (ngModelChange)="syncRouteLawyer(rule)"
-                            >
-                              @for (lawyer of settingsForm.lawyers; track lawyer.id) {
-                                <option [ngValue]="lawyer.id">
-                                  {{ lawyer.displayName || lawyer.email }}
-                                </option>
-                              }
-                            </select>
-                            <small>{{ lawyerSummary(rule.lawyerId) }}</small>
-                          </div>
-                          <div class="form-field">
-                            <label [for]="'urgentKeywords-' + index">Palabras clave</label>
-                            <input
-                              [id]="'urgentKeywords-' + index"
-                              [name]="'urgentKeywords-' + index"
-                              [(ngModel)]="rule.urgentKeywords"
-                            />
-                          </div>
-                          <div class="form-field full-span">
-                            <label [for]="'routeDescription-' + index">Descripcion breve</label>
-                            <textarea
-                              [id]="'routeDescription-' + index"
-                              [name]="'routeDescription-' + index"
-                              [(ngModel)]="rule.description"
-                              rows="2"
-                            ></textarea>
-                          </div>
-                        </div>
-
-                        <div class="editor-table sla-table">
-                          <div class="editor-table-title">
-                            <label>Niveles de urgencia</label>
-                            <button
-                              class="link-button"
-                              type="button"
-                              (click)="addUrgencyDefinition(rule)"
-                            >
-                              Agregar urgencia
-                            </button>
-                          </div>
-                          <div class="sla-header" aria-hidden="true">
-                            <span>Nombre</span><span>SLA dias</span><span></span>
-                          </div>
-                          @for (
-                            urgency of rule.urgencyDefinitions;
-                            track $index;
-                            let urgencyIndex = $index
-                          ) {
-                            <div class="sla-row">
-                              <input
-                                [name]="'urgencyName-' + index + '-' + urgencyIndex"
-                                [(ngModel)]="urgency.name"
-                                aria-label="Nombre"
-                              />
-                              <input
-                                [name]="'urgencySla-' + index + '-' + urgencyIndex"
-                                [(ngModel)]="urgency.slaDays"
-                                type="number"
-                                min="0"
-                                aria-label="SLA dias"
-                              />
-                              <button
-                                class="link-button"
-                                type="button"
-                                (click)="removeUrgencyDefinition(rule, urgencyIndex)"
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          }
-                        </div>
-                      </section>
-                    }
-                  }
-
-                  <button
-                    class="carousel-rail carousel-rail-next"
-                    [class.is-add]="isLastRoutingRule()"
-                    type="button"
-                    [attr.aria-label]="isLastRoutingRule() ? 'Agregar regla' : 'Regla siguiente'"
-                    [attr.title]="isLastRoutingRule() ? 'Agregar regla' : 'Siguiente'"
-                    (click)="isLastRoutingRule() ? addRoutingRule() : nextRoutingRule()"
-                  >
-                    <span aria-hidden="true">{{ isLastRoutingRule() ? '+' : '>' }}</span>
-                  </button>
-                </div>
-              </section>
-              @if (settingsErrorMessage()) {
-                <div class="panel-error">
-                  <strong>{{ settingsErrorMessage() }}</strong>
-                  <span>No se guardaron cambios en la configuracion.</span>
-                </div>
-              }
-
-              <div class="settings-actions">
-                <button
-                  class="btn btn-primary"
-                  type="submit"
-                  [disabled]="isSubmitting() || !settingsLoaded() || !hasCanonicalIntakeEmail()"
-                >
-                  {{ isSubmitting() ? 'Guardando...' : 'Guardar configuracion' }}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-
-        <section id="billing" class="panel-card billing-console-panel" aria-labelledby="billing-console-title">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Suscripcion</p>
-              <h2 id="billing-console-title">Facturacion</h2>
-            </div>
-            @if (billingStatus(); as status) {
-              <span class="pill">{{ status.status }}</span>
-            }
-          </div>
-          @if (billingStatus(); as status) {
-            <p>{{ status.message }}</p>
-            @if (status.subscription; as subscription) {
-              <dl class="billing-details">
-                <div><dt>Plan</dt><dd>{{ subscription.plan.displayName }}</dd></div>
-                <div><dt>Cobro recurrente</dt><dd>{{ formatCop(subscription.currentAmountCop) }}</dd></div>
-                <div><dt>Proxima fecha / acceso</dt><dd>{{ status.accessEndsAt ? formatDate(status.accessEndsAt) : 'Pendiente' }}</dd></div>
-                <div><dt>Cupon</dt><dd>{{ subscription.coupon?.code || 'Sin cupon' }}</dd></div>
-              </dl>
-              @if (status.payments.length) {
-                <div class="billing-payment-list">
-                  <h3>Historial de pagos</h3>
-                  @for (payment of status.payments; track payment.providerPaymentId) {
-                    <div>
-                      <span>{{ payment.paidAt ? formatDate(payment.paidAt) : 'Pendiente' }}</span>
-                      <strong>{{ formatCop(payment.amountCop) }}</strong>
-                      <em>{{ payment.status }}</em>
-                    </div>
-                  }
-                </div>
-              }
-              @if (!subscription.cancelAtPeriodEnd && subscription.status !== 'CANCELED') {
-                <button class="btn btn-secondary" type="button" (click)="cancelBilling()" [disabled]="isBillingLoading()">
-                  Cancelar renovacion
-                </button>
-              }
-            }
-            @if (billingMessage()) {
-              <div class="status-banner"><strong>{{ billingMessage() }}</strong></div>
-            }
-            @if (billingError()) {
-              <div class="panel-error"><strong>{{ billingError() }}</strong></div>
-            }
-          }
+            <button class="btn" type="submit" [disabled]="isSubmitting()">
+              {{ isSubmitting() ? 'Creando…' : 'Crear consulta' }}
+            </button>
+          </form>
         </section>
-      </section>
+      }
 
       @if (isTutorialOpen()) {
         <div class="modal-backdrop" role="presentation" (click)="closeTutorial()"></div>
@@ -793,6 +1084,6 @@
           }
         </section>
       }
-    </main>
+    </div>
   }
 }
