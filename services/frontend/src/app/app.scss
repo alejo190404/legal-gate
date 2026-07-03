@@ -1211,6 +1211,34 @@ app-console {
   }
 }
 
+.tutorial-provider {
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+
+  summary {
+    padding: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  ol {
+    margin: 0;
+    padding: 0 12px 12px 32px;
+    display: grid;
+    gap: 8px;
+    color: var(--fg-2);
+    line-height: 1.55;
+  }
+
+  .tutorial-note {
+    margin: 0 12px 12px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--brand);
+    background: var(--bg);
+    font-size: 13px;
+  }
+}
+
 .modal-email-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
