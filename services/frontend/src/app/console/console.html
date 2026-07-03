@@ -972,7 +972,7 @@
           <header>
             <div>
               <p class="eyebrow">Reenviar o enrutar</p>
-              <h2 id="tutorial-title">Conecta tu correo personal</h2>
+              <h2 id="tutorial-title">Conecta tu correo oficial</h2>
             </div>
             <button
               class="icon-button"
@@ -985,14 +985,10 @@
             </button>
           </header>
           <p>
-            En tu proveedor de correo, crea una regla de reenvio o enrutamiento para enviar los
-            mensajes de tu direccion personal al email LegalGate de intake. Usa filtros por
-            destinatario, asunto o alias si tu proveedor los ofrece.
-          </p>
-          <p>
-            Cuando sea posible, activa la opcion para preservar el remitente original. Asi LegalGate
-            recibira el correo como una solicitud del cliente y no como una copia enviada por tu
-            cuenta.
+            Configura en tu proveedor un reenvío automático hacia tu email de intake de LegalGate.
+            Usa siempre el reenvío automático (no el manual): así se preserva el remitente original
+            y LegalGate registra el correo como una solicitud del cliente, no como una copia enviada
+            por tu cuenta.
           </p>
           <div class="modal-email-row">
             <span>{{ configuredIntakeEmail() }}</span>
@@ -1010,6 +1006,62 @@
           @if (copyStatus()) {
             <small>{{ copyStatus() }}</small>
           }
+          <details class="tutorial-provider">
+            <summary>Outlook / Microsoft 365</summary>
+            <ol>
+              <li>Abre Outlook en la web y ve a Configuración (⚙) → Correo → Reenvío.</li>
+              <li>Activa «Habilitar reenvío» y pega tu email de intake de LegalGate.</li>
+              <li>Marca «Conservar una copia de los mensajes reenviados» para no perder nada en tu bandeja.</li>
+              <li>
+                Si tu organización bloquea el reenvío externo, pide a tu administrador de Microsoft 365
+                que lo permita para tu buzón, o crea una regla en Configuración → Correo → Reglas con la
+                acción «Reenviar a».
+              </li>
+            </ol>
+            <p class="tutorial-note">
+              Recomendación: este correo oficial debería recibir únicamente consultas de clientes.
+              Boletines, facturas y otras notificaciones también se reenviarían y aparecerían como
+              consultas falsas en tu panel.
+            </p>
+          </details>
+          <details class="tutorial-provider">
+            <summary>Gmail / Google Workspace</summary>
+            <ol>
+              <li>Abre Gmail y ve a Configuración (⚙) → Ver todos los ajustes → Reenvío y correo POP/IMAP.</li>
+              <li>Pulsa «Añadir una dirección de reenvío» y pega tu email de intake de LegalGate.</li>
+              <li>
+                Google enviará un correo de verificación a esa dirección: aparecerá en tu panel de
+                LegalGate como una consulta nueva. Ábrela y confirma con el enlace o código.
+              </li>
+              <li>De vuelta en Gmail, selecciona «Reenviar una copia del correo entrante» y conserva la copia de Gmail.</li>
+              <li>
+                Para reenviar solo ciertos mensajes, crea un filtro (barra de búsqueda → Mostrar opciones
+                de búsqueda → Crear filtro → «Reenviar a»).
+              </li>
+            </ol>
+            <p class="tutorial-note">
+              Recomendación: este correo oficial debería recibir únicamente consultas de clientes.
+              Boletines, facturas y otras notificaciones también se reenviarían y aparecerían como
+              consultas falsas en tu panel.
+            </p>
+          </details>
+          <details class="tutorial-provider">
+            <summary>Otro proveedor</summary>
+            <ol>
+              <li>Busca en la configuración de tu correo la opción «Reenvío», «Forwarding» o «Reglas de correo».</li>
+              <li>Crea una regla que reenvíe automáticamente los mensajes entrantes a tu email de intake de LegalGate.</li>
+              <li>Si existe la opción, conserva una copia en tu bandeja original.</li>
+              <li>
+                Si tu proveedor pide verificar la dirección de destino, el correo de verificación
+                aparecerá en tu panel de LegalGate como una consulta nueva.
+              </li>
+            </ol>
+            <p class="tutorial-note">
+              Recomendación: este correo oficial debería recibir únicamente consultas de clientes.
+              Boletines, facturas y otras notificaciones también se reenviarían y aparecerían como
+              consultas falsas en tu panel.
+            </p>
+          </details>
         </section>
       }
     </div>
