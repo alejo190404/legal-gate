@@ -7,8 +7,8 @@
     <div class="nav-links" aria-label="Secciones">
       <a href="#problema">Problema</a>
       <a href="#como-funciona">Cómo funciona</a>
-      <a href="#beneficios">Beneficios</a>
-      <a href="#seguridad">Seguridad</a>
+      <!-- <a href="#beneficios">Características</a> -->
+      <!-- <a href="#seguridad">Seguridad</a> -->
     </div>
     <div class="nav-actions">
       <button class="btn btn-secondary" type="button" (click)="showRegister()">
@@ -21,19 +21,22 @@
   <header class="hero" aria-labelledby="hero-title">
     <div class="hero-copy">
       <p class="eyebrow">INTAKE · ROUTING · AUDIT</p>
-      <h1 id="hero-title">Convierte cada correo de un cliente en una consulta agendada.</h1>
+      <h1 id="hero-title">
+        Convierte cada correo de un cliente en una <span class="accent">consulta agendada</span>.
+      </h1>
       <p class="hero-subtitle">
         LegalGate lee, clasifica, enruta y agenda solicitudes legales para firmas colombianas —
         con un rastro auditable desde el primer mensaje hasta la confirmación.
       </p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="mailto:hola@legalgate.co?subject=Demo%20LegalGate"
-          >Agenda una demo</a
-        >
+        <a class="btn btn-primary" (click)="showRegister()">
+          ¡Regístrate!
+          <pixel-icon name="arrow-right" size="16" aria-hidden="true" />
+        </a>
         <a class="btn btn-secondary" href="#como-funciona">Ver cómo funciona</a>
       </div>
       <p class="hero-note">
-        Diseñado para firmas en Colombia · Piloto de 14 días · Sin datos sensibles para empezar
+        Diseñado para firmas en Colombia · Seguridad 100% garantizada · Sin datos sensibles para empezar
       </p>
     </div>
 
@@ -46,50 +49,54 @@
         <span class="status-live">AUTOMATIZANDO</span>
       </div>
       <div class="demo-body">
-        <div class="lead-card is-active">
-          <strong>Correo recibido</strong><span>cliente@correo.com · Derecho laboral</span
-          ><em>Nuevo</em>
-        </div>
-        <div class="lead-card is-blue">
-          <strong>Clasificado</strong><span>Despido sin justa causa · 94%</span><em>Auto</em>
-        </div>
-        <div class="lead-card is-amber">
-          <strong>Enrutado</strong><span>Equipo laboral · Bogotá</span><em>Regla #3</em>
-        </div>
-        <div class="lead-card is-green">
-          <strong>Consulta confirmada</strong><span>Jueves 2:00 p. m. · registrado</span
-          ><em>Listo</em>
-        </div>
+        @for (f of flow; track f.title; let i = $index) {
+          <div
+            class="lead-card {{ f.tone }}"
+            [class.is-done]="i < step()"
+            [class.is-active]="i === step() - 1"
+          >
+            <span class="flow-ic" aria-hidden="true"><pixel-icon [name]="f.icon" size="18" /></span>
+            <span class="flow-text">
+              <strong>{{ f.title }}</strong>
+              <span>{{ f.meta }}</span>
+            </span>
+            <em>{{ f.badge }}</em>
+          </div>
+        }
+        <p class="demo-status" aria-live="off">
+          @if (step() >= flow.length) {
+            0 toques del equipo · 41 segundos de extremo a extremo
+          } @else {
+            procesando…
+          }
+        </p>
       </div>
     </aside>
   </header>
 
   <section id="problema" class="problem-section" aria-labelledby="problem-title">
-    <div class="section-heading">
+    <div class="section-heading" data-reveal>
       <p class="eyebrow">El cuello de botella</p>
       <h2 id="problem-title">
-        El intake legal no falla por falta de clientes. Falla por desorden.
+        Las consultas no se pierden por falta de clientes. Se pierden por desorden manual.
       </h2>
       <p>
         Correos dispersos, clasificaciones manuales y respuestas tardías hacen que una buena
         solicitud se enfríe antes de convertirse en consulta.
       </p>
     </div>
-    <div class="metrics-grid">
-      <article class="metric-tile">
-        <strong>41 s</strong><span>De correo a ruta sugerida</span>
-      </article>
-      <article class="metric-tile">
-        <strong>3</strong><span>Urgencias detectadas en la demo</span>
-      </article>
-      <article class="metric-tile">
-        <strong>4</strong><span>Consultas fake para revisar</span>
-      </article>
+    <div class="metrics-grid" data-reveal="stagger" data-count>
+      @for (s of stats; track s.label; let i = $index) {
+        <article class="metric-tile">
+          <strong>{{ statValues()[i] }}{{ s.suffix }}</strong>
+          <span>{{ s.label }}</span>
+        </article>
+      }
     </div>
   </section>
 
   <section id="como-funciona" aria-labelledby="workflow-title">
-    <div class="section-heading">
+    <div class="section-heading" data-reveal>
       <p class="eyebrow">Cómo funciona</p>
       <h2 id="workflow-title">Del buzón a la agenda en cuatro pasos.</h2>
       <p>
@@ -97,9 +104,10 @@
         asignación y seguimiento.
       </p>
     </div>
-    <div class="workflow-grid">
+    <div class="workflow-grid" data-reveal="stagger">
       <article>
         <span>01</span>
+        <span class="step-ic" aria-hidden="true"><pixel-icon name="mail" size="24" /></span>
         <h3>Recibe</h3>
         <p>
           Conecta el correo de intake de tu firma. Cada solicitud entra a LegalGate en segundos.
@@ -107,6 +115,7 @@
       </article>
       <article>
         <span>02</span>
+        <span class="step-ic" aria-hidden="true"><pixel-icon name="tag" size="24" /></span>
         <h3>Clasifica</h3>
         <p>
           Identifica área de práctica, urgencia, ciudad y señales de conflicto con trazabilidad.
@@ -114,6 +123,7 @@
       </article>
       <article>
         <span>03</span>
+        <span class="step-ic" aria-hidden="true"><pixel-icon name="route" size="24" /></span>
         <h3>Enruta</h3>
         <p>
           Aplica reglas de disponibilidad, especialidad y carga de trabajo para asignar el caso.
@@ -121,6 +131,7 @@
       </article>
       <article>
         <span>04</span>
+        <span class="step-ic" aria-hidden="true"><pixel-icon name="check-double" size="24" /></span>
         <h3>Confirma</h3>
         <p>
           Propone horario, agenda la consulta y envía confirmación al cliente con registro
@@ -130,34 +141,58 @@
     </div>
   </section>
 
-  <section id="beneficios" class="benefits-section" aria-labelledby="benefits-title">
-    <div class="section-heading">
-      <p class="eyebrow">Beneficios</p>
-      <h2 id="benefits-title">Estructura seria para un primer contacto impecable.</h2>
+  <!-- <section id="beneficios" class="benefits-section" aria-labelledby="benefits-title">
+    <div class="section-heading" data-reveal>
+      <p class="eyebrow">Características</p>
+      <h2 id="benefits-title">Todo lo que el intake necesita, nada que no.</h2>
     </div>
-    <div class="benefits-grid">
+    <div class="benefits-grid" data-reveal="stagger">
       <article>
-        <h3>Reglas por firma</h3>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="sliders" size="22" /></span>
+        <h3>Reglas que tú controlas</h3>
         <p>
-          Cada firma configura sus propias reglas de intake, prioridad, jurisdicción y
-          asignación.
+          Reglas de intake por área, urgencia y jurisdicción. La primera coincidencia gana; lo no
+          enrutado queda en revisión, nunca se pierde.
         </p>
       </article>
       <article>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="tag" size="22" /></span>
+        <h3>Clasificación con confianza</h3>
+        <p>
+          Área de práctica, urgencia y señales de conflicto detectadas en cada correo, con puntaje
+          de confianza trazable.
+        </p>
+      </article>
+      <article>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="calendar" size="22" /></span>
         <h3>Agenda real</h3>
         <p>Sincroniza disponibilidad para evitar dobles reservas y confirmar citas viables.</p>
       </article>
       <article>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="mail-open" size="22" /></span>
+        <h3>Plantillas con tu voz</h3>
+        <p>
+          Correos de confirmación y recordatorio con la identidad de tu firma, enviados
+          automáticamente.
+        </p>
+      </article>
+      <article>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="file" size="22" /></span>
         <h3>Rastro auditable</h3>
         <p>
           Cada clasificación, cambio de estado y confirmación queda registrado para revisión.
         </p>
       </article>
+      <article>
+        <span class="feat-ic" aria-hidden="true"><pixel-icon name="building" size="22" /></span>
+        <h3>Multi-tenant desde el diseño</h3>
+        <p>Cada firma con su propio buzón, reglas, equipo, calendario y datos aislados.</p>
+      </article>
     </div>
-  </section>
+  </section> -->
 
-  <section id="seguridad" class="demo-credentials pixel-card" aria-labelledby="security-title">
-    <div>
+  <!-- <section id="seguridad" class="demo-credentials pixel-card" aria-labelledby="security-title">
+    <div data-reveal>
       <p class="eyebrow">Seguridad y confianza</p>
       <h2 id="security-title">Separa firmas, reglas y datos desde el diseño.</h2>
       <p>
@@ -165,34 +200,44 @@
         buzón, equipo, reglas, calendario y trazabilidad.
       </p>
     </div>
-    <div class="credential-box">
-      <span>Aislamiento por firma</span>
-      <span>Registro auditable</span>
-      <span>Roles por equipo</span>
+    <div class="credential-box" data-reveal="stagger">
+      <span><pixel-icon name="building" size="18" aria-hidden="true" /> Aislamiento por firma</span>
+      <span><pixel-icon name="file" size="18" aria-hidden="true" /> Registro auditable</span>
+      <span><pixel-icon name="lock" size="18" aria-hidden="true" /> Roles por equipo</span>
     </div>
-  </section>
+  </section> -->
 
   <section id="piloto" class="pilot-section" aria-labelledby="pilot-title">
     <div class="pixel-pattern" aria-hidden="true"></div>
-    <div class="pilot-content">
+    <div class="pilot-content" data-reveal>
       <p class="eyebrow">Listo para validar</p>
       <h2 id="pilot-title">Prueba LegalGate con tu flujo de intake real.</h2>
       <p>
-        Agenda una demostración de 20 minutos para ver cómo una solicitud pasa de correo
-        entrante a consulta confirmada.
+        Escribe un correo a alejo190404@gmail.com para agendar una demostración, y ver cómo
+        una solicitud pasa una consulta confirmada en segundos.
       </p>
-      <a class="btn btn-inverse" href="mailto:hola@legalgate.co?subject=Demo%20LegalGate"
-        >Agenda una demo</a
-      >
+      <a class="btn btn-inverse" href="mailto:alejo190404@gmail.com?subject=Demo%20LegalGate">
+        Agenda una demo
+        <pixel-icon name="arrow-right" size="16" aria-hidden="true" />
+      </a>
     </div>
   </section>
 
   <footer class="footer">
-    <a class="brand is-footer" href="#top">
-      <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
-      <span>LegalGate</span>
-    </a>
-    <p>Intake legal automatizado para firmas colombianas.</p>
+    <div>
+      <a class="brand is-footer" href="#top">
+        <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
+        <span>LegalGate</span>
+      </a>
+      <p>Intake legal automatizado para firmas colombianas.</p>
+    </div>
+    <nav class="footer-links" aria-label="Secciones del sitio">
+      <a href="#problema">Problema</a>
+      <a href="#como-funciona">Cómo funciona</a>
+      <!-- <a href="#beneficios">Características</a> -->
+      <!-- <a href="#seguridad">Seguridad</a> -->
+      <a href="mailto:alejo190404@gmail.com">alejo190404&#64;gmail.com</a>
+    </nav>
     <span>© 2026 LegalGate · INTAKE · ROUTING · AUDIT</span>
   </footer>
 </main>
