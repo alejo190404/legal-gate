@@ -2119,10 +2119,23 @@ app-console {
 }
 
 .onboarding-form {
+  min-width: 0;
   padding: 20px;
 
   > .eyebrow {
     margin: 0;
+  }
+
+  // Narrow onboarding card: let the availability row shrink to fit the card
+  // instead of forcing a min-content width that overruns the right padding.
+  .availability-header,
+  .availability-row {
+    grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr)) auto;
+  }
+
+  .availability-row select,
+  .availability-row input {
+    min-width: 0;
   }
 }
 
