@@ -31,10 +31,10 @@ export class LoadingScreenComponent implements OnInit, OnDestroy {
     'Sincronizando calendario',
   ];
   private readonly steps = [
-    'Leyendo bandeja',
-    'Clasificando intake',
-    'Aplicando reglas',
-    'Verificando disponibilidad',
+    // 'Leyendo bandeja',
+    // 'Clasificando intake',
+    // 'Aplicando reglas',
+    // 'Verificando disponibilidad',
     'Preparando consola',
   ];
 
