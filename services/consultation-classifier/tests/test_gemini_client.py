@@ -171,6 +171,85 @@ def test_invalid_model_output_surfaces_typed_error() -> None:
     assert error.value.error == "gemini_invalid_response"
 
 
+class TransientError(Exception):
+    def __init__(self, code: int) -> None:
+        super().__init__(f"status {code}")
+        self.code = code
+
+
+class FlakyModels:
+    def __init__(self, text: str, fail_times: int, code: int) -> None:
+        self.text = text
+        self.remaining_failures = fail_times
+        self.code = code
+        self.calls = 0
+
+    def generate_content(self, **_: object) -> object:
+        self.calls += 1
+        if self.remaining_failures > 0:
+            self.remaining_failures -= 1
+            raise TransientError(self.code)
+        return type("GeminiResult", (), {"text": self.text})()
+
+
+class FlakyModelsClient:
+    def __init__(self, text: str, fail_times: int, code: int) -> None:
+        self.models = FlakyModels(text, fail_times, code)
+
+
+def _ok_payload() -> dict:
+    return {
+        "routeIndex": 0,
+        "consultationType": "Laboral",
+        "urgency": "NORMAL",
+        "concept": "Contrato",
+        "summary": "Cliente necesita revisar un contrato.",
+        "clientName": "Ana",
+        "explanation": "La ruta laboral es la mejor coincidencia.",
+        "confidence": 0.82,
+    }
+
+
+def test_retries_transient_overload_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.gemini_client.time.sleep", lambda _: None)
+    classifier = GeminiConsultationClassifier()
+    classifier.max_retries = 5
+    fake = FlakyModelsClient(json.dumps(_ok_payload()), fail_times=3, code=429)
+    classifier.client = fake
+
+    response = classifier.classify(request())
+
+    assert response.routeIndex == 0
+    assert fake.models.calls == 4  # 3 failures + 1 success
+
+
+def test_gives_up_after_max_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.gemini_client.time.sleep", lambda _: None)
+    classifier = GeminiConsultationClassifier()
+    classifier.max_retries = 2
+    fake = FlakyModelsClient(json.dumps(_ok_payload()), fail_times=99, code=503)
+    classifier.client = fake
+
+    with pytest.raises(GeminiClassifierError) as error:
+        classifier.classify(request())
+
+    assert error.value.error == "gemini_unavailable"
+    assert fake.models.calls == 3  # initial + 2 retries
+
+
+def test_does_not_retry_non_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.gemini_client.time.sleep", lambda _: None)
+    classifier = GeminiConsultationClassifier()
+    classifier.max_retries = 5
+    fake = FlakyModelsClient(json.dumps(_ok_payload()), fail_times=99, code=400)
+    classifier.client = fake
+
+    with pytest.raises(GeminiClassifierError):
+        classifier.classify(request())
+
+    assert fake.models.calls == 1  # 400 is not retryable
+
+
 def test_prompt_uses_route_specific_urgency_levels_and_no_tenant_wide_section() -> None:
     classifier = GeminiConsultationClassifier()
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
+import time
 import uuid
 from typing import Any
 
@@ -13,6 +15,10 @@ from pydantic import ValidationError
 from .models import ConsultationClassificationRequest, ConsultationClassificationResponse
 
 logger = logging.getLogger("legalgate.consultation_classifier")
+
+# Transient Gemini failures worth retrying: rate limit + server-side overload.
+# ponytail: hardcoded set, move to env if Gemini adds codes worth tuning per-deploy.
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 class GeminiClassifierError(RuntimeError):
@@ -28,6 +34,8 @@ class GeminiConsultationClassifier:
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
         self.temperature = self._temperature_from_env()
+        self.max_retries = self._int_from_env("GEMINI_MAX_RETRIES", 5)
+        self.retry_base_delay = self._float_from_env("GEMINI_RETRY_BASE_DELAY", 0.5)
         self.log_payloads = os.getenv("CLASSIFIER_LOG_PAYLOADS", "false").lower() == "true"
         self.log_preview_chars = self._int_from_env("CLASSIFIER_LOG_PREVIEW_CHARS", 500)
         self.client = genai.Client(api_key=self.api_key) if self.api_key else None
@@ -140,6 +148,30 @@ class GeminiConsultationClassifier:
 
     def _generate_structured_content(self, prompt: str) -> Any:
         schema = self._gemini_response_schema()
+        return self._call_with_retry(prompt, schema)
+
+    def _call_with_retry(self, prompt: str, schema: dict[str, Any]) -> Any:
+        # Retry transient overload/rate-limit (free tier) with exponential backoff + jitter.
+        attempts = self.max_retries + 1
+        for attempt in range(attempts):
+            try:
+                return self._call_model(prompt, schema)
+            except Exception as exc:  # noqa: BLE001 - re-raised unless transient
+                if attempt >= self.max_retries or not self._is_retryable(exc):
+                    raise
+                delay = self.retry_base_delay * (2**attempt) + random.uniform(0, self.retry_base_delay)
+                logger.warning(
+                    "Gemini call transient failure, retrying attempt=%s/%s delay=%.2fs model=%s error=%s",
+                    attempt + 1,
+                    self.max_retries,
+                    delay,
+                    self.model,
+                    exc,
+                )
+                time.sleep(delay)
+        raise AssertionError("unreachable retry loop exit")
+
+    def _call_model(self, prompt: str, schema: dict[str, Any]) -> Any:
         if hasattr(self.client, "interactions"):
             return self.client.interactions.create(
                 model=self.model,
@@ -156,6 +188,10 @@ class GeminiConsultationClassifier:
                 temperature=self.temperature,
             ),
         )
+
+    def _is_retryable(self, exc: Exception) -> bool:
+        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        return code in RETRYABLE_STATUS_CODES
 
     def _gemini_response_schema(self) -> dict[str, Any]:
         return self._remove_unsupported_schema_fields(
@@ -198,6 +234,14 @@ class GeminiConsultationClassifier:
         except ValueError as exc:
             raise ValueError(f"{name} must be an integer.") from exc
         return max(0, value)
+
+    def _float_from_env(self, name: str, default: float) -> float:
+        raw_value = os.getenv(name, str(default))
+        try:
+            value = float(raw_value)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be a number.") from exc
+        return max(0.0, value)
 
     def _log_request_start(
         self,
