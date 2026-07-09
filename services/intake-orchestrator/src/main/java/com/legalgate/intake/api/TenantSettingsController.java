@@ -41,11 +41,14 @@ public class TenantSettingsController {
         this.tenantContextResolver = tenantContextResolver;
     }
 
+    // Settings stay readable/writable before payment so pre-checkout onboarding can
+    // configure lawyers and routing rules; product usage (consultations, mail intake)
+    // remains entitlement-gated.
     @GetMapping
     public TenantSettingsResponse settings(
             @RequestHeader("X-LegalGate-Organization-Id") String organizationId
     ) {
-        String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
+        String tenantId = tenantContextResolver.requireProvisioningActiveTenant(organizationId).slug();
         return intakeService.settingsForTenant(tenantId);
     }
 
@@ -54,7 +57,7 @@ public class TenantSettingsController {
             @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @Valid @RequestBody JsonNode payload
     ) {
-        String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
+        String tenantId = tenantContextResolver.requireProvisioningActiveTenant(organizationId).slug();
         if (payload.has("intakeEmail")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "system_managed_intake_email");
         }

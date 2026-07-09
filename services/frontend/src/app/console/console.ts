@@ -1,12 +1,12 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, HostListener, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 import { PixelIconComponent } from './pixel-icon';
 
-type ViewName = 'loading' | 'register' | 'billing' | 'console';
+type ViewName = 'loading' | 'register' | 'onboard-lawyers' | 'onboard-rules' | 'billing' | 'console';
 type ConsoleView =
   | 'inbox'
   | 'rules'
@@ -236,6 +236,25 @@ interface BillingCheckoutAttempt {
   idempotencyKey: string;
 }
 
+// Pre-checkout onboarding: dashed inbox→lawyer connector and one animated
+// envelope traveling along it.
+interface RouteConnector {
+  lawyerId: string;
+  d: string;
+}
+
+interface EnvelopeFlight {
+  id: number;
+  lawyerId: string;
+  d: string;
+}
+
+interface CalendarBlock {
+  topPct: number;
+  heightPct: number;
+  label: string;
+}
+
 @Component({
   selector: 'app-console',
   imports: [FormsModule, LoadingScreenComponent, PixelIconComponent],
@@ -283,6 +302,25 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly billingMessage = signal('');
   readonly billingError = signal('');
   readonly isBillingLoading = signal(false);
+
+  // --- Pre-checkout onboarding (lawyers + rules before payment) ---
+  static readonly onboardingLawyerLimit = 3;
+  @ViewChild('routeDiagram') routeDiagram?: ElementRef<HTMLElement>;
+  readonly onboardingLawyers = signal<LawyerForm[]>([]);
+  readonly onboardingRules = signal<TenantRoutingRuleForm[]>([]);
+  readonly onboardingError = signal('');
+  readonly routeConnectors = signal<RouteConnector[]>([]);
+  readonly envelopeFlights = signal<EnvelopeFlight[]>([]);
+  readonly demoDeliveries = signal<Record<string, number>>({});
+  readonly diagramSize = signal<{ width: number; height: number }>({ width: 0, height: 0 });
+  lawyerDraft: LawyerForm = this.blankLawyer();
+  ruleDraft: TenantRoutingRuleForm = this.blankRuleDraft();
+  private demoLoopHandle: number | null = null;
+  private demoRuleCursor = 0;
+  private flightSeq = 0;
+  readonly onboardingLawyerLimitReached = computed(
+    () => this.onboardingLawyers().length >= ConsoleComponent.onboardingLawyerLimit,
+  );
 
   readonly registerForm: RegisterForm = {
     firmName: '',
@@ -409,6 +447,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     // ConsoleComponent is now routable, so cancel the billing-return poll if the
     // router tears it down while a poll is still pending.
     this.clearBillingReturnPoll();
+    this.stopDemoLoop();
   }
 
   register(): void {
@@ -465,6 +504,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.billingMessage.set('');
     this.billingError.set('');
     this.clearCheckoutAttempt();
+    this.stopDemoLoop();
+    this.onboardingLawyers.set([]);
+    this.onboardingRules.set([]);
+    this.onboardingError.set('');
+    this.routeConnectors.set([]);
+    this.envelopeFlights.set([]);
+    this.demoDeliveries.set({});
     this.isConsoleMenuOpen.set(false);
     this.activeView.set('inbox');
     this.selectedConsultationId.set(null);
@@ -526,8 +572,17 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             }
           } else {
             this.clearProtectedTenantData();
-            this.view.set('billing');
-            this.loadBillingPlans();
+            const returningFromCheckout =
+              new URLSearchParams(window.location.search).get('billing') === 'return';
+            // Unpaid firms configure lawyers + routing rules first, so checkout is
+            // not the first thing they see. Checkout returns skip straight to
+            // billing so the payment poll keeps working.
+            if (initial && !returningFromCheckout) {
+              this.startOnboarding();
+            } else {
+              this.view.set('billing');
+              this.loadBillingPlans();
+            }
           }
           if (new URLSearchParams(window.location.search).get('billing') === 'return') {
             if (status.entitled) {
@@ -913,8 +968,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       });
   }
 
-  saveSettings(): void {
-    const lawyers = this.settingsForm.lawyers.map((lawyer) => ({
+  private lawyersPayload(forms: LawyerForm[]) {
+    return forms.map((lawyer) => ({
       id: lawyer.id,
       displayName: lawyer.displayName.trim(),
       email: lawyer.email.trim().toLowerCase(),
@@ -928,9 +983,14 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         timezone: 'America/Bogota',
       })),
     }));
+  }
 
+  private rulesPayload(
+    forms: TenantRoutingRuleForm[],
+    lawyers: ReturnType<ConsoleComponent['lawyersPayload']>,
+  ) {
     const primaryLawyerId = lawyers[0]?.id ?? null;
-    const routingRules = this.settingsForm.routingRules.map((rule, index) => {
+    return forms.map((rule, index) => {
       const lawyer = lawyers.find((item) => item.id === rule.lawyerId) ?? lawyers[0];
       const urgencyDefinitions = this.definitionsForSave(rule);
       return {
@@ -949,44 +1009,50 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         destinationEmail: (lawyer?.email || rule.destinationEmail).trim().toLowerCase(),
       };
     });
+  }
+
+  private settingsPayloadError(
+    lawyers: ReturnType<ConsoleComponent['lawyersPayload']>,
+    routingRules: ReturnType<ConsoleComponent['rulesPayload']>,
+  ): string | null {
+    if (
+      !lawyers.length ||
+      !lawyers.some((lawyer) => lawyer.active) ||
+      lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))
+    ) {
+      return 'Configura al menos un abogado activo con nombre y email valido.';
+    }
+    if (
+      lawyers.some(
+        (lawyer) => !lawyer.defaultEventDurationMinutes || lawyer.defaultEventDurationMinutes < 15,
+      )
+    ) {
+      return 'La duracion por defecto debe ser de al menos 15 minutos.';
+    }
+    if (
+      !routingRules.length ||
+      routingRules.some((rule) => !rule.lawyerId || !this.isValidEmail(rule.destinationEmail))
+    ) {
+      return 'Cada regla necesita un abogado asignado.';
+    }
+    if (routingRules.some((rule) => !this.hasValidUrgencyDefinitions(rule.urgencyDefinitions))) {
+      return 'Configura niveles de urgencia por regla sin vacios ni duplicados.';
+    }
+    return null;
+  }
+
+  saveSettings(): void {
+    const lawyers = this.lawyersPayload(this.settingsForm.lawyers);
+    const routingRules = this.rulesPayload(this.settingsForm.routingRules, lawyers);
 
     if (!this.settingsLoaded() || !this.hasCanonicalIntakeEmail()) {
       this.settingsErrorMessage.set('Espera a que cargue el email LegalGate de intake.');
       return;
     }
 
-    if (
-      !lawyers.length ||
-      !lawyers.some((lawyer) => lawyer.active) ||
-      lawyers.some((lawyer) => !lawyer.displayName || !this.isValidEmail(lawyer.email))
-    ) {
-      this.settingsErrorMessage.set(
-        'Configura al menos un abogado activo con nombre y email valido.',
-      );
-      return;
-    }
-
-    if (
-      lawyers.some(
-        (lawyer) => !lawyer.defaultEventDurationMinutes || lawyer.defaultEventDurationMinutes < 15,
-      )
-    ) {
-      this.settingsErrorMessage.set('La duracion por defecto debe ser de al menos 15 minutos.');
-      return;
-    }
-
-    if (
-      !routingRules.length ||
-      routingRules.some((rule) => !rule.lawyerId || !this.isValidEmail(rule.destinationEmail))
-    ) {
-      this.settingsErrorMessage.set('Cada regla necesita un abogado asignado.');
-      return;
-    }
-
-    if (routingRules.some((rule) => !this.hasValidUrgencyDefinitions(rule.urgencyDefinitions))) {
-      this.settingsErrorMessage.set(
-        'Configura niveles de urgencia por regla sin vacios ni duplicados.',
-      );
+    const validationError = this.settingsPayloadError(lawyers, routingRules);
+    if (validationError) {
+      this.settingsErrorMessage.set(validationError);
       return;
     }
 
@@ -1268,6 +1334,425 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   formatTime(value: string): string {
     return new Intl.DateTimeFormat('es-CO', { timeStyle: 'short' }).format(new Date(value));
+  }
+
+  // --- Pre-checkout onboarding ---------------------------------------------
+  // Two interactive steps before the paywall: configure lawyers (max 3) and
+  // routing rules, both persisted through the regular settings API.
+
+  private startOnboarding(): void {
+    this.view.set('onboard-lawyers');
+    this.onboardingError.set('');
+    this.settingsLoaded.set(false);
+    this.demoDeliveries.set({});
+    this.envelopeFlights.set([]);
+    this.routeConnectors.set([]);
+    this.http.get<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings')).subscribe({
+      next: (settings) => {
+        this.tenantSettings.set(settings);
+        this.settingsLoaded.set(true);
+        const lawyers = this.lawyerFormsFrom(settings);
+        this.settingsForm.lawyers = lawyers;
+        // Prefill only what the firm actually saved: a fresh firm starts with an
+        // empty canvas (no lawyers, no routes) so the diagram builds up live.
+        this.onboardingLawyers.set(settings.lawyers?.length ? lawyers : []);
+        this.onboardingRules.set(
+          settings.routingRules?.length ? this.routingRuleFormsFrom(settings) : [],
+        );
+        this.resetLawyerDraft();
+        this.resetRuleDraft();
+      },
+      error: () => {
+        this.settingsLoaded.set(true);
+        this.onboardingError.set(
+          'No se pudo cargar la configuracion inicial. Refresca la pagina para reintentar.',
+        );
+      },
+    });
+  }
+
+  addOnboardingLawyer(): void {
+    if (this.onboardingLawyerLimitReached()) {
+      return;
+    }
+    const draft = this.lawyerDraft;
+    const error = this.lawyerDraftError(draft);
+    if (error) {
+      this.onboardingError.set(error);
+      return;
+    }
+    this.onboardingError.set('');
+    this.onboardingLawyers.update((lawyers) => [
+      ...lawyers,
+      {
+        ...draft,
+        displayName: draft.displayName.trim(),
+        email: draft.email.trim().toLowerCase(),
+        availabilityWindows: draft.availabilityWindows.map((window) => ({ ...window })),
+      },
+    ]);
+    this.resetLawyerDraft();
+  }
+
+  private lawyerDraftError(draft: LawyerForm): string | null {
+    if (!draft.displayName.trim()) {
+      return 'Ingresa el nombre del abogado.';
+    }
+    if (!this.isValidEmail(draft.email.trim())) {
+      return 'Ingresa un email valido para el abogado.';
+    }
+    const email = draft.email.trim().toLowerCase();
+    if (this.onboardingLawyers().some((lawyer) => lawyer.email.toLowerCase() === email)) {
+      return 'Ese email ya esta en la lista de abogados.';
+    }
+    if (!draft.defaultEventDurationMinutes || Number(draft.defaultEventDurationMinutes) < 15) {
+      return 'La duracion debe ser de al menos 15 minutos.';
+    }
+    if (!draft.availabilityWindows.length) {
+      return 'Agrega al menos una ventana disponible.';
+    }
+    if (
+      draft.availabilityWindows.some(
+        (window) => !window.startTime || !window.endTime || window.startTime >= window.endTime,
+      )
+    ) {
+      return 'Cada ventana necesita hora de inicio menor a la de fin.';
+    }
+    return null;
+  }
+
+  removeOnboardingLawyer(index: number): void {
+    const removed = this.onboardingLawyers()[index];
+    this.onboardingLawyers.update((lawyers) => lawyers.filter((_, i) => i !== index));
+    if (removed?.id) {
+      this.onboardingRules.update((rules) => rules.filter((rule) => rule.lawyerId !== removed.id));
+      this.demoDeliveries.update((map) => {
+        const next = { ...map };
+        delete next[removed.id as string];
+        return next;
+      });
+      if (this.ruleDraft.lawyerId === removed.id) {
+        this.resetRuleDraft();
+      }
+    }
+    this.onboardingError.set('');
+    this.scheduleConnectorRefresh();
+  }
+
+  goToOnboardingRules(): void {
+    if (!this.onboardingLawyers().length) {
+      this.onboardingError.set('Agrega al menos un abogado para continuar.');
+      return;
+    }
+    this.onboardingError.set('');
+    if (!this.ruleDraft.lawyerId) {
+      this.resetRuleDraft();
+    }
+    this.view.set('onboard-rules');
+    this.scheduleConnectorRefresh();
+    this.startDemoLoop();
+  }
+
+  backToOnboardingLawyers(): void {
+    this.stopDemoLoop();
+    this.envelopeFlights.set([]);
+    this.onboardingError.set('');
+    this.view.set('onboard-lawyers');
+  }
+
+  saveOnboardingRule(): void {
+    const draft = this.ruleDraft;
+    const lawyer = this.onboardingLawyers().find((item) => item.id === draft.lawyerId);
+    if (!draft.name.trim()) {
+      this.onboardingError.set('Ponle un nombre a la regla.');
+      return;
+    }
+    if (!lawyer) {
+      this.onboardingError.set('Selecciona la abogada que atiende esta regla.');
+      return;
+    }
+    if (!this.hasValidUrgencyDefinitions(this.definitionsForSave(draft))) {
+      this.onboardingError.set('Configura niveles de urgencia sin vacios ni duplicados.');
+      return;
+    }
+    this.onboardingError.set('');
+    this.onboardingRules.update((rules) => [
+      ...rules,
+      {
+        ...draft,
+        name: draft.name.trim(),
+        lawyerId: lawyer.id,
+        destinationEmail: lawyer.email,
+        urgencyDefinitions: draft.urgencyDefinitions.map((definition) => ({ ...definition })),
+      },
+    ]);
+    this.resetRuleDraft();
+    const lawyerId = lawyer.id as string;
+    this.scheduleConnectorRefresh(() => this.launchEnvelope(lawyerId));
+    this.startDemoLoop();
+  }
+
+  removeOnboardingRule(index: number): void {
+    this.onboardingRules.update((rules) => rules.filter((_, i) => i !== index));
+    this.onboardingError.set('');
+    this.scheduleConnectorRefresh();
+  }
+
+  finishOnboarding(): void {
+    if (!this.onboardingRules().length) {
+      this.onboardingError.set('Crea al menos una regla para continuar al pago.');
+      return;
+    }
+    const lawyers = this.lawyersPayload(this.onboardingLawyers());
+    const routingRules = this.rulesPayload(this.onboardingRules(), lawyers);
+    const validationError = this.settingsPayloadError(lawyers, routingRules);
+    if (validationError) {
+      this.onboardingError.set(validationError);
+      return;
+    }
+    this.isSubmitting.set(true);
+    this.onboardingError.set('');
+    this.http
+      .put<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'), {
+        lawyers,
+        routingRules,
+      })
+      .subscribe({
+        next: (settings) => {
+          this.tenantSettings.set(settings);
+          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
+          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
+          this.clampActiveIndexes();
+          this.isSubmitting.set(false);
+          this.stopDemoLoop();
+          this.envelopeFlights.set([]);
+          this.view.set('billing');
+          this.loadBillingPlans();
+        },
+        error: (error: HttpErrorResponse) => {
+          this.onboardingError.set(
+            error.status === 409
+              ? 'Ese email ya esta configurado para otra firma.'
+              : 'No se pudo guardar la configuracion. Intenta nuevamente.',
+          );
+          this.isSubmitting.set(false);
+        },
+      });
+  }
+
+  private resetLawyerDraft(): void {
+    this.lawyerDraft = { ...this.blankLawyer(), email: '' };
+  }
+
+  private blankRuleDraft(): TenantRoutingRuleForm {
+    return {
+      name: '',
+      description: '',
+      lawyerId: null,
+      destinationEmail: '',
+      urgentKeywords: '',
+      consultationWindows: '',
+      urgencyLevels: 'NORMAL, URGENT',
+      urgencyDefinitions: [
+        { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
+        { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+      ],
+    };
+  }
+
+  private resetRuleDraft(): void {
+    const firstLawyer = this.onboardingLawyers()[0];
+    this.ruleDraft = {
+      ...this.blankRuleDraft(),
+      lawyerId: firstLawyer?.id ?? null,
+      destinationEmail: firstLawyer?.email ?? '',
+    };
+  }
+
+  lawyerNameFor(lawyerId: string | null): string {
+    const lawyer = this.onboardingLawyers().find((item) => item.id === lawyerId);
+    return lawyer?.displayName || lawyer?.email || 'Abogado';
+  }
+
+  // Route diagram geometry: dashed orthogonal connectors measured from the DOM
+  // (inbox node → each routed lawyer card), reused as the envelope offset-path.
+  private scheduleConnectorRefresh(after?: () => void): void {
+    requestAnimationFrame(() => {
+      this.computeRouteConnectors();
+      after?.();
+    });
+  }
+
+  private computeRouteConnectors(): void {
+    const host = this.routeDiagram?.nativeElement;
+    if (!host) {
+      this.routeConnectors.set([]);
+      return;
+    }
+    const hostBox = host.getBoundingClientRect();
+    this.diagramSize.set({ width: Math.round(hostBox.width), height: Math.round(hostBox.height) });
+    const inbox = host.querySelector('[data-inbox-node]');
+    if (!inbox) {
+      this.routeConnectors.set([]);
+      return;
+    }
+    const inboxBox = inbox.getBoundingClientRect();
+    const x0 = Math.round(inboxBox.right - hostBox.left);
+    const y0 = Math.round(inboxBox.top + inboxBox.height / 2 - hostBox.top);
+    const routedIds = new Set(this.onboardingRules().map((rule) => rule.lawyerId));
+    const connectors: RouteConnector[] = [];
+    host.querySelectorAll<HTMLElement>('[data-lawyer-node]').forEach((node) => {
+      const lawyerId = node.dataset['lawyerNode'];
+      if (!lawyerId || !routedIds.has(lawyerId)) {
+        return;
+      }
+      const box = node.getBoundingClientRect();
+      const x1 = Math.round(box.left - hostBox.left);
+      const y1 = Math.round(box.top + box.height / 2 - hostBox.top);
+      const mx = Math.round(x0 + (x1 - x0) / 2);
+      connectors.push({ lawyerId, d: `M ${x0} ${y0} L ${mx} ${y0} L ${mx} ${y1} L ${x1} ${y1}` });
+    });
+    this.routeConnectors.set(connectors);
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    if (this.view() !== 'onboard-rules') {
+      return;
+    }
+    // Paths are measured in px, so in-flight envelopes go stale on resize.
+    this.envelopeFlights.set([]);
+    this.scheduleConnectorRefresh();
+  }
+
+  private launchEnvelope(lawyerId: string): void {
+    const connector = this.routeConnectors().find((item) => item.lawyerId === lawyerId);
+    if (!connector) {
+      return;
+    }
+    this.envelopeFlights.update((flights) => [
+      ...flights,
+      { id: ++this.flightSeq, lawyerId, d: connector.d },
+    ]);
+  }
+
+  envelopeArrived(flight: EnvelopeFlight): void {
+    this.envelopeFlights.update((flights) => flights.filter((item) => item.id !== flight.id));
+    this.demoDeliveries.update((map) => ({
+      ...map,
+      [flight.lawyerId]: Math.min((map[flight.lawyerId] ?? 0) + 1, 8),
+    }));
+  }
+
+  offsetPathFor(flight: EnvelopeFlight): string {
+    return `path('${flight.d}')`;
+  }
+
+  private startDemoLoop(): void {
+    if (this.demoLoopHandle != null) {
+      return;
+    }
+    this.demoLoopHandle = window.setInterval(() => this.sendDemoEnvelope(), 4200);
+  }
+
+  private stopDemoLoop(): void {
+    if (this.demoLoopHandle == null) {
+      return;
+    }
+    window.clearInterval(this.demoLoopHandle);
+    this.demoLoopHandle = null;
+  }
+
+  private sendDemoEnvelope(): void {
+    if (this.view() !== 'onboard-rules') {
+      return;
+    }
+    const rules = this.onboardingRules();
+    if (!rules.length) {
+      return;
+    }
+    const rule = rules[this.demoRuleCursor++ % rules.length];
+    if (rule.lawyerId) {
+      this.launchEnvelope(rule.lawyerId);
+    }
+  }
+
+  // Weekly calendar brief: availability windows (and demo consultation boxes)
+  // rendered proportionally on a 07:00–20:00 day column.
+  private static readonly calStartMin = 7 * 60;
+  private static readonly calEndMin = 20 * 60;
+
+  lawyerWeekdayColumns(lawyer: LawyerForm): { weekday: number; label: string }[] {
+    const labels = ['', 'L', 'M', 'X', 'J', 'V', 'S', 'D'];
+    const extra = [6, 7].filter((day) =>
+      lawyer.availabilityWindows.some((window) => Number(window.weekday) === day),
+    );
+    return [1, 2, 3, 4, 5, ...extra].map((weekday) => ({ weekday, label: labels[weekday] }));
+  }
+
+  availabilityBlocks(lawyer: LawyerForm, weekday: number): CalendarBlock[] {
+    return lawyer.availabilityWindows
+      .filter((window) => Number(window.weekday) === weekday)
+      .map((window) =>
+        this.calendarBlock(
+          this.minutesOf(window.startTime),
+          this.minutesOf(window.endTime),
+          `${window.startTime}–${window.endTime}`,
+        ),
+      )
+      .filter((block): block is CalendarBlock => block !== null);
+  }
+
+  demoBlocks(lawyer: LawyerForm, weekday: number): CalendarBlock[] {
+    const count = this.demoDeliveries()[lawyer.id ?? ''] ?? 0;
+    if (!count) {
+      return [];
+    }
+    const windows = [...lawyer.availabilityWindows].sort(
+      (a, b) => Number(a.weekday) - Number(b.weekday) || a.startTime.localeCompare(b.startTime),
+    );
+    if (!windows.length) {
+      return [];
+    }
+    const duration = Math.max(15, Number(lawyer.defaultEventDurationMinutes) || 60);
+    const blocks: CalendarBlock[] = [];
+    for (let i = 0; i < count; i++) {
+      const window = windows[i % windows.length];
+      if (Number(window.weekday) !== weekday) {
+        continue;
+      }
+      const slot = Math.floor(i / windows.length);
+      const start = this.minutesOf(window.startTime) + slot * duration;
+      if (start + duration > this.minutesOf(window.endTime)) {
+        continue;
+      }
+      const block = this.calendarBlock(start, start + duration, 'Consulta');
+      if (block) {
+        blocks.push(block);
+      }
+    }
+    return blocks;
+  }
+
+  private calendarBlock(startMin: number, endMin: number, label: string): CalendarBlock | null {
+    const lo = ConsoleComponent.calStartMin;
+    const hi = ConsoleComponent.calEndMin;
+    const start = Math.max(startMin, lo);
+    const end = Math.min(endMin, hi);
+    if (end <= start) {
+      return null;
+    }
+    const range = hi - lo;
+    return {
+      topPct: ((start - lo) / range) * 100,
+      heightPct: ((end - start) / range) * 100,
+      label,
+    };
+  }
+
+  private minutesOf(time: string): number {
+    const [hours, minutes] = (time || '').split(':').map(Number);
+    return (hours || 0) * 60 + (minutes || 0);
   }
 
   private blankLawyer(): LawyerForm {

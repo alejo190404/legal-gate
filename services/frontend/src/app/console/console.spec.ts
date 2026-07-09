@@ -80,7 +80,7 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(fixture.componentInstance.tenantId()).toBe('firma-1');
   });
 
-  it('routes an organization without entitlement to billing before protected APIs', () => {
+  it('routes an organization without entitlement to onboarding before checkout', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);
     const fixture = TestBed.createComponent(ConsoleComponent);
@@ -105,12 +105,79 @@ describe('ConsoleComponent session + billing flow', () => {
       accessEndsAt: null,
       message: 'Choose a plan.',
     });
-    http.expectOne('/api/billing/plans').flush([]);
+    // Onboarding prefills from settings, which are readable before payment.
+    http.expectOne('/api/tenant/settings').flush({
+      tenantId: 'firma-1',
+      urgentKeywords: [],
+      consultationWindows: [],
+      urgencyLevels: [],
+      destinationEmail: null,
+      intakeEmail: 'firma-1@intake.legal-gate.co',
+      routingRules: [],
+      lawyers: [],
+    });
     fixture.detectChanges();
 
-    expect(fixture.componentInstance.view()).toBe('billing');
+    expect(fixture.componentInstance.view()).toBe('onboard-lawyers');
+    expect(fixture.componentInstance.onboardingLawyers()).toEqual([]);
+    expect(fixture.componentInstance.onboardingRules()).toEqual([]);
     http.expectNone('/api/consultations');
-    http.expectNone('/api/tenant/settings');
+    http.expectNone('/api/billing/plans');
+  });
+
+  it('walks onboarding to checkout: add lawyer, add rule, save settings', () => {
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const http = TestBed.inject(HttpTestingController);
+    const component = fixture.componentInstance;
+    component.tenantId.set('firma-1');
+    component.settingsLoaded.set(true);
+    component.view.set('onboard-lawyers');
+
+    component.lawyerDraft.displayName = 'Abogada Uno';
+    component.lawyerDraft.email = 'uno@firma.test';
+    component.addOnboardingLawyer();
+    expect(component.onboardingLawyers().length).toBe(1);
+    expect(component.onboardingError()).toBe('');
+
+    component.goToOnboardingRules();
+    expect(component.view()).toBe('onboard-rules');
+
+    component.ruleDraft.name = 'Laboral';
+    component.saveOnboardingRule();
+    expect(component.onboardingRules().length).toBe(1);
+    expect(component.onboardingRules()[0].lawyerId).toBe(component.onboardingLawyers()[0].id);
+
+    component.finishOnboarding();
+    const put = http.expectOne('/api/tenant/settings');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body.lawyers.length).toBe(1);
+    expect(put.request.body.routingRules[0].name).toBe('Laboral');
+    expect(put.request.body.routingRules[0].destinationEmail).toBe('uno@firma.test');
+    put.flush({
+      tenantId: 'firma-1',
+      urgentKeywords: [],
+      consultationWindows: [],
+      urgencyLevels: ['NORMAL', 'URGENT'],
+      destinationEmail: 'uno@firma.test',
+      intakeEmail: 'firma-1@intake.legal-gate.co',
+      routingRules: put.request.body.routingRules,
+      lawyers: put.request.body.lawyers,
+    });
+
+    expect(component.view()).toBe('billing');
+    http.expectOne('/api/billing/plans').flush([]);
+  });
+
+  it('caps onboarding at three lawyers', () => {
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const component = fixture.componentInstance;
+    for (let i = 0; i < 4; i++) {
+      component.lawyerDraft.displayName = `Abogada ${i}`;
+      component.lawyerDraft.email = `abogada${i}@firma.test`;
+      component.addOnboardingLawyer();
+    }
+    expect(component.onboardingLawyers().length).toBe(3);
+    expect(component.onboardingLawyerLimitReached()).toBe(true);
   });
 
   it('resets a plan selection that is absent from a refreshed catalog', () => {

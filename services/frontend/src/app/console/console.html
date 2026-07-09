@@ -38,6 +38,408 @@
     </main>
   }
 
+  @case ('onboard-lawyers') {
+    <main class="billing-shell onboarding-shell">
+      <header class="billing-topbar">
+        <a class="brand" href="/" aria-label="LegalGate">
+          <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
+          <span>LegalGate</span>
+        </a>
+        <button class="link-button inverse" type="button" (click)="logout()">Cerrar sesion</button>
+      </header>
+      <section class="onboarding-page" aria-labelledby="onboard-lawyers-title">
+        <ol class="onboarding-steps" aria-label="Progreso de configuracion">
+          <li class="on"><span>1</span> Abogados</li>
+          <li><span>2</span> Reglas</li>
+          <li><span>3</span> Pago</li>
+        </ol>
+
+        <div class="onboarding-intro">
+          <p class="eyebrow">Configura tu firma</p>
+          <h1 id="onboard-lawyers-title">Añade tus abogados</h1>
+          <p>
+            Configura hasta 3 abogados con su disponibilidad semanal. Recuerda que puedes añadir
+            más luego, en la consola. Es solo el comienzo.
+          </p>
+        </div>
+
+        @if (onboardingError()) {
+          <div class="panel-error"><strong>{{ onboardingError() }}</strong></div>
+        }
+
+        <div class="onboarding-grid">
+          <form
+            class="settings-form onboarding-form pixel-card"
+            (submit)="addOnboardingLawyer(); $event.preventDefault()"
+          >
+            <p class="eyebrow">Abogado</p>
+            <div class="form-field">
+              <label for="obLawyerName">Nombre</label>
+              <input id="obLawyerName" name="obLawyerName" [(ngModel)]="lawyerDraft.displayName" />
+            </div>
+            <div class="form-field">
+              <label for="obLawyerEmail">Email</label>
+              <input
+                id="obLawyerEmail"
+                name="obLawyerEmail"
+                type="email"
+                [(ngModel)]="lawyerDraft.email"
+              />
+            </div>
+
+            <div class="editor-table availability-table">
+              <div class="editor-table-title">
+                <label>Ventanas disponibles</label>
+                <button class="link-button" type="button" (click)="addAvailabilityWindow(lawyerDraft)">
+                  Agregar ventana
+                </button>
+              </div>
+              <div class="availability-header" aria-hidden="true">
+                <span>Dia</span><span>Inicio</span><span>Fin</span><span></span>
+              </div>
+              @for (window of lawyerDraft.availabilityWindows; track $index; let windowIndex = $index) {
+                <div class="availability-row">
+                  <select
+                    [name]="'obWeekday-' + windowIndex"
+                    [(ngModel)]="window.weekday"
+                    aria-label="Dia"
+                  >
+                    <option [ngValue]="1">Lunes</option>
+                    <option [ngValue]="2">Martes</option>
+                    <option [ngValue]="3">Miercoles</option>
+                    <option [ngValue]="4">Jueves</option>
+                    <option [ngValue]="5">Viernes</option>
+                    <option [ngValue]="6">Sabado</option>
+                    <option [ngValue]="7">Domingo</option>
+                  </select>
+                  <input
+                    [name]="'obStart-' + windowIndex"
+                    [(ngModel)]="window.startTime"
+                    type="time"
+                    aria-label="Inicio"
+                  />
+                  <input
+                    [name]="'obEnd-' + windowIndex"
+                    [(ngModel)]="window.endTime"
+                    type="time"
+                    aria-label="Fin"
+                  />
+                  <button
+                    class="link-button"
+                    type="button"
+                    (click)="removeAvailabilityWindow(lawyerDraft, windowIndex)"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              }
+            </div>
+
+            <div class="form-field duration-field">
+              <label for="obLawyerDuration">Duración (min)</label>
+              <input
+                id="obLawyerDuration"
+                name="obLawyerDuration"
+                [(ngModel)]="lawyerDraft.defaultEventDurationMinutes"
+                type="number"
+                min="15"
+                step="15"
+              />
+            </div>
+
+            <button
+              class="btn btn-primary"
+              type="submit"
+              [disabled]="onboardingLawyerLimitReached() || !settingsLoaded()"
+            >
+              + Añadir abogado
+            </button>
+            @if (onboardingLawyerLimitReached()) {
+              <small>Máximo 3 abogados en este paso. El resto se añade luego en la consola.</small>
+            }
+          </form>
+
+          <div class="onboarding-preview">
+            @for (lawyer of onboardingLawyers(); track lawyer.id; let lawyerIndex = $index) {
+              <article class="onboarding-lawyer pixel-card">
+                <header>
+                  <span class="avatar">{{ initials(lawyer.displayName || lawyer.email) }}</span>
+                  <div>
+                    <strong>{{ lawyer.displayName || lawyer.email }}</strong>
+                    <small>{{ lawyer.email }} · {{ lawyer.defaultEventDurationMinutes }} min</small>
+                  </div>
+                  <button
+                    class="icon-button"
+                    type="button"
+                    aria-label="Quitar abogado"
+                    title="Quitar"
+                    (click)="removeOnboardingLawyer(lawyerIndex)"
+                  >
+                    ×
+                  </button>
+                </header>
+                <div class="week-cal" aria-label="Disponibilidad semanal">
+                  @for (col of lawyerWeekdayColumns(lawyer); track col.weekday) {
+                    <div class="week-col">
+                      <span class="week-day">{{ col.label }}</span>
+                      <div class="week-track">
+                        @for (block of availabilityBlocks(lawyer, col.weekday); track $index) {
+                          <span
+                            class="week-block"
+                            [style.top.%]="block.topPct"
+                            [style.height.%]="block.heightPct"
+                            [title]="block.label"
+                          ></span>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </article>
+            } @empty {
+              <div class="onboarding-empty">
+                <pixel-icon name="users" [size]="42" color="var(--stone-300)" />
+                <strong>Aún no hay abogados</strong>
+                <span>Completa el formulario y presiona «Añadir abogado» para verlos aquí con su calendario.</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="onboarding-actions">
+          <button
+            class="btn btn-primary"
+            type="button"
+            [disabled]="!onboardingLawyers().length || !settingsLoaded()"
+            (click)="goToOnboardingRules()"
+          >
+            Continuar a las reglas →
+          </button>
+        </div>
+      </section>
+    </main>
+  }
+
+  @case ('onboard-rules') {
+    <main class="billing-shell onboarding-shell">
+      <header class="billing-topbar">
+        <a class="brand" href="/" aria-label="LegalGate">
+          <img src="/assets/logo-mark-white.svg" alt="" aria-hidden="true" />
+          <span>LegalGate</span>
+        </a>
+        <button class="link-button inverse" type="button" (click)="logout()">Cerrar sesion</button>
+      </header>
+      <section class="onboarding-page" aria-labelledby="onboard-rules-title">
+        <ol class="onboarding-steps" aria-label="Progreso de configuracion">
+          <li class="done"><span>1</span> Abogados</li>
+          <li class="on"><span>2</span> Reglas</li>
+          <li><span>3</span> Pago</li>
+        </ol>
+
+        <div class="onboarding-intro">
+          <p class="eyebrow">Configura tu firma</p>
+          <h1 id="onboard-rules-title">Añade tus reglas</h1>
+          <p>
+            Cada regla enruta las consultas de la bandeja hacia un abogado. Crea la primera y
+            mira cómo viajan los correos. Recuerda que puedes añadir más luego.
+          </p>
+        </div>
+
+        @if (onboardingError()) {
+          <div class="panel-error"><strong>{{ onboardingError() }}</strong></div>
+        }
+
+        <div class="onboarding-grid rules">
+          <div class="onboarding-form-col">
+            <form
+              class="settings-form onboarding-form pixel-card"
+              (submit)="saveOnboardingRule(); $event.preventDefault()"
+            >
+              <p class="eyebrow">Regla</p>
+              <div class="form-field">
+                <label for="obRuleName">Nombre de la regla</label>
+                <input id="obRuleName" name="obRuleName" [(ngModel)]="ruleDraft.name" />
+              </div>
+              <div class="form-field">
+                <label for="obRuleLawyer">Abogada</label>
+                <select id="obRuleLawyer" name="obRuleLawyer" [(ngModel)]="ruleDraft.lawyerId">
+                  @for (lawyer of onboardingLawyers(); track lawyer.id) {
+                    <option [ngValue]="lawyer.id">{{ lawyer.displayName || lawyer.email }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="obRuleDescription">Descripción breve</label>
+                <textarea
+                  id="obRuleDescription"
+                  name="obRuleDescription"
+                  rows="2"
+                  [(ngModel)]="ruleDraft.description"
+                ></textarea>
+              </div>
+
+              <div class="editor-table sla-table">
+                <div class="editor-table-title">
+                  <label>Niveles de urgencia</label>
+                  <button class="link-button" type="button" (click)="addUrgencyDefinition(ruleDraft)">
+                    Agregar urgencia
+                  </button>
+                </div>
+                <div class="sla-header" aria-hidden="true">
+                  <span>Nombre</span><span>SLA dias</span><span></span>
+                </div>
+                @for (urgency of ruleDraft.urgencyDefinitions; track $index; let urgencyIndex = $index) {
+                  <div class="sla-row">
+                    <input
+                      [name]="'obUrgencyName-' + urgencyIndex"
+                      [(ngModel)]="urgency.name"
+                      aria-label="Nombre"
+                    />
+                    <input
+                      [name]="'obUrgencySla-' + urgencyIndex"
+                      [(ngModel)]="urgency.slaDays"
+                      type="number"
+                      min="0"
+                      aria-label="SLA dias"
+                    />
+                    @if (ruleDraft.urgencyDefinitions.length > 1) {
+                      <button
+                        class="link-button"
+                        type="button"
+                        (click)="removeUrgencyDefinition(ruleDraft, urgencyIndex)"
+                      >
+                        Eliminar
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+
+              <div class="form-field">
+                <label for="obRuleKeywords">Palabras clave</label>
+                <input
+                  id="obRuleKeywords"
+                  name="obRuleKeywords"
+                  [(ngModel)]="ruleDraft.urgentKeywords"
+                  placeholder="audiencia, tutela, vencimiento"
+                />
+              </div>
+
+              <button class="btn btn-primary" type="submit">+ Guardar regla</button>
+            </form>
+
+            @if (onboardingRules().length) {
+              <ul class="onboarding-rule-list">
+                @for (rule of onboardingRules(); track $index; let ruleIndex = $index) {
+                  <li>
+                    <span class="tag">{{ rule.name }}</span>
+                    <span class="rule-target">→ {{ lawyerNameFor(rule.lawyerId) }}</span>
+                    <button class="link-button" type="button" (click)="removeOnboardingRule(ruleIndex)">
+                      Eliminar
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+
+          <div class="route-diagram" #routeDiagram>
+            @if (diagramSize().width) {
+              <svg
+                class="route-svg"
+                [attr.viewBox]="'0 0 ' + diagramSize().width + ' ' + diagramSize().height"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker
+                    id="route-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="7"
+                    refY="4.5"
+                    orient="auto"
+                  >
+                    <path d="M1,1 L8,4.5 L1,8" class="route-arrow-head" />
+                  </marker>
+                </defs>
+                @for (connector of routeConnectors(); track connector.lawyerId) {
+                  <path class="route-path" [attr.d]="connector.d" marker-end="url(#route-arrow)" />
+                }
+              </svg>
+            }
+
+            @for (flight of envelopeFlights(); track flight.id) {
+              <span
+                class="route-envelope"
+                [style.offset-path]="offsetPathFor(flight)"
+                (animationend)="envelopeArrived(flight)"
+              >
+                <pixel-icon name="mail" [size]="14" color="#fff" />
+              </span>
+            }
+
+            <div class="route-inbox" data-inbox-node>
+              <pixel-icon name="inbox" [size]="26" color="var(--brand)" />
+              <span>Bandeja de intake</span>
+            </div>
+
+            <div class="route-lawyers">
+              @for (lawyer of onboardingLawyers(); track lawyer.id) {
+                <div class="route-row">
+                  <span class="route-chip" [attr.data-lawyer-node]="lawyer.id">
+                    {{ lawyer.displayName || lawyer.email }}
+                  </span>
+                  <article class="onboarding-lawyer pixel-card">
+                    <div class="week-cal" aria-label="Disponibilidad semanal">
+                      @for (col of lawyerWeekdayColumns(lawyer); track col.weekday) {
+                        <div class="week-col">
+                          <span class="week-day">{{ col.label }}</span>
+                          <div class="week-track">
+                            @for (block of availabilityBlocks(lawyer, col.weekday); track $index) {
+                              <span
+                                class="week-block"
+                                [style.top.%]="block.topPct"
+                                [style.height.%]="block.heightPct"
+                                [title]="block.label"
+                              ></span>
+                            }
+                            @for (block of demoBlocks(lawyer, col.weekday); track $index) {
+                              <span
+                                class="week-demo"
+                                [style.top.%]="block.topPct"
+                                [style.height.%]="block.heightPct"
+                                [title]="block.label"
+                              ></span>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </article>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="onboarding-actions">
+          <button class="btn btn-secondary" type="button" (click)="backToOnboardingLawyers()">
+            ← Abogados
+          </button>
+          <button
+            class="btn btn-primary"
+            type="button"
+            [disabled]="!onboardingRules().length || isSubmitting()"
+            (click)="finishOnboarding()"
+          >
+            {{ isSubmitting() ? 'Guardando…' : 'Guardar y continuar al pago →' }}
+          </button>
+        </div>
+      </section>
+    </main>
+  }
+
   @case ('billing') {
     <main class="billing-shell">
       <header class="billing-topbar">
