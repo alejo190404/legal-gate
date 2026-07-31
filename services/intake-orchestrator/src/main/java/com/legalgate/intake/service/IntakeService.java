@@ -566,7 +566,7 @@ public class IntakeService {
                 DEFAULT_SETTINGS.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), DEFAULT_SETTINGS.routingRules(), DEFAULT_SETTINGS.lawyers()
         );
         TenantSettingsResponse settings = normalizeSettings(intakeRepository.settingsFor(tenantId, defaults), tenantId);
-        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank() || settings.lawyers().isEmpty()) {
+        if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(), settings.urgentKeywords(), settings.consultationWindows(), settings.urgencyLevels(),
                     settings.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), settings.routingRules(), settings.lawyers()
@@ -725,11 +725,10 @@ public class IntakeService {
     }
 
     private List<LawyerProfile> lawyersFor(TenantSettingsResponse settings, String tenantId) {
-        if (settings.lawyers() != null && !settings.lawyers().isEmpty()) {
-            return settings.lawyers().stream().map(lawyer -> sanitizeLawyer(tenantId, lawyer, 0)).toList();
+        if (settings.lawyers() == null || settings.lawyers().isEmpty()) {
+            return List.of();
         }
-        String email = firstNonBlank(settings.destinationEmail(), "lawyer@" + tenantId + ".legalgate.invalid");
-        return List.of(new LawyerProfile(deterministicUuid("lawyer:" + tenantId + ":" + email), displayNameFromEmail(email), sanitizeEmail(email), true, 60, defaultAvailability()));
+        return settings.lawyers().stream().map(lawyer -> sanitizeLawyer(tenantId, lawyer, 0)).toList();
     }
 
     private LawyerProfile lawyerWithDefaultAvailability(LawyerProfile lawyer) {
