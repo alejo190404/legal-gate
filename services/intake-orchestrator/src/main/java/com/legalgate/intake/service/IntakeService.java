@@ -563,7 +563,7 @@ public class IntakeService {
     private TenantSettingsResponse settingsFor(String tenantId) {
         TenantSettingsResponse defaults = new TenantSettingsResponse(
                 tenantId, DEFAULT_SETTINGS.urgentKeywords(), DEFAULT_SETTINGS.consultationWindows(), DEFAULT_SETTINGS.urgencyLevels(),
-                DEFAULT_SETTINGS.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), DEFAULT_SETTINGS.routingRules(), DEFAULT_SETTINGS.lawyers()
+                DEFAULT_SETTINGS.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), List.of(), DEFAULT_SETTINGS.lawyers()
         );
         TenantSettingsResponse settings = normalizeSettings(intakeRepository.settingsFor(tenantId, defaults), tenantId);
         if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
@@ -767,12 +767,7 @@ public class IntakeService {
             }
             return List.copyOf(rules);
         }
-        List<UrgencyDefinition> definitions = fallbackDefinitions(settings.urgencyLevels());
-        return List.of(new TenantRoutingRule(
-                "Default intake route", null, sanitize(settings.urgentKeywords()), sanitize(settings.consultationWindows()),
-                activeUrgencyNames(definitions), defaultLawyerId, definitions,
-                sanitizeEmail(firstNonBlank(settings.destinationEmail(), lawyerEmailFor(lawyers, defaultLawyerId)))
-        ));
+        return List.of();
     }
 
     private String lawyerIdByDestinationEmail(List<LawyerProfile> lawyers, String destinationEmail) {
