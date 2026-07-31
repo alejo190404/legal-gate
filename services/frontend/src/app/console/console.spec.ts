@@ -3,9 +3,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { ConsoleComponent } from './console';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
+import { ConsoleComponent } from './console';
 
 describe('ConsoleComponent session + billing flow', () => {
   const user = signal<any>(null);
@@ -99,11 +99,11 @@ describe('ConsoleComponent session + billing flow', () => {
       billingEnabled: true,
       enforcementEnabled: true,
       entitled: false,
-      status: 'SUBSCRIPTION_REQUIRED',
+      status: 'SUSCRIPCION_REQUERIDA',
       subscription: null,
       payments: [],
       accessEndsAt: null,
-      message: 'Choose a plan.',
+      message: 'Escoge un plan.',
     });
     // Onboarding prefills from settings, which are readable before payment.
     http.expectOne('/api/tenant/settings').flush({

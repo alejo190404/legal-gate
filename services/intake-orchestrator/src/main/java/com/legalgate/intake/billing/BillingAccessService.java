@@ -1,12 +1,14 @@
 package com.legalgate.intake.billing;
 
-import com.legalgate.intake.billing.BillingModels.Status;
-import com.legalgate.intake.billing.BillingModels.Subscription;
 import java.time.Instant;
 import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.legalgate.intake.billing.BillingModels.Status;
+import com.legalgate.intake.billing.BillingModels.Subscription;
 
 @Service
 public class BillingAccessService {
@@ -29,7 +31,7 @@ public class BillingAccessService {
         boolean paidEntitled = entitled(entitledSubscription, now);
         boolean entitled = !properties.enforcementEnabled() || paidEntitled;
         Instant accessEndsAt = accessEndsAt(entitledSubscription);
-        String status = subscription == null ? "SUBSCRIPTION_REQUIRED" : subscription.status();
+        String status = subscription == null ? "SUSCRIPCION_REQUERIDA" : subscription.status();
         List<BillingModels.Payment> payments = subscription == null
                 ? List.of() : repository.payments(tenantSlug, subscription.id());
         return new Status(true, properties.enforcementEnabled(), entitled, status, subscription,
@@ -70,16 +72,16 @@ public class BillingAccessService {
         if (!properties.enforcementEnabled() && !paidEntitled) {
             return "Billing enforcement is staged off; access remains enabled.";
         }
-        if (subscription == null) return "Choose a plan to activate LegalGate.";
+        if (subscription == null) return "Escoge un plan para activar LegalGate.";
         return switch (subscription.status()) {
-            case "PENDING" -> "Complete checkout in Mercado Pago.";
+            case "PENDING" -> "Completa el checkour en Mercado Pago.";
             case "PAST_DUE" -> paidEntitled
-                    ? "Payment is overdue; access remains available during the grace period."
-                    : "The payment grace period has expired.";
+                    ? "El pago está pendiente; tu acceso se mantiene disponible durante el periodo de gracia."
+                    : "El periodo de gracia del pago ha expirado.";
             case "CANCELED" -> paidEntitled
-                    ? "Renewal is canceled; access continues through the paid period."
-                    : "The canceled subscription has ended.";
-            default -> paidEntitled ? "Subscription active." : "A subscription is required.";
+                    ? "Renovación cancelada; mantienes tu acceso hasta el final del periodo de pago."
+                    : "La suscripción cancelada ha finalizado.";
+            default -> paidEntitled ? "Suscripción activa." : "Una suscripción es requerida.";
         };
     }
 }
