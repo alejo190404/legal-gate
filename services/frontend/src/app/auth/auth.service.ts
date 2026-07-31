@@ -22,13 +22,15 @@ export class AuthService {
   constructor(private readonly config: ApiConfigService) {}
 
   async initialize(): Promise<void> {
-    // A custom AuthKit domain (e.g. auth.legal-gate.co) makes the WorkOS session
-    // cookie first-party; without it, browsers that block third-party cookies
-    // cannot refresh sessions and every request fails once the token expires.
-    const apiHostname = this.config.getWorkosApiHostname();
     this.client = await createClient(this.config.getWorkosClientId(), {
       redirectUri: `${window.location.origin}/dashboard`,
-      ...(apiHostname ? { apiHostname } : {}),
+      // Without a custom AuthKit domain (paid WorkOS feature), cookie-based
+      // session refresh depends on a third-party cookie on api.workos.com that
+      // browsers block, so sessions die when the access token expires. devMode
+      // keeps the rotating single-use refresh token in localStorage and sends
+      // it in the refresh request body instead, which works from any origin.
+      // Trade-off: the refresh token becomes readable by injected scripts (XSS).
+      devMode: true,
     });
     this.user.set(this.client.getUser());
     if (this.user()) {

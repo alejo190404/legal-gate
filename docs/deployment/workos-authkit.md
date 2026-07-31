@@ -27,17 +27,18 @@ Use separate WorkOS staging and production environments. In each environment:
 7. Set the application homepage and post-logout URL to the corresponding frontend origin root.
    Sign-out returns to `/` (the public landing), so keep the post-logout URL at the origin root.
 8. Create a server API key for Intake. Never put this key in Vercel or browser configuration.
-9. Configure a custom AuthKit domain (production only). The SPA SDK keeps the WorkOS session
-   in a cookie on the AuthKit API host; without a custom domain that cookie lives on
-   `api.workos.com` and is third-party, so browsers that block third-party cookies reject the
-   session refresh with 400 and users are logged out as soon as the access token expires
-   (mid-onboarding, for example). In the WorkOS Dashboard open Domains, set the AuthKit domain
-   to `auth.legal-gate.co`, create the CNAME record it shows at your DNS provider, wait for
-   verification, then set `LEGALGATE_WORKOS_API_HOSTNAME=auth.legal-gate.co` on the frontend.
-   The custom domain also becomes the token issuer and JWKS host, so update the Gateway in the
-   same deploy: `WORKOS_ISSUER=https://auth.legal-gate.co` and
-   `WORKOS_JWKS_URL=https://auth.legal-gate.co/sso/jwks/<WORKOS_CLIENT_ID>` — with the old
-   values the Gateway rejects every new token as soon as the domain is active.
+
+Note on session refresh: the SPA SDK's default cookie-based session refresh requires a custom
+AuthKit domain (a paid WorkOS feature) — without one the session cookie on `api.workos.com` is
+third-party and browsers that block those cookies reject the refresh with 400, logging users
+out as soon as the access token expires. LegalGate stays on the free tier, so the frontend
+creates the AuthKit client with `devMode: true`: the rotating single-use refresh token is kept
+in localStorage and sent in the refresh request body, which works from any origin with no
+custom domain. The trade-off is that the refresh token is readable by injected scripts (XSS);
+keep the dashboard session limits (Sessions tab: maximum session length, inactivity timeout)
+conservative to bound the exposure. If a custom domain is ever adopted, remove `devMode` and
+pass `apiHostname` instead — and update the Gateway `WORKOS_ISSUER`/`WORKOS_JWKS_URL` to the
+custom domain in the same deploy, since it becomes the token issuer and JWKS host.
 
 No custom JWT template, FGA model, social login, enterprise SSO, organization switching UI, or
 webhooks are needed for this release.
@@ -53,7 +54,6 @@ Gateway, Intake, and Mail Ingress. A suitable value can be generated with
 | Variable | Value |
 | --- | --- |
 | `LEGALGATE_WORKOS_CLIENT_ID` | WorkOS application Client ID |
-| `LEGALGATE_WORKOS_API_HOSTNAME` | Custom AuthKit domain, such as `auth.legal-gate.co`; leave empty locally to use `api.workos.com` |
 | `LEGALGATE_API_BASE_URL` | Public Gateway origin, such as `https://api.legal-gate.co`; leave empty only when `/api` is reverse-proxied to Gateway |
 
 ### Gateway

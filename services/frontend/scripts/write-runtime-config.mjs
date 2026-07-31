@@ -7,8 +7,7 @@ const workosClientId = (process.env.LEGALGATE_WORKOS_CLIENT_ID ?? '').trim();
 if (!workosClientId) {
   throw new Error('LEGALGATE_WORKOS_CLIENT_ID must be configured.');
 }
-const workosApiHostname = (process.env.LEGALGATE_WORKOS_API_HOSTNAME ?? '').trim();
-const config = `${JSON.stringify({ apiBaseUrl, workosClientId, workosApiHostname }, null, 2)}
+const config = `${JSON.stringify({ apiBaseUrl, workosClientId }, null, 2)}
 `;
 mkdirSync(dirname(configPath), { recursive: true });
 writeFileSync(configPath, config);

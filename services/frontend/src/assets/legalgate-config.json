@@ -1,5 +1,4 @@
 {
   "apiBaseUrl": "",
-  "workosClientId": "client_test_replace_me",
-  "workosApiHostname": ""
+  "workosClientId": "client_test_replace_me"
 }
