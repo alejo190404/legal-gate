@@ -22,8 +22,13 @@ export class AuthService {
   constructor(private readonly config: ApiConfigService) {}
 
   async initialize(): Promise<void> {
+    // A custom AuthKit domain (e.g. auth.legal-gate.co) makes the WorkOS session
+    // cookie first-party; without it, browsers that block third-party cookies
+    // cannot refresh sessions and every request fails once the token expires.
+    const apiHostname = this.config.getWorkosApiHostname();
     this.client = await createClient(this.config.getWorkosClientId(), {
       redirectUri: `${window.location.origin}/dashboard`,
+      ...(apiHostname ? { apiHostname } : {}),
     });
     this.user.set(this.client.getUser());
     if (this.user()) {
@@ -50,6 +55,14 @@ export class AuthService {
     this.claims.set(getClaims<LegalGateClaims>(token));
     this.user.set(this.requireClient().getUser());
     return token;
+  }
+
+  sessionExpired(): void {
+    this.user.set(null);
+    this.claims.set(null);
+    void this.requireClient()
+      .signIn()
+      .catch(() => window.location.assign('/'));
   }
 
   signOut(): void {

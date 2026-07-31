@@ -57,7 +57,9 @@ public class SubscriptionProviderClient {
         ensureEnabled();
         String uri = UriComponentsBuilder.fromPath("/preapproval/search")
                 .queryParam("q", externalReference)
-                .queryParam("limit", 100)
+                // Mercado Pago search endpoints reject limit values above 50 with
+                // 400 "Invalid value for limit".
+                .queryParam("limit", 50)
                 .build().encode().toUriString();
         JsonNode response = restClient.get().uri(uri).retrieve().body(JsonNode.class);
         if (response == null || !response.path("results").isArray() || response.path("results").isEmpty()) {
@@ -88,7 +90,9 @@ public class SubscriptionProviderClient {
         ensureEnabled();
         String uri = UriComponentsBuilder.fromPath("/authorized_payments/search")
                 .queryParam("preapproval_id", providerSubscriptionId)
-                .queryParam("limit", 100)
+                // Mercado Pago search endpoints reject limit values above 50 with
+                // 400 "Invalid value for limit".
+                .queryParam("limit", 50)
                 .build().encode().toUriString();
         return restClient.get().uri(uri).retrieve().body(JsonNode.class);
     }

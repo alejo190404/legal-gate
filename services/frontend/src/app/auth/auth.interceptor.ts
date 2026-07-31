@@ -1,6 +1,6 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { catchError, from, switchMap, throwError } from 'rxjs';
+import { EMPTY, catchError, from, switchMap, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 
@@ -24,6 +24,16 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
         return send(true);
       }
       return throwError(() => error);
+    }),
+    catchError((error: unknown) => {
+      if (error instanceof HttpErrorResponse) {
+        return throwError(() => error);
+      }
+      // getAccessToken threw: the WorkOS session refresh was rejected, so the
+      // session is gone. Re-authenticate instead of surfacing a request error
+      // the caller would misreport as a server failure.
+      auth.sessionExpired();
+      return EMPTY;
     }),
   );
 };

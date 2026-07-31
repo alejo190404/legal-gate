@@ -27,6 +27,13 @@ Use separate WorkOS staging and production environments. In each environment:
 7. Set the application homepage and post-logout URL to the corresponding frontend origin root.
    Sign-out returns to `/` (the public landing), so keep the post-logout URL at the origin root.
 8. Create a server API key for Intake. Never put this key in Vercel or browser configuration.
+9. Configure a custom AuthKit domain (production only). The SPA SDK keeps the WorkOS session
+   in a cookie on the AuthKit API host; without a custom domain that cookie lives on
+   `api.workos.com` and is third-party, so browsers that block third-party cookies reject the
+   session refresh with 400 and users are logged out as soon as the access token expires
+   (mid-onboarding, for example). In the WorkOS Dashboard open Domains, set the AuthKit domain
+   to `auth.legal-gate.co`, create the CNAME record it shows at your DNS provider, wait for
+   verification, then set `LEGALGATE_WORKOS_API_HOSTNAME=auth.legal-gate.co` on the frontend.
 
 No custom JWT template, FGA model, social login, enterprise SSO, organization switching UI, or
 webhooks are needed for this release.
@@ -42,6 +49,7 @@ Gateway, Intake, and Mail Ingress. A suitable value can be generated with
 | Variable | Value |
 | --- | --- |
 | `LEGALGATE_WORKOS_CLIENT_ID` | WorkOS application Client ID |
+| `LEGALGATE_WORKOS_API_HOSTNAME` | Custom AuthKit domain, such as `auth.legal-gate.co`; leave empty locally to use `api.workos.com` |
 | `LEGALGATE_API_BASE_URL` | Public Gateway origin, such as `https://api.legal-gate.co`; leave empty only when `/api` is reverse-proxied to Gateway |
 
 ### Gateway

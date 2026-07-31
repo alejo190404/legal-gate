@@ -5,6 +5,7 @@ import { catchError, firstValueFrom, of } from 'rxjs';
 interface RuntimeConfig {
   apiBaseUrl?: string;
   workosClientId?: string;
+  workosApiHostname?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -12,6 +13,7 @@ export class ApiConfigService {
   private readonly http = inject(HttpClient);
   private apiBaseUrl = '';
   private workosClientId = '';
+  private workosApiHostname = '';
 
   load(): Promise<void> {
     return firstValueFrom(
@@ -21,6 +23,7 @@ export class ApiConfigService {
     ).then((config) => {
       this.setApiBaseUrl(config.apiBaseUrl ?? '');
       this.workosClientId = (config.workosClientId ?? '').trim();
+      this.workosApiHostname = (config.workosApiHostname ?? '').trim();
       if (!this.workosClientId) {
         throw new Error('LEGALGATE_WORKOS_CLIENT_ID is missing from runtime configuration.');
       }
@@ -38,6 +41,10 @@ export class ApiConfigService {
 
   getWorkosClientId(): string {
     return this.workosClientId;
+  }
+
+  getWorkosApiHostname(): string {
+    return this.workosApiHostname;
   }
 
   isGatewayUrl(url: string): boolean {

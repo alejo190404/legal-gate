@@ -8,10 +8,11 @@ import { AuthService } from './auth.service';
 import { authInterceptor } from './auth.interceptor';
 
 describe('authInterceptor', () => {
-  const auth = { getAccessToken: vi.fn() };
+  const auth = { getAccessToken: vi.fn(), sessionExpired: vi.fn() };
 
   beforeEach(() => {
     auth.getAccessToken.mockReset().mockResolvedValue('token-1');
+    auth.sessionExpired.mockReset();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
@@ -61,6 +62,21 @@ describe('authInterceptor', () => {
     retry.flush({});
     expect(auth.getAccessToken).toHaveBeenNthCalledWith(1, false);
     expect(auth.getAccessToken).toHaveBeenNthCalledWith(2, true);
+  });
+
+  it('re-authenticates when the token refresh fails instead of erroring', async () => {
+    auth.getAccessToken.mockRejectedValue(new Error('refresh rejected'));
+    const http = TestBed.inject(HttpClient);
+    const controller = TestBed.inject(HttpTestingController);
+    const observer = { next: vi.fn(), error: vi.fn(), complete: vi.fn() };
+
+    http.get('/api/session').subscribe(observer);
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.expectNone('/api/session');
+    expect(auth.sessionExpired).toHaveBeenCalledOnce();
+    expect(observer.error).not.toHaveBeenCalled();
+    expect(observer.complete).toHaveBeenCalledOnce();
   });
 
   it('does not retry a forbidden response', async () => {
