@@ -34,6 +34,10 @@ Use separate WorkOS staging and production environments. In each environment:
    (mid-onboarding, for example). In the WorkOS Dashboard open Domains, set the AuthKit domain
    to `auth.legal-gate.co`, create the CNAME record it shows at your DNS provider, wait for
    verification, then set `LEGALGATE_WORKOS_API_HOSTNAME=auth.legal-gate.co` on the frontend.
+   The custom domain also becomes the token issuer and JWKS host, so update the Gateway in the
+   same deploy: `WORKOS_ISSUER=https://auth.legal-gate.co` and
+   `WORKOS_JWKS_URL=https://auth.legal-gate.co/sso/jwks/<WORKOS_CLIENT_ID>` — with the old
+   values the Gateway rejects every new token as soon as the domain is active.
 
 No custom JWT template, FGA model, social login, enterprise SSO, organization switching UI, or
 webhooks are needed for this release.
