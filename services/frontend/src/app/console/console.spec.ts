@@ -222,4 +222,43 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(secondKey).toBeTruthy();
     expect(secondKey).not.toBe(firstKey);
   });
+
+  it('activates a 100%-discount coupon without redirecting to Mercado Pago', () => {
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const http = TestBed.inject(HttpTestingController);
+    const component = fixture.componentInstance;
+    component.tenantId.set('tenant-1');
+    component.selectedPlanCode.set('monthly');
+    component.couponCode.set('FREE100');
+
+    component.checkoutBilling();
+    const checkout = http.expectOne('/api/billing/checkout');
+    checkout.flush({ status: 'ACTIVE', checkoutUrl: null });
+
+    const status = http.expectOne('/api/billing/subscription');
+    status.flush({
+      billingEnabled: true,
+      enforcementEnabled: true,
+      entitled: true,
+      status: 'ACTIVE',
+      subscription: null,
+      payments: [],
+      accessEndsAt: null,
+      message: 'Suscripcion activa.',
+    });
+    http.expectOne('/api/consultations').flush({ tenantId: 'tenant-1', consultations: [] });
+    http.expectOne('/api/tenant/settings').flush({
+      tenantId: 'tenant-1',
+      urgentKeywords: [],
+      consultationWindows: [],
+      urgencyLevels: [],
+      destinationEmail: null,
+      intakeEmail: 'tenant-1@intake.legal-gate.co',
+      routingRules: [],
+      lawyers: [],
+    });
+
+    expect(component.billingError()).toBe('');
+    expect(component.view()).toBe('console');
+  });
 });

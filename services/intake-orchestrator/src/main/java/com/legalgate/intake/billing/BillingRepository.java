@@ -24,6 +24,9 @@ public interface BillingRepository {
     Subscription createPending(
             String tenantSlug, Plan plan, Coupon coupon, BigDecimal amount,
             String payerEmail, String idempotencyKey, Instant expiresAt);
+    Subscription createComped(
+            String tenantSlug, Plan plan, Coupon coupon,
+            String payerEmail, String idempotencyKey, Instant paidThrough);
     void attachProvider(UUID subscriptionId, String tenantSlug, String providerId, String providerStatus, String initPoint);
     void updateProviderStatus(UUID subscriptionId, String tenantSlug, String providerStatus);
     void cancel(UUID subscriptionId, String tenantSlug, Instant canceledAt);

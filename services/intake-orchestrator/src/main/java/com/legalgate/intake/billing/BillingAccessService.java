@@ -51,7 +51,9 @@ public class BillingAccessService {
     private boolean entitled(Subscription subscription, Instant now) {
         if (subscription == null) return false;
         if ("ACTIVE".equals(subscription.status())) {
-            return subscription.paidThrough() != null && subscription.paidThrough().isAfter(now);
+            return subscription.paidThrough() == null
+                    ? subscription.currentAmountCop().signum() == 0 // forever comp: no renewal date
+                    : subscription.paidThrough().isAfter(now);
         }
         if ("PAST_DUE".equals(subscription.status())) {
             return subscription.graceDeadline() != null && subscription.graceDeadline().isAfter(now);

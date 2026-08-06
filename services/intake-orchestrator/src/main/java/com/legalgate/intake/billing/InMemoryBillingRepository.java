@@ -32,6 +32,9 @@ class InMemoryBillingRepository implements BillingRepository {
     public Subscription createPending(String slug, Plan p, Coupon c, BigDecimal a, String e, String k, Instant x) {
         throw new IllegalStateException("Billing requires JDBC persistence.");
     }
+    public Subscription createComped(String slug, Plan p, Coupon c, String e, String k, Instant paidThrough) {
+        throw new IllegalStateException("Billing requires JDBC persistence.");
+    }
     public void attachProvider(UUID id, String slug, String providerId, String status, String initPoint) {}
     public void updateProviderStatus(UUID id, String slug, String status) {}
     public void cancel(UUID id, String slug, Instant at) {}

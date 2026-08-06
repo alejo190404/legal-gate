@@ -658,7 +658,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         : this.cryptoId();
     this.storeCheckoutAttempt({ tenantId: this.tenantId(), planCode, couponCode, idempotencyKey });
     this.http
-      .post<{ checkoutUrl: string }>(
+      .post<{ status: string; checkoutUrl: string | null }>(
         this.apiConfig.url('/api/billing/checkout'),
         {
           planCode,
@@ -668,6 +668,14 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (checkout) => {
+          if (checkout.status === 'ACTIVE') {
+            // A 100%-discount coupon activates the subscription directly; there is no
+            // Mercado Pago checkout to redirect to.
+            this.clearCheckoutAttempt();
+            this.billingMessage.set('Cupon aplicado. Tu acceso ya esta activo.');
+            this.loadBillingStatus();
+            return;
+          }
           if (!checkout.checkoutUrl) {
             this.billingError.set('Mercado Pago aun esta preparando el checkout. Intenta nuevamente.');
             this.isBillingLoading.set(false);

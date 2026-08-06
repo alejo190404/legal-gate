@@ -510,7 +510,13 @@
                 Calcular precio
               </button>
               <button class="btn btn-primary" type="button" (click)="checkoutBilling()" [disabled]="isBillingLoading()">
-                {{ isBillingLoading() ? 'Procesando...' : 'Continuar a Mercado Pago' }}
+                {{
+                  isBillingLoading()
+                    ? 'Procesando...'
+                    : billingQuote()?.recurringAmountCop === 0
+                      ? 'Activar gratis'
+                      : 'Continuar a Mercado Pago'
+                }}
               </button>
             </div>
             @if (billingQuote(); as quote) {

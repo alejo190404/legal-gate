@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,23 +71,28 @@ class BillingServiceTests {
     }
 
     @Test
-    void rejectsUnknownCouponsAndNonPositivePrices() {
+    void rejectsUnknownCoupons() {
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("EXPIRED"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.quote("monthly", "EXPIRED"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("invalid_coupon");
+    }
 
+    @Test
+    void clampsFixedCouponsThatExceedPlanPriceToFree() {
         Coupon tooLarge = new Coupon(
                 UUID.randomUUID(), "TOO-LARGE", "FIXED", new BigDecimal("100000"),
                 "FOREVER", null);
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("TOO-LARGE"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(tooLarge));
-        assertThatThrownBy(() -> service.quote("monthly", "TOO-LARGE"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("coupon_results_in_non_positive_price");
+
+        BillingModels.Quote quote = service.quote("monthly", "TOO-LARGE");
+
+        assertThat(quote.discountAmountCop()).isEqualByComparingTo("100000.00");
+        assertThat(quote.recurringAmountCop()).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -147,6 +153,58 @@ class BillingServiceTests {
     }
 
     @Test
+    void checkoutSkipsProviderAndActivatesForeverFreeCoupon() {
+        Coupon free = new Coupon(
+                UUID.randomUUID(), "FREE100", "PERCENTAGE", new BigDecimal("100"),
+                "FOREVER", null);
+        when(repository.validCoupon(
+                org.mockito.ArgumentMatchers.eq("FREE100"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(free));
+        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        Subscription comped = compedSubscription(free, null);
+        when(repository.createComped(
+                ArgumentMatchers.eq("tenant"), ArgumentMatchers.eq(monthly), ArgumentMatchers.eq(free),
+                ArgumentMatchers.eq("payer@example.com"), ArgumentMatchers.eq("attempt-1"),
+                ArgumentMatchers.isNull()))
+                .thenReturn(comped);
+
+        BillingModels.CheckoutResponse response = service.checkout(
+                "tenant", "user-1", "monthly", "FREE100", "attempt-1");
+
+        assertThat(response.status()).isEqualTo("ACTIVE");
+        assertThat(response.checkoutUrl()).isNull();
+        verifyNoInteractions(provider);
+    }
+
+    @Test
+    void checkoutActivatesRepeatingFreeCouponWithPaidThroughCycles() {
+        Coupon free = new Coupon(
+                UUID.randomUUID(), "FREE3", "PERCENTAGE", new BigDecimal("100"),
+                "REPEATING", 3);
+        when(repository.validCoupon(
+                org.mockito.ArgumentMatchers.eq("FREE3"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(free));
+        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        Instant paidThrough = Instant.now().plus(Duration.ofDays(90));
+        Subscription comped = compedSubscription(free, paidThrough);
+        when(repository.createComped(
+                ArgumentMatchers.eq("tenant"), ArgumentMatchers.eq(monthly), ArgumentMatchers.eq(free),
+                ArgumentMatchers.eq("payer@example.com"), ArgumentMatchers.eq("attempt-1"),
+                ArgumentMatchers.notNull()))
+                .thenReturn(comped);
+
+        BillingModels.CheckoutResponse response = service.checkout(
+                "tenant", "user-1", "monthly", "FREE3", "attempt-1");
+
+        assertThat(response.status()).isEqualTo("ACTIVE");
+        verifyNoInteractions(provider);
+        verify(repository).createComped(
+                ArgumentMatchers.eq("tenant"), ArgumentMatchers.eq(monthly), ArgumentMatchers.eq(free),
+                ArgumentMatchers.eq("payer@example.com"), ArgumentMatchers.eq("attempt-1"),
+                ArgumentMatchers.notNull());
+    }
+
+    @Test
     void cancelCallsProviderBeforeMarkingLocalSubscription() {
         Subscription subscription = activeSubscription();
         when(repository.currentSubscription("tenant")).thenReturn(Optional.of(subscription));
@@ -174,6 +232,15 @@ class BillingServiceTests {
 
         verify(repository, never()).cancel(
                 ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any());
+    }
+
+    private Subscription compedSubscription(Coupon coupon, Instant paidThrough) {
+        return new Subscription(
+                UUID.randomUUID(), UUID.randomUUID(), "tenant", monthly, coupon,
+                monthly.priceCop(), BigDecimal.ZERO, "ACTIVE", "comped",
+                null, null,
+                "payer@example.com", Instant.now(), paidThrough,
+                null, null, null, false, 0, false, "attempt-1", Instant.now());
     }
 
     private Subscription activeSubscription() {

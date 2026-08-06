@@ -79,11 +79,12 @@ public class BillingService {
                     ? plan.priceCop().multiply(coupon.discountValue())
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
                     : coupon.discountValue().setScale(2, RoundingMode.HALF_UP);
+            // A coupon can never take the price negative; clamp so FIXED >= price reads as free, not an error.
+            if (discount.compareTo(plan.priceCop()) > 0) {
+                discount = plan.priceCop();
+            }
         }
         BigDecimal recurring = plan.priceCop().subtract(discount).setScale(2, RoundingMode.HALF_UP);
-        if (recurring.signum() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "coupon_results_in_non_positive_price");
-        }
         return new Quote(
                 plan, coupon == null ? null : coupon.code(), plan.priceCop(), recurring,
                 discount, "COP", coupon == null ? null : coupon.duration(),
@@ -113,6 +114,22 @@ public class BillingService {
                 : repository.validCoupon(quote.couponCode(), Instant.now())
                         .orElseThrow(() -> new ResponseStatusException(
                                 HttpStatus.BAD_REQUEST, "invalid_coupon"));
+        if (quote.recurringAmountCop().signum() == 0) {
+            try {
+                Subscription comped = repository.createComped(
+                        tenantSlug, quote.plan(), coupon, payerEmail, idempotencyKey.trim(),
+                        compPaidThrough(quote, Instant.now()));
+                return response(comped);
+            } catch (CouponCapacityExceededException exhausted) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_coupon", exhausted);
+            } catch (DuplicateKeyException conflict) {
+                return repository.subscriptionByIdempotency(tenantSlug, idempotencyKey.trim())
+                        .map(value -> recoverOrReturn(value, idempotencyKey.trim()))
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.CONFLICT, "subscription_already_exists", conflict));
+            }
+        }
+
         Subscription pending;
         try {
             pending = repository.createPending(
@@ -326,7 +343,8 @@ public class BillingService {
     }
 
     private CheckoutResponse recoverOrReturn(Subscription subscription, String key) {
-        if (subscription.checkoutUrl() != null || subscription.providerSubscriptionId() != null) {
+        if (subscription.currentAmountCop().signum() == 0
+                || subscription.checkoutUrl() != null || subscription.providerSubscriptionId() != null) {
             return response(subscription);
         }
         Optional<JsonNode> recovered = safeFind(subscription.id().toString());
@@ -371,6 +389,14 @@ public class BillingService {
         if ("ONCE".equals(coupon.duration())) return 1;
         if ("REPEATING".equals(coupon.duration())) return coupon.durationCycles();
         return -1;
+    }
+
+    /** Null for a FOREVER comp (no renewal date); otherwise now plus the free cycle count. */
+    private static Instant compPaidThrough(Quote quote, Instant now) {
+        int cycles = quote.discountedCycles() == null ? -1 : quote.discountedCycles();
+        if (cycles < 0) return null;
+        int months = "YEARLY".equals(quote.plan().interval()) ? 12 * cycles : cycles;
+        return now.atZone(java.time.ZoneOffset.UTC).plusMonths(months).toInstant();
     }
 
     private static String firstText(JsonNode node, String... fields) {

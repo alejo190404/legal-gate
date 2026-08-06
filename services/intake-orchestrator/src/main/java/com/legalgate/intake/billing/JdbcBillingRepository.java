@@ -82,8 +82,9 @@ class JdbcBillingRepository implements BillingRepository {
                   and (
                     (s.status in ('ACTIVE','CANCELED') and s.paid_through > ?)
                     or (s.status = 'PAST_DUE' and s.grace_deadline > ?)
+                    or (s.status = 'ACTIVE' and s.paid_through is null and s.current_amount_cop = 0)
                   )
-                order by case when s.status = 'PAST_DUE' then s.grace_deadline else s.paid_through end desc,
+                order by case when s.status = 'PAST_DUE' then s.grace_deadline else s.paid_through end desc nulls first,
                          s.created_at desc
                 limit 1
                 """, this::mapSubscription, tenantSlug, timestamp, timestamp).stream().findFirst());
@@ -143,6 +144,39 @@ class JdbcBillingRepository implements BillingRepository {
                     coupon == null ? null : coupon.discountType(), coupon == null ? null : coupon.discountValue(),
                     coupon == null ? null : coupon.duration(), coupon == null ? null : coupon.durationCycles(),
                     plan.priceCop(), amount, payerEmail, Timestamp.from(expiresAt), idempotencyKey);
+            return subscriptionByIdempotency(tenantSlug, idempotencyKey).orElseThrow();
+        });
+    }
+
+    @Override
+    public Subscription createComped(
+            String tenantSlug, Plan plan, Coupon coupon,
+            String payerEmail, String idempotencyKey, Instant paidThrough
+    ) {
+        return inTenant(tenantSlug, () -> {
+            if (coupon != null) {
+                reserveCouponCapacity(tenantSlug, coupon.id(), Instant.now());
+            }
+            UUID tenantId = jdbc.queryForObject("select id from tenants where slug = ?", UUID.class, tenantSlug);
+            UUID id = UUID.randomUUID();
+            jdbc.update("""
+                    insert into subscriptions (
+                      id, tenant_id, tenant_slug, plan_id, plan_code, plan_name, plan_interval,
+                      plan_price_cop, coupon_id, coupon_code, coupon_type, coupon_value,
+                      coupon_duration, coupon_duration_cycles, original_amount_cop,
+                      current_amount_cop, status, provider_status, payer_email,
+                      current_period_start, paid_through, idempotency_key
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ACTIVE', 'comped', ?, now(), ?, ?)
+                    """,
+                    id, tenantId, tenantSlug, plan.id(), plan.code(), plan.displayName(), plan.interval(),
+                    plan.priceCop(), coupon == null ? null : coupon.id(), coupon == null ? null : coupon.code(),
+                    coupon == null ? null : coupon.discountType(), coupon == null ? null : coupon.discountValue(),
+                    coupon == null ? null : coupon.duration(), coupon == null ? null : coupon.durationCycles(),
+                    plan.priceCop(), payerEmail, paidThrough == null ? null : Timestamp.from(paidThrough),
+                    idempotencyKey);
+            if (coupon != null) {
+                jdbc.update("update coupons set redemption_count = redemption_count + 1 where id = ?", coupon.id());
+            }
             return subscriptionByIdempotency(tenantSlug, idempotencyKey).orElseThrow();
         });
     }
@@ -410,6 +444,11 @@ class JdbcBillingRepository implements BillingRepository {
             jdbc.update("""
                     update subscriptions set status = 'EXPIRED', updated_at = now()
                     where status = 'PAST_DUE' and grace_deadline < ?
+                    """, Timestamp.from(now));
+            jdbc.update("""
+                    update subscriptions set status = 'EXPIRED', updated_at = now()
+                    where status = 'ACTIVE' and provider_subscription_id is null
+                      and paid_through is not null and paid_through < ?
                     """, Timestamp.from(now));
             return null;
         });

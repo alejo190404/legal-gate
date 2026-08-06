@@ -107,8 +107,20 @@ select code, discount_type, discount_value, duration, duration_cycles,
 from coupons order by created_at;
 ```
 
-`100%` discounts and discounts that reduce the charge to zero are intentionally rejected,
-because subscription activation requires an approved payment.
+A coupon that takes the total to zero — `PERCENTAGE` up to 100, or a `FIXED` value at or above
+the plan price (clamped) — activates the subscription directly instead of creating a Mercado
+Pago preapproval:
+
+- The subscription is inserted as `ACTIVE` with `provider_status = 'comped'` and
+  `provider_subscription_id = null`; the reconciliation and amount-transition workers ignore
+  rows with no provider id, so a comped subscription is never touched by the payment machinery.
+- `coupons.redemption_count` is incremented at creation time, since no webhook will ever fire
+  to do it.
+- `ONCE` / `REPEATING` coupons set `paid_through` to the free-cycle count from checkout; once
+  that passes, `expirePendingAndGrace` marks the row `EXPIRED` and the tenant must check out
+  again (with or without a new coupon) to regain access.
+- `FOREVER` coupons leave `paid_through` null and stay entitled until the subscription is
+  canceled.
 
 ## 4. Safe rollout and sandbox verification
 

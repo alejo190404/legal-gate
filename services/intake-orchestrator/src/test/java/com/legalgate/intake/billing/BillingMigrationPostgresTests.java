@@ -201,6 +201,47 @@ class BillingMigrationPostgresTests {
                 .isInstanceOf(CouponCapacityExceededException.class);
     }
 
+    @Test
+    void compedCheckoutActivatesWithoutProviderAndLapsesWhenFinite() throws Exception {
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    insert into tenants (slug, display_name, provisioning_status)
+                    values ('tenant-e', 'Tenant E', 'ACTIVE');
+                    insert into coupons (
+                      code, discount_type, discount_value, duration, duration_cycles
+                    ) values ('FREE100', 'PERCENTAGE', 100, 'REPEATING', 1);
+                    """);
+        }
+        JdbcBillingRepository repository = billingRepository();
+        Plan plan = repository.activePlan("monthly").orElseThrow();
+        Coupon coupon = repository.validCoupon("FREE100", Instant.now()).orElseThrow();
+        Instant paidThrough = Instant.now().plus(Duration.ofSeconds(2));
+
+        repository.createComped("tenant-e", plan, coupon, "payer-e@example.com", "comp-e", paidThrough);
+
+        assertThat(repository.currentSubscription("tenant-e").orElseThrow().status()).isEqualTo("ACTIVE");
+        assertThat(repository.entitledSubscription("tenant-e", Instant.now())).isPresent();
+
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+                ResultSet result = sql.executeQuery(
+                        "select redemption_count from coupons where code = 'FREE100'")) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getInt(1)).isEqualTo(1);
+        }
+
+        // A comped row with provider_subscription_id null lapses once its free window passes...
+        repository.expirePendingAndGrace(paidThrough.plus(Duration.ofSeconds(1)));
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+                ResultSet result = sql.executeQuery(
+                        "select status from subscriptions where idempotency_key = 'comp-e'")) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getString(1)).isEqualTo("EXPIRED");
+        }
+
+        // ...while a paid ACTIVE row with a provider id is never touched by the same sweep.
+        assertThat(repository.currentSubscription("tenant-a").orElseThrow().status()).isEqualTo("ACTIVE");
+    }
+
     private static int countForContext(Connection connection, String tenant) throws SQLException {
         try (Statement sql = connection.createStatement()) {
             sql.execute("select set_config('app.tenant_slug', '" + tenant + "', true)");
