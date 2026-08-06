@@ -23,10 +23,13 @@ import org.springframework.web.server.ResponseStatusException;
 class BillingController {
     private final BillingService billing;
     private final TenantContextResolver tenants;
+    private final CouponRateLimiter couponAttempts;
 
-    BillingController(BillingService billing, TenantContextResolver tenants) {
+    BillingController(
+            BillingService billing, TenantContextResolver tenants, CouponRateLimiter couponAttempts) {
         this.billing = billing;
         this.tenants = tenants;
+        this.couponAttempts = couponAttempts;
     }
 
     @GetMapping("/plans")
@@ -46,6 +49,7 @@ class BillingController {
             @Valid @RequestBody CheckoutRequest request
     ) {
         requireAdmin(role);
+        requireCouponAttemptAllowed(organizationId, request.couponCode());
         tenants.requireProvisioningActiveTenant(organizationId);
         return billing.quote(request.planCode(), request.couponCode());
     }
@@ -62,6 +66,7 @@ class BillingController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "idempotency_key_required");
         }
         requireAdmin(role);
+        requireCouponAttemptAllowed(organizationId, request.couponCode());
         TenantProvisioning tenant = tenants.requireProvisioningActiveTenant(organizationId);
         return billing.checkout(
                 tenant.slug(), userId, request.planCode(), request.couponCode(), idempotencyKey);
@@ -85,6 +90,15 @@ class BillingController {
         requireAdmin(role);
         TenantProvisioning tenant = tenants.requireProvisioningActiveTenant(organizationId);
         return billing.cancel(tenant.slug());
+    }
+
+    private void requireCouponAttemptAllowed(String organizationId, String couponCode) {
+        if (couponCode == null || couponCode.isBlank()) {
+            return;
+        }
+        if (!couponAttempts.tryAcquire(organizationId)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "coupon_attempts_exceeded");
+        }
     }
 
     private static void requireAdmin(String role) {

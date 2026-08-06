@@ -623,6 +623,16 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   quoteBilling(): void {
     if (!this.selectedPlanCode()) return;
+    // The quote for this plan and coupon is already on screen; re-asking the backend only
+    // burns the tenant's coupon-attempt budget.
+    const quoted = this.billingQuote();
+    if (
+      quoted &&
+      quoted.plan.code === this.selectedPlanCode() &&
+      (quoted.couponCode ?? '').toUpperCase() === this.couponCode().trim().toUpperCase()
+    ) {
+      return;
+    }
     this.isBillingLoading.set(true);
     this.billingError.set('');
     this.http
@@ -635,9 +645,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           this.billingQuote.set(quote);
           this.isBillingLoading.set(false);
         },
-        error: () => {
+        error: (error: HttpErrorResponse) => {
           this.billingQuote.set(null);
-          this.billingError.set('El plan o cupon no es valido.');
+          this.billingError.set(
+            error.status === 429
+              ? 'Demasiados intentos con cupones. Espera un minuto antes de reintentar.'
+              : 'El plan o cupon no es valido.',
+          );
           this.isBillingLoading.set(false);
         },
       });
@@ -684,10 +698,15 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           window.location.assign(checkout.checkoutUrl);
         },
         error: (error: HttpErrorResponse) => {
-          if (error.status >= 400 && error.status < 500) {
+          // 429 is a "try again shortly", so the idempotency key has to survive it.
+          if (error.status >= 400 && error.status < 500 && error.status !== 429) {
             this.clearCheckoutAttempt();
           }
-          this.billingError.set('No se pudo iniciar Mercado Pago. El intento se puede reanudar sin duplicar la suscripcion.');
+          this.billingError.set(
+            error.status === 429
+              ? 'Demasiados intentos con cupones. Espera un minuto antes de reintentar.'
+              : 'No se pudo iniciar Mercado Pago. El intento se puede reanudar sin duplicar la suscripcion.',
+          );
           this.isBillingLoading.set(false);
         },
       });
