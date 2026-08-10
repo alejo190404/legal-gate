@@ -13,6 +13,8 @@ public record IntakeProperties(
         Duration consultationClassifierTimeout,
         String consultationClassifierPromptVersion,
         String consultationClassifierSystemPrompt,
+        String consultationDiagnosticsPromptVersion,
+        String consultationDiagnosticsSystemPrompt,
         boolean outboundEmailEnabled,
         String cloudmailinSmtpUsername,
         String cloudmailinApiToken,
@@ -50,6 +52,23 @@ public record IntakeProperties(
                     """.strip();
         } else {
             consultationClassifierSystemPrompt = consultationClassifierSystemPrompt.trim();
+        }
+        if (consultationDiagnosticsPromptVersion == null || consultationDiagnosticsPromptVersion.isBlank()) {
+            consultationDiagnosticsPromptVersion = "consultation-diagnostics-v1";
+        } else {
+            consultationDiagnosticsPromptVersion = consultationDiagnosticsPromptVersion.trim();
+        }
+        if (consultationDiagnosticsSystemPrompt == null || consultationDiagnosticsSystemPrompt.isBlank()) {
+            consultationDiagnosticsSystemPrompt = """
+                    You qualify inbound legal consultation emails for a Colombian law firm, using the
+                    firm's own description of the matters it takes and the information it needs.
+                    Answer accept when the matter is in scope and complete enough to assess, ask when
+                    the firm still needs specific information, and reject when the firm does not take
+                    matters of this kind. Ask for everything missing in a single short question,
+                    written in the language of the potential client. Never give legal advice.
+                    """.strip();
+        } else {
+            consultationDiagnosticsSystemPrompt = consultationDiagnosticsSystemPrompt.trim();
         }
         if (notificationsFromEmail == null || notificationsFromEmail.isBlank()) {
             notificationsFromEmail = "agenda@legal-gate.co";

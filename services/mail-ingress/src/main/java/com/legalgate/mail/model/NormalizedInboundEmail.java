@@ -9,6 +9,18 @@ public record NormalizedInboundEmail(
         String subject,
         String messageId,
         String plain,
-        String html
+        String html,
+        boolean autoResponder
 ) {
+    public NormalizedInboundEmail(
+            List<String> recipients,
+            String envelopeFrom,
+            String headerFrom,
+            String subject,
+            String messageId,
+            String plain,
+            String html
+    ) {
+        this(recipients, envelopeFrom, headerFrom, subject, messageId, plain, html, false);
+    }
 }

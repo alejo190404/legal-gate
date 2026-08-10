@@ -3,9 +3,12 @@ package com.legalgate.intake.repository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.legalgate.intake.classifier.ConsultationClassifierRequest;
 import com.legalgate.intake.model.ClassificationResult;
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.DiagnosticsMessage;
+import com.legalgate.intake.model.DiagnosticsSession;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
@@ -117,9 +120,10 @@ class JdbcIntakeRepository implements IntakeRepository {
                 jdbcTemplate.update("""
                         insert into tenant_settings (
                           tenant_id, urgent_keywords, consultation_windows, urgency_levels,
-                          destination_email, intake_email, routing_rules, updated_at
+                          destination_email, intake_email, routing_rules, diagnostics_prompt,
+                          non_engagement_notice, updated_at
                         )
-                        values (?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), now())
+                        values (?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), ?, ?, now())
                         on conflict (tenant_id) do update set
                           urgent_keywords = excluded.urgent_keywords,
                           consultation_windows = excluded.consultation_windows,
@@ -127,6 +131,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                           destination_email = excluded.destination_email,
                           intake_email = excluded.intake_email,
                           routing_rules = excluded.routing_rules,
+                          diagnostics_prompt = excluded.diagnostics_prompt,
+                          non_engagement_notice = excluded.non_engagement_notice,
                           updated_at = now()
                         """,
                         tenantId,
@@ -135,7 +141,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                         toJson(settings.urgencyLevels()),
                         settings.destinationEmail(),
                         settings.intakeEmail(),
-                        toJson(settings.routingRules()));
+                        toJson(settings.routingRules()),
+                        settings.diagnosticsPrompt(),
+                        settings.nonEngagementNotice());
                 saveLawyers(tenantId, settings.lawyers());
                 return settings;
             });
@@ -151,7 +159,8 @@ class JdbcIntakeRepository implements IntakeRepository {
             ensureTenant(tenantSlug, displayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
                     select t.slug, s.urgent_keywords, s.consultation_windows, s.urgency_levels,
-                           s.destination_email, s.intake_email, s.routing_rules
+                           s.destination_email, s.intake_email, s.routing_rules,
+                           s.diagnostics_prompt, s.non_engagement_notice
                     from tenants t
                     join tenant_settings s on s.tenant_id = t.id
                     where t.slug = ?
@@ -222,32 +231,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                         consultation.sourceMessageId(),
                         Timestamp.from(consultation.createdAt()));
                 if (consultation.event() != null) {
-                    EventResponse event = consultation.event();
-                    UUID eventId = UUID.fromString(event.id());
-                    jdbcTemplate.update("""
-                            insert into events (
-                              id, tenant_id, lawyer_id, consultation_id, route_name, route_id_snapshot,
-                              urgency_name, sla_days, sla_deadline, priority_score, scheduled_start,
-                              scheduled_end, meeting_url, scheduled_within_sla, status, source, created_at, updated_at
-                            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
-                            """,
-                            eventId,
-                            tenantId,
-                            uuidOrNull(event.lawyerId()),
-                            consultationId,
-                            event.routeName(),
-                            consultation.consultationType(),
-                            event.urgencyName(),
-                            event.slaDays(),
-                            Timestamp.from(event.slaDeadline()),
-                            event.priorityScore(),
-                            timestampOrNull(event.scheduledStart()),
-                            timestampOrNull(event.scheduledEnd()),
-                            event.meetingUrl(),
-                            event.scheduledWithinSla(),
-                            event.status(),
-                            event.source());
-                    jdbcTemplate.update("update consultations set event_id = ? where id = ?", eventId, consultationId);
+                    insertEvent(tenantId, consultationId, consultation, consultation.event());
+                    jdbcTemplate.update("update consultations set event_id = ? where id = ?",
+                            UUID.fromString(consultation.event().id()), consultationId);
                 }
                 updateEventsInCurrentTransaction(eventsToUpdate);
                 insertNotifications(tenantId, tenantSlug, notifications);
@@ -256,6 +242,265 @@ class JdbcIntakeRepository implements IntakeRepository {
         } catch (DuplicateKeyException ex) {
             return consultationForSourceMessageId(tenantSlug, consultation.sourceMessageId()).orElseThrow(() -> ex);
         }
+    }
+
+    @Override
+    public ConsultationResponse updateConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    ) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+            UUID consultationId = UUID.fromString(consultation.id());
+            if (consultation.event() != null) {
+                insertEvent(tenantId, consultationId, consultation, consultation.event());
+            }
+            jdbcTemplate.update("""
+                    update consultations
+                    set status = ?, urgency = ?, consultation_type = ?, assigned_lawyer_email = ?,
+                        summary = ?, classification = cast(? as jsonb), notifications = cast(? as jsonb),
+                        event_id = ?
+                    where id = ?
+                    """,
+                    consultation.status(),
+                    consultation.urgency(),
+                    consultation.consultationType(),
+                    consultation.assignedLawyerEmail(),
+                    consultation.summary(),
+                    toJson(consultation.classification()),
+                    toJson(consultation.notifications()),
+                    uuidOrNull(consultation.eventId()),
+                    consultationId);
+            updateEventsInCurrentTransaction(eventsToUpdate);
+            insertNotifications(tenantId, tenantSlug, notifications);
+            return consultation;
+        });
+    }
+
+    @Override
+    public Optional<ConsultationResponse> consultationById(String tenantSlug, String consultationId) {
+        if (consultationId == null || consultationId.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            ensureTenant(tenantSlug, displayName(tenantSlug));
+            return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.id = ?",
+                            this::mapConsultation, tenantSlug, UUID.fromString(consultationId))
+                    .stream()
+                    .findFirst();
+        });
+    }
+
+    @Override
+    public DiagnosticsSession saveDiagnosticsSession(
+            String tenantSlug,
+            DiagnosticsSession session,
+            List<DiagnosticsMessage> messages,
+            List<NotificationOutboxItem> notifications
+    ) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+            UUID sessionId = session.id() == null ? UUID.randomUUID() : UUID.fromString(session.id());
+            jdbcTemplate.update("""
+                    insert into diagnostics_sessions (
+                      id, tenant_id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
+                      extracted_summary, prompt_snapshot, original_email, rounds, attempts,
+                      next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?, ?, ?, now(), now())
+                    on conflict (id) do update set
+                      status = excluded.status,
+                      verdict = excluded.verdict,
+                      reason = excluded.reason,
+                      extracted_summary = excluded.extracted_summary,
+                      rounds = excluded.rounds,
+                      attempts = excluded.attempts,
+                      next_attempt_at = excluded.next_attempt_at,
+                      awaiting_reply_since = excluded.awaiting_reply_since,
+                      last_error = excluded.last_error,
+                      resolved_at = excluded.resolved_at,
+                      updated_at = now()
+                    """,
+                    sessionId,
+                    tenantId,
+                    tenantSlug,
+                    UUID.fromString(session.consultationId()),
+                    session.replyToken(),
+                    session.status(),
+                    session.verdict(),
+                    truncate(session.reason(), 4000),
+                    session.extractedSummary(),
+                    session.promptSnapshot(),
+                    session.originalEmail() == null ? null : toJson(session.originalEmail()),
+                    session.rounds(),
+                    session.attempts(),
+                    timestampOrNull(session.nextAttemptAt()),
+                    timestampOrNull(session.awaitingReplySince()),
+                    truncate(session.lastError(), 2000),
+                    timestampOrNull(session.resolvedAt()));
+            for (DiagnosticsMessage message : messages == null ? List.<DiagnosticsMessage>of() : messages) {
+                jdbcTemplate.update("""
+                        insert into diagnostics_messages (tenant_id, session_id, role, body, created_at)
+                        values (?, ?, ?, ?, now())
+                        """, tenantId, sessionId, message.role(), message.body());
+            }
+            insertNotifications(tenantId, tenantSlug, notifications);
+            return diagnosticsSessionById(sessionId).orElseThrow();
+        });
+    }
+
+    @Override
+    public Optional<DiagnosticsSession> diagnosticsSessionForConsultation(String tenantSlug, String consultationId) {
+        if (consultationId == null || consultationId.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            return jdbcTemplate.query(diagnosticsSessionSelect() + " where consultation_id = ?",
+                            this::mapDiagnosticsSession, UUID.fromString(consultationId))
+                    .stream()
+                    .findFirst();
+        });
+    }
+
+    @Override
+    public Optional<DiagnosticsSession> diagnosticsSessionForReplyToken(String replyToken) {
+        if (replyToken == null || replyToken.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> {
+            setTenantContext("__worker__");
+            return jdbcTemplate.query(diagnosticsSessionSelect() + " where reply_token = ?",
+                            this::mapDiagnosticsSession, replyToken)
+                    .stream()
+                    .findFirst();
+        });
+    }
+
+    @Override
+    public List<DiagnosticsSession> claimDueDiagnosticsSessions(int limit) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext("__worker__");
+            return jdbcTemplate.query("""
+                    -- Lease matches InMemoryIntakeRepository.DIAGNOSTICS_LEASE_SECONDS.
+                    update diagnostics_sessions
+                    set next_attempt_at = now() + interval '5 minutes', updated_at = now()
+                    where id in (
+                        select id
+                        from diagnostics_sessions
+                        where status = 'PENDING'
+                          and next_attempt_at is not null
+                          and next_attempt_at <= now()
+                        order by next_attempt_at asc
+                        limit ?
+                        for update skip locked
+                    )
+                    returning id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
+                              extracted_summary, prompt_snapshot, original_email, rounds, attempts,
+                              next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at
+                    """, this::mapDiagnosticsSession, Math.max(1, limit));
+        });
+    }
+
+    @Override
+    public List<DiagnosticsSession> silentDiagnosticsSessions(Instant threshold, int limit) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext("__worker__");
+            return jdbcTemplate.query(diagnosticsSessionSelect() + """
+                     where status = 'PENDING' and awaiting_reply_since is not null and awaiting_reply_since < ?
+                     order by awaiting_reply_since asc limit ?
+                    """, this::mapDiagnosticsSession, Timestamp.from(threshold), Math.max(1, limit));
+        });
+    }
+
+    @Override
+    public List<DiagnosticsMessage> diagnosticsMessages(String tenantSlug, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            return jdbcTemplate.query("""
+                    select id, role, body, created_at
+                    from diagnostics_messages
+                    where session_id = ?
+                    order by created_at asc, id asc
+                    """, (rs, rowNum) -> new DiagnosticsMessage(
+                    rs.getObject("id", UUID.class).toString(),
+                    rs.getString("role"),
+                    rs.getString("body"),
+                    rs.getTimestamp("created_at").toInstant()
+            ), UUID.fromString(sessionId));
+        });
+    }
+
+    @Override
+    public int purgeDiagnosticsTranscripts(Instant cutoff) {
+        return transactionTemplate.execute(status -> {
+            setTenantContext("__worker__");
+            jdbcTemplate.update("""
+                    delete from diagnostics_messages
+                    where session_id in (
+                        select id from diagnostics_sessions
+                        where status in ('REJECTED', 'ABANDONED')
+                          and resolved_at is not null and resolved_at < ?
+                          and transcript_purged_at is null
+                    )
+                    """, Timestamp.from(cutoff));
+            return jdbcTemplate.update("""
+                    update diagnostics_sessions
+                    set original_email = null, transcript_purged_at = now(), updated_at = now()
+                    where status in ('REJECTED', 'ABANDONED')
+                      and resolved_at is not null and resolved_at < ?
+                      and transcript_purged_at is null
+                    """, Timestamp.from(cutoff));
+        });
+    }
+
+    private Optional<DiagnosticsSession> diagnosticsSessionById(UUID sessionId) {
+        return jdbcTemplate.query(diagnosticsSessionSelect() + " where id = ?", this::mapDiagnosticsSession, sessionId)
+                .stream()
+                .findFirst();
+    }
+
+    private String diagnosticsSessionSelect() {
+        return """
+                select id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
+                       extracted_summary, prompt_snapshot, original_email, rounds, attempts,
+                       next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at
+                from diagnostics_sessions
+                """;
+    }
+
+    private DiagnosticsSession mapDiagnosticsSession(ResultSet rs, int rowNum) throws SQLException {
+        String originalEmail = rs.getString("original_email");
+        return new DiagnosticsSession(
+                rs.getObject("id", UUID.class).toString(),
+                rs.getString("tenant_slug"),
+                rs.getObject("consultation_id", UUID.class).toString(),
+                rs.getString("reply_token"),
+                rs.getString("status"),
+                rs.getString("verdict"),
+                rs.getString("reason"),
+                rs.getString("extracted_summary"),
+                rs.getString("prompt_snapshot"),
+                originalEmail == null ? null : fromJson(originalEmail, ConsultationClassifierRequest.InboundEmail.class),
+                rs.getInt("rounds"),
+                rs.getInt("attempts"),
+                instantOrNull(rs.getTimestamp("next_attempt_at")),
+                instantOrNull(rs.getTimestamp("awaiting_reply_since")),
+                rs.getString("last_error"),
+                instantOrNull(rs.getTimestamp("resolved_at")),
+                instantOrNull(rs.getTimestamp("created_at"))
+        );
+    }
+
+    private Instant instantOrNull(Timestamp value) {
+        return value == null ? null : value.toInstant();
     }
 
     @Override
@@ -361,8 +606,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                         for update skip locked
                     )
                     returning id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                              subject, body, html_body, ics_content, status, attempts, provider_message_id, last_error,
-                              created_at, updated_at, next_attempt_at
+                              from_email, subject, body, html_body, ics_content, status, attempts, provider_message_id,
+                              last_error, created_at, updated_at, next_attempt_at
                     """, this::mapNotification, MAX_NOTIFICATION_ATTEMPTS, Math.max(1, limit));
             return notifications;
         });
@@ -397,6 +642,33 @@ class JdbcIntakeRepository implements IntakeRepository {
                     where id = ?
                     """, MAX_NOTIFICATION_ATTEMPTS, truncate(errorMessage, 2000), MAX_NOTIFICATION_ATTEMPTS, UUID.fromString(notificationId));
         });
+    }
+
+    private void insertEvent(UUID tenantId, UUID consultationId, ConsultationResponse consultation, EventResponse event) {
+        jdbcTemplate.update("""
+                insert into events (
+                  id, tenant_id, lawyer_id, consultation_id, route_name, route_id_snapshot,
+                  urgency_name, sla_days, sla_deadline, priority_score, scheduled_start,
+                  scheduled_end, meeting_url, scheduled_within_sla, status, source, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+                on conflict (id) do nothing
+                """,
+                UUID.fromString(event.id()),
+                tenantId,
+                uuidOrNull(event.lawyerId()),
+                consultationId,
+                event.routeName(),
+                consultation.consultationType(),
+                event.urgencyName(),
+                event.slaDays(),
+                Timestamp.from(event.slaDeadline()),
+                event.priorityScore(),
+                timestampOrNull(event.scheduledStart()),
+                timestampOrNull(event.scheduledEnd()),
+                event.meetingUrl(),
+                event.scheduledWithinSla(),
+                event.status(),
+                event.source());
     }
 
     private void updateEventsInCurrentTransaction(List<EventResponse> events) {
@@ -541,7 +813,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("destination_email"),
                 rs.getString("intake_email"),
                 fromJson(rs.getString("routing_rules"), ROUTING_RULE_LIST),
-                lawyersForCurrentTenant()
+                lawyersForCurrentTenant(),
+                rs.getString("diagnostics_prompt"),
+                rs.getString("non_engagement_notice")
         );
     }
 
@@ -599,19 +873,20 @@ class JdbcIntakeRepository implements IntakeRepository {
             jdbcTemplate.update("""
                     insert into notification_outbox (
                       tenant_id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                      subject, body, html_body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
+                      from_email, subject, body, html_body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
                     on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role)
-                    where status in ('PENDING', 'SENDING', 'FAILED')
+                    where status in ('PENDING', 'SENDING', 'FAILED') and event_id is not null
                     do nothing
                     """,
                     tenantId,
                     tenantSlug,
                     UUID.fromString(notification.consultationId()),
-                    UUID.fromString(notification.eventId()),
+                    uuidOrNull(notification.eventId()),
                     notification.type(),
                     notification.recipientRole(),
                     notification.recipientEmail(),
+                    notification.fromEmail(),
                     notification.subject(),
                     notification.body(),
                     notification.htmlBody(),
@@ -624,10 +899,11 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getObject("id", UUID.class).toString(),
                 rs.getString("tenant_slug"),
                 rs.getObject("consultation_id", UUID.class).toString(),
-                rs.getObject("event_id", UUID.class).toString(),
+                rs.getObject("event_id") == null ? null : rs.getObject("event_id", UUID.class).toString(),
                 rs.getString("notification_type"),
                 rs.getString("recipient_role"),
                 rs.getString("recipient_email"),
+                rs.getString("from_email"),
                 rs.getString("subject"),
                 rs.getString("body"),
                 rs.getString("html_body"),

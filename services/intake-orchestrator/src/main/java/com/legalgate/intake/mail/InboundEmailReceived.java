@@ -14,6 +14,23 @@ public record InboundEmailReceived(
         String messageId,
         String plain,
         String html,
-        Instant receivedAt
+        Instant receivedAt,
+        boolean autoResponder
 ) {
+    public InboundEmailReceived(
+            String eventId,
+            String tenantId,
+            String envelopeTo,
+            List<String> recipients,
+            String envelopeFrom,
+            String headerFrom,
+            String subject,
+            String messageId,
+            String plain,
+            String html,
+            Instant receivedAt
+    ) {
+        this(eventId, tenantId, envelopeTo, recipients, envelopeFrom, headerFrom, subject, messageId, plain, html,
+                receivedAt, false);
+    }
 }

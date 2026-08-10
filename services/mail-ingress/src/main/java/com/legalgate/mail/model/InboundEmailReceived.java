@@ -14,6 +14,7 @@ public record InboundEmailReceived(
         String messageId,
         String plain,
         String html,
-        Instant receivedAt
+        Instant receivedAt,
+        boolean autoResponder
 ) {
 }

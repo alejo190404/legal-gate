@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import com.legalgate.intake.model.ClassificationResult;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationStatus;
-import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.billing.BillingAccessService;
 import java.time.Instant;
 import java.util.List;
@@ -21,10 +21,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 class InboundEmailControllerTests {
 
-    private final IntakeService intakeService = mock(IntakeService.class);
+    private final DiagnosticsService diagnosticsService = mock(DiagnosticsService.class);
     private final BillingAccessService billingAccessService = mock(BillingAccessService.class);
     private final InboundEmailController controller =
-            new InboundEmailController(intakeService, billingAccessService);
+            new InboundEmailController(diagnosticsService, billingAccessService);
 
     @Test
     void acceptsValidInboundEmailEvents() {
@@ -42,7 +42,7 @@ class InboundEmailControllerTests {
                 "<p>Necesito orientacion.</p>",
                 Instant.now()
         );
-        when(intakeService.createConsultationFromInboundEmail(event)).thenReturn(new ConsultationResponse(
+        when(diagnosticsService.receiveInboundEmail(event)).thenReturn(new ConsultationResponse(
                 "consultation-1",
                 "firma-demo",
                 "Client",
@@ -68,7 +68,7 @@ class InboundEmailControllerTests {
                 .containsEntry("eventId", "event-1")
                 .containsEntry("tenantId", "firma-demo")
                 .containsEntry("consultationId", "consultation-1");
-        verify(intakeService).createConsultationFromInboundEmail(event);
+        verify(diagnosticsService).receiveInboundEmail(event);
     }
 
     @Test
@@ -82,6 +82,33 @@ class InboundEmailControllerTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("status", "ignored_subscription_inactive");
+    }
+
+    // A firm whose subscription lapses mid-conversation has already written to this person; a
+    // billing problem must not turn into a stranger being ghosted.
+    @Test
+    void stillAcceptsADiagnosticsReplyWhenTheSubscriptionHasLapsed() {
+        InboundEmailReceived reply = new InboundEmailReceived(
+                "event-reply", "firma-demo", "firma-demo+dtoken@intake.legal-gate.co",
+                List.of("firma-demo+dtoken@intake.legal-gate.co"), "client@example.com", null,
+                "Re: Consulta", "<reply@example.com>", "El 3 de marzo.", null, Instant.now());
+        when(billingAccessService.isEntitled("firma-demo")).thenReturn(false);
+        when(diagnosticsService.isDiagnosticsReply(reply)).thenReturn(true);
+        when(diagnosticsService.receiveInboundEmail(reply)).thenReturn(consultation("consultation-2"));
+
+        ResponseEntity<Map<String, Object>> response = controller.receive(reply);
+
+        assertThat(response.getBody()).containsEntry("status", "created");
+        verify(diagnosticsService).receiveInboundEmail(reply);
+    }
+
+    private ConsultationResponse consultation(String id) {
+        return new ConsultationResponse(
+                id, "firma-demo", "Client", "client@example.com", "Necesito orientacion.", null,
+                "DIAGNOSTICS_PENDING", "PENDING", null, null,
+                new ClassificationResult("DIAGNOSTICS", List.of(), null, "Qualifying.", null),
+                new NotificationStatus(false, false, null, null),
+                "event-1", "<message@example.com>", Instant.now());
     }
 
     @Test

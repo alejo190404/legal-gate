@@ -37,6 +37,23 @@ class HttpConsultationClassifierClient implements ConsultationClassifierClient {
         }
     }
 
+    @Override
+    public ConsultationDiagnosticsResponse diagnose(ConsultationDiagnosticsRequest request) {
+        String classifierUrl = normalizedClassifierUrl();
+        if (classifierUrl == null) {
+            throw new ClassifierUnavailableException("consultation_classifier_not_configured");
+        }
+        try {
+            return restTemplate.postForObject(
+                    classifierUrl + "/diagnose-consultation",
+                    request,
+                    ConsultationDiagnosticsResponse.class
+            );
+        } catch (RestClientException ex) {
+            throw new ClassifierUnavailableException("consultation_classifier_unavailable", ex);
+        }
+    }
+
     private String normalizedClassifierUrl() {
         String configuredUrl = intakeProperties.consultationClassifierUrl();
         if (configuredUrl == null || configuredUrl.isBlank()) {

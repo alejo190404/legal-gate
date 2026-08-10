@@ -30,6 +30,8 @@ legalgate:
     consultation-classifier-timeout: ${LEGALGATE_CONSULTATION_CLASSIFIER_TIMEOUT:3s}
     consultation-classifier-prompt-version: ${LEGALGATE_CONSULTATION_CLASSIFIER_PROMPT_VERSION:consultation-classifier-v1}
     consultation-classifier-system-prompt: ${LEGALGATE_CONSULTATION_CLASSIFIER_SYSTEM_PROMPT:You classify inbound legal consultation emails for a Colombian law firm. Select exactly one provided routeIndex and exactly one tenant urgency level. Keep summaries concise, extract a short legal concept, and explain the routing decision.}
+    consultation-diagnostics-prompt-version: ${LEGALGATE_CONSULTATION_DIAGNOSTICS_PROMPT_VERSION:consultation-diagnostics-v1}
+    consultation-diagnostics-system-prompt: ${LEGALGATE_CONSULTATION_DIAGNOSTICS_SYSTEM_PROMPT:}
     outbound-email-enabled: ${LEGALGATE_OUTBOUND_EMAIL_ENABLED:false}
     cloudmailin-smtp-username: ${LEGALGATE_CLOUDMAILIN_SMTP_USERNAME:}
     cloudmailin-api-token: ${LEGALGATE_CLOUDMAILIN_API_TOKEN:}

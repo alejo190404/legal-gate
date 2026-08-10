@@ -354,6 +354,17 @@
   color: var(--status-unrouted-fg);
   background: var(--status-unrouted-bg);
 }
+// Diagnostics states: in progress reads as "new", both terminal states as "unrouted",
+// so the palette stays the design system's five tokens rather than inventing three more.
+.badge.st-diagnostics {
+  color: var(--status-new-fg);
+  background: var(--status-new-bg);
+}
+.badge.st-rejected,
+.badge.st-abandoned {
+  color: var(--status-unrouted-fg);
+  background: var(--status-unrouted-bg);
+}
 .tag {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -436,6 +447,13 @@
   background: var(--status-confirmed-fg);
 }
 .fchip .dot.st-unrouted {
+  background: var(--status-unrouted-fg);
+}
+.fchip .dot.st-diagnostics {
+  background: var(--status-new-fg);
+}
+.fchip .dot.st-rejected,
+.fchip .dot.st-abandoned {
   background: var(--status-unrouted-fg);
 }
 .fchip.on .dot {

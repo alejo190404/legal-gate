@@ -39,7 +39,12 @@ class CloudMailinOutboundEmailClient {
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("from", intakeProperties.notificationsFromName() + " <" + intakeProperties.notificationsFromEmail() + ">");
+        // Diagnostics messages carry a token-bearing From address so the client's reply lands
+        // back on the right consultation; everything else sends from the shared agenda address.
+        String fromEmail = isBlank(notification.fromEmail())
+                ? intakeProperties.notificationsFromEmail()
+                : notification.fromEmail().trim();
+        payload.put("from", intakeProperties.notificationsFromName() + " <" + fromEmail + ">");
         payload.put("to", notification.recipientEmail());
         payload.put("test_mode", intakeProperties.outboundTestMode());
         payload.put("subject", notification.subject());
@@ -48,11 +53,13 @@ class CloudMailinOutboundEmailClient {
             payload.put("html", notification.htmlBody());
         }
         payload.put("tags", List.of("legalgate", "consultation", "tenant:" + tagValue(notification.tenantId()), notification.type(), notification.recipientRole()));
-        payload.put("attachments", List.of(Map.of(
-                "file_name", "legalgate-consultation.ics",
-                "content", Base64.getEncoder().encodeToString(notification.icsContent().getBytes(StandardCharsets.UTF_8)),
-                "content_type", "text/calendar; method=REQUEST; charset=UTF-8"
-        )));
+        if (!isBlank(notification.icsContent())) {
+            payload.put("attachments", List.of(Map.of(
+                    "file_name", "legalgate-consultation.ics",
+                    "content", Base64.getEncoder().encodeToString(notification.icsContent().getBytes(StandardCharsets.UTF_8)),
+                    "content_type", "text/calendar; method=REQUEST; charset=UTF-8"
+            )));
+        }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> response = restClient.post()

@@ -75,7 +75,7 @@ class IntakeServiceManualConsultationTests {
 
     private IntakeProperties properties() {
         return new IntakeProperties(
-                "memory", false, "intake.legal-gate.co", null, null, null, null,
+                "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
                 false, null, null, null, null, false, "test-token", "test-key", null);
     }
 
@@ -89,6 +89,12 @@ class IntakeServiceManualConsultationTests {
                 throw failure;
             }
             return response;
+        }
+
+        @Override
+        public com.legalgate.intake.classifier.ConsultationDiagnosticsResponse diagnose(
+                com.legalgate.intake.classifier.ConsultationDiagnosticsRequest request) {
+            throw new UnsupportedOperationException("manual consultations never run Diagnostics");
         }
     }
 }

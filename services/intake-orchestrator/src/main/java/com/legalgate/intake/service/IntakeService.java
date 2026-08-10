@@ -88,7 +88,8 @@ public class IntakeService {
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
         TenantSettingsResponse settings = new TenantSettingsResponse(
                 tenantId, primaryRule.urgentKeywords(), primaryRule.consultationWindows(), derivedUrgencyLevels(routingRules),
-                primaryRule.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), routingRules, lawyers
+                primaryRule.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), routingRules, lawyers,
+                sanitizeNullable(request.diagnosticsPrompt()), sanitizeNullable(request.nonEngagementNotice())
         );
         return intakeRepository.saveSettings(tenantId, settings);
     }
@@ -188,6 +189,111 @@ public class IntakeService {
 
     public ConsultationListResponse consultationsForTenant(String tenantId) {
         return intakeRepository.consultationsForTenant(tenantId);
+    }
+
+    /**
+     * Persists an inbound Consultation with no Event and no lawyer time reserved, for Diagnostics
+     * to qualify. Nothing is scheduled and nothing is mailed here.
+     */
+    public ConsultationResponse savePendingDiagnosticsConsultation(InboundEmailReceived event, String status, String explanation) {
+        ConsultationResponse consultation = new ConsultationResponse(
+                UUID.randomUUID().toString(), event.tenantId(),
+                firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
+                clientEmailFor(event),
+                firstNonBlank(event.plain(), event.subject(), event.html(), "Inbound email received.").trim(),
+                null, status, "PENDING", null, null,
+                new ClassificationResult("DIAGNOSTICS", List.of(), null, explanation, null),
+                new NotificationStatus(false, false, null, null),
+                sanitizeTraceValue(event.eventId()), sanitizeTraceValue(event.messageId()), Instant.now(),
+                null, null
+        );
+        return intakeRepository.saveConsultation(event.tenantId(), consultation, List.of(), List.of());
+    }
+
+    /**
+     * Classifies and schedules a Consultation that Diagnostics has accepted. The SLA deadline is
+     * anchored here, at acceptance, not at the moment the email arrived.
+     *
+     * @param allowFallback when false, a classifier failure is rethrown so the caller can retry;
+     *                      when true the Consultation is routed to the primary route for review.
+     */
+    public ConsultationResponse scheduleAcceptedConsultation(
+            String tenantId,
+            ConsultationResponse pending,
+            ConsultationClassifierRequest.InboundEmail originalEmail,
+            String diagnosticsSummary,
+            boolean allowFallback
+    ) {
+        TenantSettingsResponse settings = settingsFor(tenantId);
+        List<TenantRoutingRule> routingRules = routingRulesFor(settings);
+        ConsultationClassifierResponse classifierResponse = null;
+        try {
+            classifierResponse = consultationClassifierClient.classify(
+                    classifierRequestForAccepted(pending, originalEmail, diagnosticsSummary, routingRules));
+        } catch (ClassifierUnavailableException ex) {
+            if (!allowFallback) {
+                throw ex;
+            }
+        }
+        boolean classified = isValidClassifierResponse(classifierResponse, routingRules);
+        if (!classified && !allowFallback) {
+            throw new ClassifierUnavailableException("consultation_classifier_unusable_response");
+        }
+        TenantRoutingRule route = classified ? routingRules.get(classifierResponse.routeIndex()) : primaryRoutingRule(routingRules);
+        String urgency = classified ? classifierResponse.urgency().trim() : urgencyLevelsFor(route).get(0);
+        ClassificationResult classification = classified
+                ? new ClassificationResult("LLM_CLASSIFIED", List.of(), sanitizeNullable(classifierResponse.concept()),
+                        sanitizeNullable(classifierResponse.explanation()), classifierResponse.confidence())
+                : new ClassificationResult("LLM_FAILED", List.of(), null,
+                        "Gemini classification was retried and remained unavailable; routed to primary route for lawyer review.", null);
+
+        Instant acceptedAt = Instant.now();
+        SchedulingResult scheduled = scheduleEvent(tenantId, settings, route, urgency, acceptedAt, "LEGALGATE");
+        EventResponse scheduledEvent = scheduled.event();
+        String preferredWindow = firstConfiguredWindow(route.consultationWindows());
+        ConsultationResponse accepted = new ConsultationResponse(
+                pending.id(), tenantId, pending.clientName(), pending.clientEmail(),
+                summaryWithDiagnostics(pending.summary(), diagnosticsSummary),
+                preferredWindow, "RECEIVED", urgency, route.name(), scheduledEvent.lawyerEmail(),
+                classification,
+                new NotificationStatus(true, true, destinationEmailFor(settings, route), preferredWindow),
+                pending.sourceEventId(), pending.sourceMessageId(), pending.createdAt(),
+                scheduledEvent.id(), scheduledEvent
+        );
+        return intakeRepository.updateConsultation(
+                tenantId, accepted, scheduled.movedEvents(), notificationsForScheduling(tenantId, accepted, scheduled));
+    }
+
+    // Classification sees the extracted summary plus the original email, never the full
+    // transcript, which buries the routing signal in pleasantries.
+    private ConsultationClassifierRequest classifierRequestForAccepted(
+            ConsultationResponse pending,
+            ConsultationClassifierRequest.InboundEmail originalEmail,
+            String diagnosticsSummary,
+            List<TenantRoutingRule> routingRules
+    ) {
+        String plain = summaryWithDiagnostics(
+                originalEmail == null ? pending.summary() : firstNonBlank(originalEmail.plain(), pending.summary()),
+                diagnosticsSummary);
+        return new ConsultationClassifierRequest(
+                new ConsultationClassifierRequest.InboundEmail(
+                        originalEmail == null ? "Consulta: " + pending.clientName() : originalEmail.subject(),
+                        plain,
+                        originalEmail == null ? null : originalEmail.html(),
+                        originalEmail == null ? pending.clientEmail() : originalEmail.sender(),
+                        List.of(),
+                        originalEmail == null ? pending.sourceMessageId() : originalEmail.messageId()
+                ),
+                routesFor(routingRules), intakeProperties.consultationClassifierSystemPrompt(),
+                intakeProperties.consultationClassifierPromptVersion()
+        );
+    }
+
+    private String summaryWithDiagnostics(String summary, String diagnosticsSummary) {
+        if (diagnosticsSummary == null || diagnosticsSummary.isBlank()) {
+            return summary;
+        }
+        return summary + "\n\nDiagnostico LegalGate:\n" + diagnosticsSummary.trim();
     }
 
     private ConsultationResponse saveFallbackInboundConsultation(InboundEmailReceived event, TenantSettingsResponse settings, List<TenantRoutingRule> routingRules, String label) {
@@ -569,7 +675,8 @@ public class IntakeService {
         if (settings.intakeEmail() == null || settings.intakeEmail().isBlank()) {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(), settings.urgentKeywords(), settings.consultationWindows(), settings.urgencyLevels(),
-                    settings.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), settings.routingRules(), settings.lawyers()
+                    settings.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), settings.routingRules(),
+                    settings.lawyers(), settings.diagnosticsPrompt(), settings.nonEngagementNotice()
             );
             return intakeRepository.saveSettings(tenantId, healedSettings);
         }
@@ -582,7 +689,8 @@ public class IntakeService {
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
         return new TenantSettingsResponse(
                 settings.tenantId() == null ? tenantId : settings.tenantId(), primaryRule.urgentKeywords(), primaryRule.consultationWindows(),
-                derivedUrgencyLevels(routingRules), primaryRule.destinationEmail(), settings.intakeEmail(), routingRules, lawyers
+                derivedUrgencyLevels(routingRules), primaryRule.destinationEmail(), settings.intakeEmail(), routingRules, lawyers,
+                sanitizeNullable(settings.diagnosticsPrompt()), sanitizeNullable(settings.nonEngagementNotice())
         );
     }
     private List<LawyerProfile> lawyersFrom(String tenantId, List<LawyerProfile> submitted, List<TenantRoutingRule> routingRules) {

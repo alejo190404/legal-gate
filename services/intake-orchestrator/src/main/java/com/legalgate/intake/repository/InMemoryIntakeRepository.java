@@ -2,6 +2,8 @@ package com.legalgate.intake.repository;
 
 import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.DiagnosticsMessage;
+import com.legalgate.intake.model.DiagnosticsSession;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
@@ -25,6 +27,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     private static final int MAX_NOTIFICATION_ATTEMPTS = 5;
     private static final long NOTIFICATION_LEASE_SECONDS = 300;
+    private static final long DIAGNOSTICS_LEASE_SECONDS = 300;
 
     private final ConcurrentMap<String, TenantSettingsResponse> tenantSettings = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, List<ConsultationResponse>> consultationsByTenant = new ConcurrentHashMap<>();
@@ -32,6 +35,8 @@ class InMemoryIntakeRepository implements IntakeRepository {
     private final ConcurrentMap<String, NotificationOutboxItem> notificationsByDedupeKey = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, TenantProvisioning> tenantsByOwner = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, TenantProvisioning> tenantsByOrganization = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, DiagnosticsSession> diagnosticsSessions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, List<DiagnosticsMessage>> diagnosticsTranscripts = new ConcurrentHashMap<>();
 
     @Override
     public Optional<TenantProvisioning> tenantForOrganization(String organizationId) {
@@ -140,8 +145,127 @@ class InMemoryIntakeRepository implements IntakeRepository {
     }
 
     @Override
+    public ConsultationResponse updateConsultation(
+            String tenantSlug,
+            ConsultationResponse consultation,
+            List<EventResponse> eventsToUpdate,
+            List<NotificationOutboxItem> notifications
+    ) {
+        List<ConsultationResponse> consultations = consultationsByTenant.computeIfAbsent(tenantSlug, ignored -> new ArrayList<>());
+        for (int index = 0; index < consultations.size(); index++) {
+            if (consultations.get(index).id().equals(consultation.id())) {
+                consultations.set(index, consultation);
+            }
+        }
+        if (consultation.event() != null) {
+            eventsByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>())
+                    .put(consultation.event().id(), consultation.event());
+        }
+        updateEvents(tenantSlug, eventsToUpdate);
+        queueNotifications(tenantSlug, notifications);
+        return consultation;
+    }
+
+    @Override
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
         return new ConsultationListResponse(tenantSlug, List.copyOf(consultationsByTenant.getOrDefault(tenantSlug, List.of())));
+    }
+
+    @Override
+    public Optional<ConsultationResponse> consultationById(String tenantSlug, String consultationId) {
+        if (consultationId == null || consultationId.isBlank()) {
+            return Optional.empty();
+        }
+        return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+                .filter(consultation -> consultationId.equals(consultation.id()))
+                .findFirst();
+    }
+
+    @Override
+    public DiagnosticsSession saveDiagnosticsSession(
+            String tenantSlug,
+            DiagnosticsSession session,
+            List<DiagnosticsMessage> messages,
+            List<NotificationOutboxItem> notifications
+    ) {
+        String id = session.id() == null ? java.util.UUID.randomUUID().toString() : session.id();
+        DiagnosticsSession stored = new DiagnosticsSession(
+                id, tenantSlug, session.consultationId(), session.replyToken(), session.status(), session.verdict(),
+                session.reason(), session.extractedSummary(), session.promptSnapshot(), session.originalEmail(),
+                session.rounds(), session.attempts(), session.nextAttemptAt(), session.awaitingReplySince(),
+                session.lastError(), session.resolvedAt(),
+                session.createdAt() == null ? Instant.now() : session.createdAt());
+        diagnosticsSessions.put(id, stored);
+        if (messages != null && !messages.isEmpty()) {
+            List<DiagnosticsMessage> transcript = diagnosticsTranscripts.computeIfAbsent(id, ignored -> new ArrayList<>());
+            for (DiagnosticsMessage message : messages) {
+                transcript.add(new DiagnosticsMessage(
+                        java.util.UUID.randomUUID().toString(), message.role(), message.body(), Instant.now()));
+            }
+        }
+        queueNotifications(tenantSlug, notifications);
+        return stored;
+    }
+
+    @Override
+    public Optional<DiagnosticsSession> diagnosticsSessionForConsultation(String tenantSlug, String consultationId) {
+        return diagnosticsSessions.values().stream()
+                .filter(session -> session.tenantId().equals(tenantSlug))
+                .filter(session -> session.consultationId().equals(consultationId))
+                .findFirst();
+    }
+
+    @Override
+    public Optional<DiagnosticsSession> diagnosticsSessionForReplyToken(String replyToken) {
+        if (replyToken == null || replyToken.isBlank()) {
+            return Optional.empty();
+        }
+        return diagnosticsSessions.values().stream()
+                .filter(session -> replyToken.equals(session.replyToken()))
+                .findFirst();
+    }
+
+    @Override
+    public List<DiagnosticsSession> claimDueDiagnosticsSessions(int limit) {
+        Instant now = Instant.now();
+        List<DiagnosticsSession> claimed = diagnosticsSessions.values().stream()
+                .filter(DiagnosticsSession::isPending)
+                .filter(session -> session.nextAttemptAt() != null && !session.nextAttemptAt().isAfter(now))
+                .limit(Math.max(1, limit))
+                .toList();
+        for (DiagnosticsSession session : claimed) {
+            diagnosticsSessions.put(session.id(), session.dueNow(now.plusSeconds(DIAGNOSTICS_LEASE_SECONDS)));
+        }
+        return claimed;
+    }
+
+    @Override
+    public List<DiagnosticsSession> silentDiagnosticsSessions(Instant threshold, int limit) {
+        return diagnosticsSessions.values().stream()
+                .filter(DiagnosticsSession::isPending)
+                .filter(session -> session.awaitingReplySince() != null && session.awaitingReplySince().isBefore(threshold))
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
+    @Override
+    public List<DiagnosticsMessage> diagnosticsMessages(String tenantSlug, String sessionId) {
+        return List.copyOf(diagnosticsTranscripts.getOrDefault(sessionId, List.of()));
+    }
+
+    @Override
+    public int purgeDiagnosticsTranscripts(Instant cutoff) {
+        int purged = 0;
+        for (DiagnosticsSession session : diagnosticsSessions.values()) {
+            boolean terminal = List.of(DiagnosticsSession.REJECTED, DiagnosticsSession.ABANDONED).contains(session.status());
+            if (terminal && session.resolvedAt() != null && session.resolvedAt().isBefore(cutoff)
+                    && diagnosticsTranscripts.containsKey(session.id())) {
+                diagnosticsTranscripts.remove(session.id());
+                diagnosticsSessions.put(session.id(), session.withTranscriptPurged());
+                purged++;
+            }
+        }
+        return purged;
     }
 
     @Override
@@ -205,8 +329,12 @@ class InMemoryIntakeRepository implements IntakeRepository {
             String id = notification.id() == null || notification.id().isBlank()
                     ? java.util.UUID.randomUUID().toString()
                     : notification.id();
-            String dedupeKey = tenantSlug + ":" + notification.consultationId() + ":" + notification.eventId()
-                    + ":" + notification.type() + ":" + notification.recipientRole();
+            // Scheduling notifications dedupe by event; a diagnostics message has no event and
+            // is one per round, so it keys on its own id and is never suppressed.
+            String dedupeKey = notification.eventId() == null
+                    ? id
+                    : tenantSlug + ":" + notification.consultationId() + ":" + notification.eventId()
+                            + ":" + notification.type() + ":" + notification.recipientRole();
             NotificationOutboxItem queued = new NotificationOutboxItem(
                     id,
                     tenantSlug,
@@ -215,6 +343,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                     notification.type(),
                     notification.recipientRole(),
                     notification.recipientEmail(),
+                    notification.fromEmail(),
                     notification.subject(),
                     notification.body(),
                     notification.htmlBody(),
@@ -242,7 +371,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                     NotificationOutboxItem notification = entry.getValue();
                     NotificationOutboxItem claimed = new NotificationOutboxItem(
                             notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                            notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                            notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
                             notification.htmlBody(), notification.icsContent(), "SENDING", notification.attempts(), notification.providerMessageId(),
                             notification.lastError(), notification.createdAt(), now, now.plusSeconds(NOTIFICATION_LEASE_SECONDS)
                     );
@@ -257,7 +386,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
         notificationsByDedupeKey.replaceAll((key, notification) -> notificationId.equals(notification.id())
                 ? new NotificationOutboxItem(
                         notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                        notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                        notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
                         notification.htmlBody(), notification.icsContent(), "SENT", notification.attempts(), providerMessageId, null,
                         notification.createdAt(), Instant.now(), notification.nextAttemptAt()
                 )
@@ -275,7 +404,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
             boolean exhausted = attempts >= MAX_NOTIFICATION_ATTEMPTS;
             return new NotificationOutboxItem(
                     notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                    notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.subject(), notification.body(),
+                    notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
                     notification.htmlBody(), notification.icsContent(), exhausted ? "DEAD" : "FAILED", attempts, notification.providerMessageId(),
                     errorMessage, notification.createdAt(), now, exhausted ? now : now.plusSeconds(retryDelaySeconds(attempts))
             );

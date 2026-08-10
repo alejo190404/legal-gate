@@ -10,6 +10,7 @@ public record NotificationOutboxItem(
         String type,
         String recipientRole,
         String recipientEmail,
+        String fromEmail,
         String subject,
         String body,
         String htmlBody,
@@ -33,7 +34,22 @@ public record NotificationOutboxItem(
             String htmlBody,
             String icsContent
     ) {
-        this(null, null, consultationId, eventId, type, recipientRole, recipientEmail, subject, body, htmlBody, icsContent,
-                "PENDING", 0, null, null, null, null, null);
+        this(consultationId, eventId, type, recipientRole, recipientEmail, null, subject, body, htmlBody, icsContent);
+    }
+
+    public NotificationOutboxItem(
+            String consultationId,
+            String eventId,
+            String type,
+            String recipientRole,
+            String recipientEmail,
+            String fromEmail,
+            String subject,
+            String body,
+            String htmlBody,
+            String icsContent
+    ) {
+        this(null, null, consultationId, eventId, type, recipientRole, recipientEmail, fromEmail, subject, body,
+                htmlBody, icsContent, "PENDING", 0, null, null, null, null, null);
     }
 }

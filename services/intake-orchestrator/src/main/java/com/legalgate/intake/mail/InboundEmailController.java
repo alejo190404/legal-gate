@@ -1,7 +1,7 @@
 package com.legalgate.intake.mail;
 
 import com.legalgate.intake.model.ConsultationResponse;
-import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.billing.BillingAccessService;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,11 +21,11 @@ class InboundEmailController {
 
     private static final Logger log = LoggerFactory.getLogger(InboundEmailController.class);
 
-    private final IntakeService intakeService;
+    private final DiagnosticsService diagnosticsService;
     private final BillingAccessService billingAccessService;
 
-    InboundEmailController(IntakeService intakeService, BillingAccessService billingAccessService) {
-        this.intakeService = intakeService;
+    InboundEmailController(DiagnosticsService diagnosticsService, BillingAccessService billingAccessService) {
+        this.diagnosticsService = diagnosticsService;
         this.billingAccessService = billingAccessService;
     }
 
@@ -39,13 +39,18 @@ class InboundEmailController {
                 event.envelopeFrom(),
                 event.subject()
         );
-        if (!billingAccessService.isEntitled(event.tenantId())) {
+        // A reply to a Diagnostics question is always accepted: the firm has already written to
+        // this potential client, so a subscription that lapses mid-conversation must not turn a
+        // billing problem into a stranger being ghosted.
+        if (!diagnosticsService.isDiagnosticsReply(event) && !billingAccessService.isEntitled(event.tenantId())) {
             return ResponseEntity.ok(Map.of(
                     "status", "ignored_subscription_inactive",
                     "eventId", event.eventId(),
                     "tenantId", event.tenantId()));
         }
-        ConsultationResponse consultation = intakeService.createConsultationFromInboundEmail(event);
+        // The webhook persists and returns; Diagnostics and Classification run on the worker,
+        // so the mail provider is never held open for an LLM call.
+        ConsultationResponse consultation = diagnosticsService.receiveInboundEmail(event);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "created");

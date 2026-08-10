@@ -814,6 +814,70 @@
                       }
                     </div>
 
+                    @if (diagnostics(); as dx) {
+                      <div class="section-h">Diagnóstico</div>
+                      <div class="detail-row">
+                        <span class="k">Estado</span>
+                        <span class="tag">{{ dx.status }}</span>
+                      </div>
+                      @if (dx.verdict) {
+                        <div class="detail-row">
+                          <span class="k">Veredicto</span>
+                          <span class="tag">{{ dx.verdict }}</span>
+                        </div>
+                      }
+                      @if (dx.extractedSummary) {
+                        <div class="detail-row">
+                          <span class="k">Resumen del asunto</span>
+                          <span style="font-size: 13px; text-align: right">{{ dx.extractedSummary }}</span>
+                        </div>
+                      }
+                      @if (dx.reason) {
+                        <div class="detail-row">
+                          <span class="k">Motivo</span>
+                          <span style="font-size: 13px; text-align: right">{{ dx.reason }}</span>
+                        </div>
+                      }
+                      <div class="detail-row">
+                        <span class="k">Rondas</span>
+                        <span class="mono" style="font-size: 13px">{{ dx.rounds }} / 3</span>
+                      </div>
+                      @if (dx.awaitingReplySince) {
+                        <div class="detail-row">
+                          <span class="k">Esperando respuesta desde</span>
+                          <span class="mono" style="font-size: 13px">{{ formatDate(dx.awaitingReplySince) }}</span>
+                        </div>
+                      }
+                      @if (dx.lateReply) {
+                        <div class="panel-error" style="margin: 10px 0">
+                          <strong>El cliente respondió después de cerrar el diagnóstico.</strong>
+                          <span>Revisa la conversación antes de descartar la consulta.</span>
+                        </div>
+                      }
+                      @if (dx.transcript.length) {
+                        <div class="section-h">Conversación</div>
+                        @for (message of dx.transcript; track message.id) {
+                          <div class="detail-row" style="align-items: flex-start">
+                            <span class="k">{{ diagnosticsRoleLabel(message.role) }}</span>
+                            <span style="font-size: 13px; text-align: right; white-space: pre-wrap">{{ message.body }}</span>
+                          </div>
+                        }
+                      }
+                      <div class="section-h">Prompt usado</div>
+                      <div class="email" style="white-space: pre-wrap">{{ dx.promptSnapshot }}</div>
+                      @if (dx.status === 'PENDING') {
+                        <button
+                          class="btn primary"
+                          type="button"
+                          style="margin-top: 12px"
+                          [disabled]="isSubmitting()"
+                          (click)="acceptDiagnosticsNow(c.id)"
+                        >
+                          Aceptar ahora y agendar
+                        </button>
+                      }
+                    }
+
                     @if (c.event; as ev) {
                       <div class="section-h">Evento y SLA</div>
                       <div class="detail-row">
@@ -1238,6 +1302,46 @@
                     <em>{{ copyStatus() }}</em>
                   }
                 </div>
+
+                <form class="config-frame" (submit)="saveSettings(); $event.preventDefault()">
+                  <div class="config-frame-header">
+                    <div>
+                      <p class="eyebrow">Diagnóstico</p>
+                      <h3>Qué casos tomamos</h3>
+                    </div>
+                    <span class="config-count">{{ settingsForm.diagnosticsPrompt.trim() ? 'Activo' : 'Desactivado' }}</span>
+                  </div>
+                  <div class="form-field">
+                    <label for="diagnostics-prompt">Instrucciones de diagnóstico</label>
+                    <textarea
+                      id="diagnostics-prompt"
+                      rows="8"
+                      placeholder="Describe con tus palabras qué asuntos toma la firma y qué información necesitas antes de evaluarlos. Dejarlo vacío desactiva el diagnóstico y las consultas se agendan como hasta ahora."
+                      [(ngModel)]="settingsForm.diagnosticsPrompt"
+                      name="diagnosticsPrompt"
+                    ></textarea>
+                    <small class="lg-small">
+                      LegalGate le escribe al cliente potencial pidiendo exactamente lo que aquí describes, y
+                      no agenda a nadie hasta que el asunto esté completo y dentro de tu práctica.
+                    </small>
+                  </div>
+                  <div class="form-field">
+                    <label for="non-engagement-notice">Aviso de no representación</label>
+                    <textarea
+                      id="non-engagement-notice"
+                      rows="6"
+                      placeholder="Texto que recibe un cliente potencial cuando la firma no toma el asunto. Si lo dejas vacío se usa el texto por defecto."
+                      [(ngModel)]="settingsForm.nonEngagementNotice"
+                      name="nonEngagementNotice"
+                    ></textarea>
+                  </div>
+                  @if (settingsErrorMessage()) {
+                    <div class="panel-error"><strong>{{ settingsErrorMessage() }}</strong></div>
+                  }
+                  <button class="btn primary" type="submit" [disabled]="isSubmitting()">
+                    Guardar diagnóstico
+                  </button>
+                </form>
 
                 <div class="config-frame">
                   <div class="config-frame-header">

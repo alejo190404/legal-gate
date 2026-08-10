@@ -168,6 +168,91 @@ class CloudMailinWebhookControllerTests {
         org.assertj.core.api.Assertions.assertThat(event.plain()).isEqualTo("Necesito orientacion por custodia.");
     }
 
+    // Golden example pinning the reply-correlation contract. The same literal address is
+    // asserted in the intake service (DiagnosticsContractTests) to yield this exact token,
+    // so casing or character-set drift on either side breaks a test rather than correlation.
+    @Test
+    void resolvesTenantFromAPlusTaggedReplyAddressAndForwardsRecipientsUnchanged() throws Exception {
+        when(tenantLookupService.tenantForIntakeEmail(eq("firma-demo@intake.legal-gate.co")))
+                .thenReturn(Optional.of("firma-demo"));
+
+        mockMvc.perform(post("/webhooks/cloudmailin")
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(replyPayload("firma-demo+d9f2c7a1e4b8d0356af71c2e5d8093b4a@intake.legal-gate.co")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("firma-demo"));
+
+        ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
+        verify(inboundEmailClient).send(eventCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(eventCaptor.getValue().recipients())
+                .containsExactly("firma-demo+d9f2c7a1e4b8d0356af71c2e5d8093b4a@intake.legal-gate.co");
+    }
+
+    @Test
+    void flagsAutomatedResponderMail() throws Exception {
+        when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
+                .thenReturn(Optional.of("firma-demo"));
+
+        mockMvc.perform(post("/webhooks/cloudmailin")
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "headers": {
+                                    "from": "Maria Perez <maria@example.com>",
+                                    "subject": "Out of office",
+                                    "auto_submitted": "auto-replied"
+                                  },
+                                  "envelope": {
+                                    "to": "intake@firma.test",
+                                    "recipients": ["intake@firma.test"],
+                                    "from": "maria@example.com"
+                                  },
+                                  "plain": "Estoy de vacaciones."
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
+        verify(inboundEmailClient).send(eventCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(eventCaptor.getValue().autoResponder()).isTrue();
+    }
+
+    @Test
+    void ordinaryMailIsNotFlaggedAsAnAutomatedResponder() throws Exception {
+        when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
+                .thenReturn(Optional.of("firma-demo"));
+
+        mockMvc.perform(post("/webhooks/cloudmailin")
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(samplePayload()))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
+        verify(inboundEmailClient).send(eventCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(eventCaptor.getValue().autoResponder()).isFalse();
+    }
+
+    private String replyPayload(String recipient) {
+        return """
+                {
+                  "headers": {
+                    "from": "Maria Perez <maria@example.com>",
+                    "subject": "Re: Consulta laboral",
+                    "message_id": "<reply-456@example.com>"
+                  },
+                  "envelope": {
+                    "to": "%s",
+                    "recipients": ["%s"],
+                    "from": "maria@example.com"
+                  },
+                  "plain": "El contrato era a termino fijo."
+                }
+                """.formatted(recipient, recipient);
+    }
+
     private String basicAuth() {
         String credentials = "cloudmailin:secret";
         return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));

@@ -41,4 +41,10 @@ public record ConsultationResponse(
         this(id, tenantId, clientName, clientEmail, summary, preferredWindow, status, urgency, consultationType,
                 assignedLawyerEmail, classification, notifications, sourceEventId, sourceMessageId, createdAt, null, null);
     }
+
+    public ConsultationResponse withStatus(String newStatus) {
+        return new ConsultationResponse(id, tenantId, clientName, clientEmail, summary, preferredWindow, newStatus,
+                urgency, consultationType, assignedLawyerEmail, classification, notifications, sourceEventId,
+                sourceMessageId, createdAt, eventId, event);
+    }
 }

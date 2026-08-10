@@ -30,7 +30,11 @@ public class InboundEmailIngestionService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "missing_recipient");
         }
 
+        // Diagnostics replies come back to a plus-addressed variant of the intake address
+        // (firma-demo+d<token>@...). The tag is stripped for tenant lookup only; the raw
+        // recipient list is forwarded untouched so the intake service can read the token.
         String tenantId = email.recipients().stream()
+                .map(InboundEmailIngestionService::withoutPlusTag)
                 .map(tenantLookupService::tenantForIntakeEmail)
                 .flatMap(java.util.Optional::stream)
                 .findFirst()
@@ -47,7 +51,8 @@ public class InboundEmailIngestionService {
                 email.messageId(),
                 email.plain(),
                 email.html(),
-                Instant.now()
+                Instant.now(),
+                email.autoResponder()
         );
 
         try {
@@ -61,5 +66,17 @@ public class InboundEmailIngestionService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "intake_orchestrator_unavailable", ex);
         }
 
+    }
+
+    static String withoutPlusTag(String address) {
+        if (address == null) {
+            return null;
+        }
+        int at = address.indexOf('@');
+        int plus = address.indexOf('+');
+        if (at < 0 || plus < 0 || plus > at) {
+            return address;
+        }
+        return address.substring(0, plus) + address.substring(at);
     }
 }

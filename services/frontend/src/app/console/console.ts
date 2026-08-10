@@ -108,6 +108,29 @@ interface TenantSettingsResponse {
   intakeEmail: string | null;
   routingRules: TenantRoutingRule[];
   lawyers: LawyerProfile[];
+  diagnosticsPrompt: string | null;
+  nonEngagementNotice: string | null;
+}
+
+interface DiagnosticsMessage {
+  id: string | null;
+  role: string;
+  body: string;
+  createdAt: string | null;
+}
+
+interface DiagnosticsView {
+  consultationId: string;
+  status: string;
+  verdict: string | null;
+  reason: string | null;
+  extractedSummary: string | null;
+  promptSnapshot: string;
+  rounds: number;
+  awaitingReplySince: string | null;
+  resolvedAt: string | null;
+  lateReply: boolean;
+  transcript: DiagnosticsMessage[];
 }
 
 interface TenantRoutingRule {
@@ -135,6 +158,8 @@ interface RegisterForm {
 interface TenantSettingsForm {
   lawyers: LawyerForm[];
   routingRules: TenantRoutingRuleForm[];
+  diagnosticsPrompt: string;
+  nonEngagementNotice: string;
 }
 
 interface LawyerForm {
@@ -282,6 +307,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly inboxFilter = signal<string>('all');
   readonly inboxQuery = signal('');
   readonly selectedConsultationId = signal<string | null>(null);
+  readonly diagnostics = signal<DiagnosticsView | null>(null);
   readonly isConsoleMenuOpen = signal(false);
   readonly isCreateOpen = signal(false);
   readonly isTutorialOpen = signal(false);
@@ -350,6 +376,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         ],
       },
     ],
+    diagnosticsPrompt: '',
+    nonEngagementNotice: '',
   };
 
   readonly totalConsultations = computed(() => this.consultations().length);
@@ -384,11 +412,14 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   readonly statusChips: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'all', label: 'Todas' },
+    { id: 'diagnostics', label: 'En diagnostico' },
     { id: 'new', label: 'Nuevas' },
     { id: 'classified', label: 'Clasificadas' },
     { id: 'scheduled', label: 'Agendadas' },
     { id: 'confirmed', label: 'Confirmadas' },
     { id: 'unrouted', label: 'Sin ruta' },
+    { id: 'rejected', label: 'Rechazadas' },
+    { id: 'abandoned', label: 'Sin respuesta' },
   ];
 
   readonly tenCells = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -843,10 +874,55 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   selectConsultation(id: string): void {
     this.selectedConsultationId.set(id);
+    this.loadDiagnostics(id);
   }
 
   closeDetail(): void {
     this.selectedConsultationId.set(null);
+    this.diagnostics.set(null);
+  }
+
+  // Diagnostics only exists for consultations that arrived by email under a prompt, so a 404
+  // here is the normal answer for everything else rather than an error worth showing.
+  loadDiagnostics(consultationId: string): void {
+    this.diagnostics.set(null);
+    this.http
+      .get<DiagnosticsView>(this.apiConfig.url(`/api/consultations/${consultationId}/diagnostics`))
+      .subscribe({
+        next: (view) => {
+          if (this.selectedConsultationId() === consultationId) {
+            this.diagnostics.set(view);
+          }
+        },
+        error: () => this.diagnostics.set(null),
+      });
+  }
+
+  acceptDiagnosticsNow(consultationId: string): void {
+    this.isSubmitting.set(true);
+    this.http
+      .post<Consultation>(this.apiConfig.url(`/api/consultations/${consultationId}/accept`), {})
+      .subscribe({
+        next: () => {
+          this.isSubmitting.set(false);
+          this.statusMessage.set('Consulta aceptada y enviada a agenda.');
+          this.loadConsultations();
+          this.loadDiagnostics(consultationId);
+        },
+        error: (error: HttpErrorResponse) =>
+          this.handleProtectedError(error, () => {
+            this.isSubmitting.set(false);
+            this.consultationsErrorMessage.set(
+              error.status === 409
+                ? 'El diagnostico ya se habia resuelto.'
+                : 'No se pudo aceptar la consulta.',
+            );
+          }),
+      });
+  }
+
+  diagnosticsRoleLabel(role: string): string {
+    return role === 'CLIENT' ? 'Cliente' : 'LegalGate';
   }
 
   setInboxFilter(id: string): void {
@@ -864,6 +940,16 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     const event = consultation.event;
     const eventStatus = (event?.status ?? '').toUpperCase();
     const consultationStatus = (consultation.status ?? '').toUpperCase();
+    // Diagnostics states are authoritative: these consultations have no event by design.
+    if (consultationStatus === 'DIAGNOSTICS_PENDING') {
+      return 'diagnostics';
+    }
+    if (consultationStatus === 'DIAGNOSTICS_REJECTED') {
+      return 'rejected';
+    }
+    if (consultationStatus === 'DIAGNOSTICS_ABANDONED') {
+      return 'abandoned';
+    }
     if (event?.scheduledStart) {
       return event.scheduledWithinSla === true ||
         eventStatus.includes('CONFIRM') ||
@@ -892,10 +978,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return (
       {
         new: 'Nuevo',
+        diagnostics: 'En diagnostico',
         classified: 'Clasificado',
         scheduled: 'Agendado',
         confirmed: 'Confirmado',
         unrouted: 'Sin ruta',
+        rejected: 'Rechazado',
+        abandoned: 'Sin respuesta',
       }[this.statusKey(consultation)] ?? 'Nuevo'
     );
   }
@@ -981,11 +1070,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       .get<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'))
       .subscribe({
         next: (settings) => {
-          this.tenantSettings.set(settings);
           this.settingsLoaded.set(true);
-          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
-          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
-          this.clampActiveIndexes();
+          this.applySettings(settings);
         },
         error: (error: HttpErrorResponse) =>
           this.handleProtectedError(error, () => {
@@ -993,6 +1079,15 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             this.settingsErrorMessage.set('No se pudo cargar la configuracion de intake.');
           }),
       });
+  }
+
+  private applySettings(settings: TenantSettingsResponse): void {
+    this.tenantSettings.set(settings);
+    this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
+    this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
+    this.settingsForm.diagnosticsPrompt = settings.diagnosticsPrompt ?? '';
+    this.settingsForm.nonEngagementNotice = settings.nonEngagementNotice ?? '';
+    this.clampActiveIndexes();
   }
 
   private lawyersPayload(forms: LawyerForm[]) {
@@ -1089,13 +1184,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       .put<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'), {
         lawyers,
         routingRules,
+        // An empty prompt disables Diagnostics entirely: the adopt/kill switch.
+        diagnosticsPrompt: this.settingsForm.diagnosticsPrompt.trim() || null,
+        nonEngagementNotice: this.settingsForm.nonEngagementNotice.trim() || null,
       })
       .subscribe({
         next: (settings) => {
-          this.tenantSettings.set(settings);
-          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
-          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
-          this.clampActiveIndexes();
+          this.applySettings(settings);
           this.settingsErrorMessage.set('');
           this.statusMessage.set('Reglas, abogados y SLA actualizados.');
           this.isSubmitting.set(false);
@@ -1546,10 +1641,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (settings) => {
-          this.tenantSettings.set(settings);
-          this.settingsForm.lawyers = this.lawyerFormsFrom(settings);
-          this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
-          this.clampActiveIndexes();
+          this.applySettings(settings);
           this.isSubmitting.set(false);
           this.stopDemoLoop();
           this.envelopeFlights.set([]);

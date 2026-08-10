@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class InboundEmail(BaseModel):
@@ -81,6 +81,45 @@ class ConsultationClassificationResponse(BaseModel):
     clientName: str = Field(min_length=1)
     explanation: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
+
+
+class DiagnosticsMessage(BaseModel):
+    role: Literal["CLIENT", "LEGALGATE"]
+    body: str = Field(min_length=1)
+
+
+class ConsultationDiagnosticsRequest(BaseModel):
+    diagnosticsPrompt: str
+    email: InboundEmail
+    exchange: list[DiagnosticsMessage] = Field(default_factory=list)
+    systemPrompt: str
+    promptVersion: str | None = None
+
+    @field_validator("diagnosticsPrompt", "systemPrompt")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("prompt text is required")
+        return trimmed
+
+
+class ConsultationDiagnosticsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdict: Literal["accept", "ask", "reject"]
+    question: str | None = None
+    reason: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def question_required_when_asking(self) -> "ConsultationDiagnosticsResponse":
+        asked = self.question is not None and self.question.strip() != ""
+        if self.verdict == "ask" and not asked:
+            raise ValueError("question is required when the verdict is ask")
+        if self.verdict != "ask" and asked:
+            raise ValueError("question is only allowed when the verdict is ask")
+        return self
 
 
 class ErrorDetail(BaseModel):

@@ -6,13 +6,20 @@ import os
 import random
 import time
 import uuid
-from typing import Any
+from typing import Any, TypeVar
 
 from google import genai
 from google.genai import types
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from .models import ConsultationClassificationRequest, ConsultationClassificationResponse
+from .models import (
+    ConsultationClassificationRequest,
+    ConsultationClassificationResponse,
+    ConsultationDiagnosticsRequest,
+    ConsultationDiagnosticsResponse,
+)
+
+T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger("legalgate.consultation_classifier")
 
@@ -56,59 +63,11 @@ class GeminiConsultationClassifier:
                 "GEMINI_API_KEY is not configured for consultation-classifier.",
             )
 
-        prompt = self._prompt_for(request)
-        if self.log_payloads:
-            logger.info(
-                "Gemini classification prompt request_id=%s prompt=%s",
-                classification_request_id,
-                self._truncate(prompt),
-            )
-        try:
-            result = self._generate_structured_content(prompt)
-        except Exception as exc:
-            logger.exception(
-                "Gemini classification call failed request_id=%s model=%s",
-                classification_request_id,
-                self.model,
-            )
-            raise GeminiClassifierError("gemini_unavailable", "Gemini request failed.") from exc
-
-        raw = self._extract_text(result)
-        if self.log_payloads:
-            logger.info(
-                "Gemini classification raw response request_id=%s response=%s",
-                classification_request_id,
-                self._truncate(raw),
-            )
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            logger.warning(
-                "Gemini classification returned non-json request_id=%s model=%s response_preview=%s",
-                classification_request_id,
-                self.model,
-                self._truncate(raw),
-            )
-            raise GeminiClassifierError(
-                "gemini_invalid_response",
-                "Gemini returned non-JSON output.",
-                raw,
-            ) from exc
-
-        try:
-            response = ConsultationClassificationResponse.model_validate(payload)
-        except ValidationError as exc:
-            logger.warning(
-                "Gemini classification schema validation failed request_id=%s model=%s payload=%s",
-                classification_request_id,
-                self.model,
-                self._truncate(json.dumps(payload, ensure_ascii=False)),
-            )
-            raise GeminiClassifierError(
-                "gemini_invalid_response",
-                "Gemini JSON did not match the expected schema.",
-                payload,
-            ) from exc
+        response = self._complete(
+            classification_request_id,
+            self._prompt_for(request),
+            ConsultationClassificationResponse,
+        )
         logger.info(
             "Gemini classification succeeded request_id=%s model=%s routeIndex=%s urgency=%s confidence=%s concept=%s",
             classification_request_id,
@@ -119,6 +78,116 @@ class GeminiConsultationClassifier:
             response.concept,
         )
         return response
+
+    def diagnose(
+        self,
+        request: ConsultationDiagnosticsRequest,
+    ) -> ConsultationDiagnosticsResponse:
+        diagnostics_request_id = str(uuid.uuid4())
+        logger.info(
+            "Gemini diagnostics call starting request_id=%s model=%s promptVersion=%s messageId=%s "
+            "sender=%s exchangeMessages=%s",
+            diagnostics_request_id,
+            self.model,
+            request.promptVersion,
+            request.email.messageId,
+            request.email.sender,
+            len(request.exchange),
+        )
+        if self.client is None:
+            logger.warning(
+                "Gemini diagnostics skipped request_id=%s reason=missing_api_key",
+                diagnostics_request_id,
+            )
+            raise GeminiClassifierError(
+                "gemini_unavailable",
+                "GEMINI_API_KEY is not configured for consultation-classifier.",
+            )
+
+        response = self._complete(
+            diagnostics_request_id,
+            self._diagnostics_prompt_for(request),
+            ConsultationDiagnosticsResponse,
+        )
+        logger.info(
+            "Gemini diagnostics succeeded request_id=%s model=%s verdict=%s",
+            diagnostics_request_id,
+            self.model,
+            response.verdict,
+        )
+        return response
+
+    def _complete(self, request_id: str, prompt: str, response_model: type[T]) -> T:
+        if self.log_payloads:
+            logger.info(
+                "Gemini prompt request_id=%s prompt=%s",
+                request_id,
+                self._truncate(prompt),
+            )
+        try:
+            result = self._generate_structured_content(prompt, response_model)
+        except Exception as exc:
+            logger.exception(
+                "Gemini call failed request_id=%s model=%s",
+                request_id,
+                self.model,
+            )
+            raise GeminiClassifierError("gemini_unavailable", "Gemini request failed.") from exc
+
+        raw = self._extract_text(result)
+        if self.log_payloads:
+            logger.info(
+                "Gemini raw response request_id=%s response=%s",
+                request_id,
+                self._truncate(raw),
+            )
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Gemini returned non-json request_id=%s model=%s response_preview=%s",
+                request_id,
+                self.model,
+                self._truncate(raw),
+            )
+            raise GeminiClassifierError(
+                "gemini_invalid_response",
+                "Gemini returned non-JSON output.",
+                raw,
+            ) from exc
+
+        try:
+            return response_model.model_validate(payload)
+        except ValidationError as exc:
+            logger.warning(
+                "Gemini schema validation failed request_id=%s model=%s payload=%s",
+                request_id,
+                self.model,
+                self._truncate(json.dumps(payload, ensure_ascii=False)),
+            )
+            raise GeminiClassifierError(
+                "gemini_invalid_response",
+                "Gemini JSON did not match the expected schema.",
+                payload,
+            ) from exc
+
+    def _diagnostics_prompt_for(self, request: ConsultationDiagnosticsRequest) -> str:
+        return "\n\n".join(
+            [
+                request.systemPrompt,
+                "Return only valid JSON matching the provided schema.",
+                "The firm describes the matters it takes and the information it needs before "
+                "assessing one as follows:",
+                request.diagnosticsPrompt,
+                "Original inbound email:",
+                request.email.model_dump_json(),
+                "Exchange so far, oldest first (empty on the first pass):",
+                json.dumps(
+                    [message.model_dump() for message in request.exchange],
+                    ensure_ascii=False,
+                ),
+            ]
+        )
 
     def _prompt_for(self, request: ConsultationClassificationRequest) -> str:
         return "\n\n".join(
@@ -146,8 +215,8 @@ class GeminiConsultationClassifier:
         except AttributeError:
             return json.dumps(result)
 
-    def _generate_structured_content(self, prompt: str) -> Any:
-        schema = self._gemini_response_schema()
+    def _generate_structured_content(self, prompt: str, response_model: type[BaseModel]) -> Any:
+        schema = self._gemini_response_schema(response_model)
         return self._call_with_retry(prompt, schema)
 
     def _call_with_retry(self, prompt: str, schema: dict[str, Any]) -> Any:
@@ -193,10 +262,8 @@ class GeminiConsultationClassifier:
         code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
         return code in RETRYABLE_STATUS_CODES
 
-    def _gemini_response_schema(self) -> dict[str, Any]:
-        return self._remove_unsupported_schema_fields(
-            ConsultationClassificationResponse.model_json_schema()
-        )
+    def _gemini_response_schema(self, response_model: type[BaseModel]) -> dict[str, Any]:
+        return self._remove_unsupported_schema_fields(response_model.model_json_schema())
 
     def _remove_unsupported_schema_fields(self, value: Any) -> Any:
         unsupported_keys = {
