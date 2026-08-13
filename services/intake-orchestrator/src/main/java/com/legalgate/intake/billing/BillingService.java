@@ -32,6 +32,8 @@ import com.legalgate.intake.service.WorkosClient;
 @Service
 public class BillingService {
     private static final Logger log = LoggerFactory.getLogger(BillingService.class);
+    /** Attempt count at which the repository stops claiming a webhook event (marks it DEAD). */
+    private static final int MAX_WEBHOOK_ATTEMPTS = 8;
     private final BillingProperties properties;
     private final BillingRepository repository;
     private final BillingAccessService accessService;
@@ -222,6 +224,14 @@ public class BillingService {
             try {
                 processWebhook(event);
                 repository.completeWebhook(event.id());
+            } catch (UnknownSubscriptionException orphan) {
+                // The event names a Mercado Pago resource this database has no subscription for
+                // (a preapproval created outside checkout, or one from another environment sharing
+                // the webhook URL). Retrying can never resolve it, so park it instead of burning
+                // eight attempts and logging a stack trace each time.
+                log.warn("Mercado Pago webhook does not match a LegalGate subscription; parking event={} resource={} reason={}",
+                        event.id(), event.resourceId(), orphan.getMessage());
+                repository.failWebhook(event.id(), MAX_WEBHOOK_ATTEMPTS, orphan.getMessage());
             } catch (Exception exception) {
                 log.warn("Mercado Pago webhook processing failed event={} attempt={}",
                         event.id(), event.attempts(), exception);
@@ -287,7 +297,7 @@ public class BillingService {
             JsonNode authorized = provider.authorizedPayment(event.resourceId());
             String providerSubscriptionId = firstText(authorized, "preapproval_id", "subscription_id");
             Subscription subscription = repository.subscriptionByProviderId(providerSubscriptionId)
-                    .orElseThrow(() -> new IllegalStateException("Unknown provider subscription."));
+                    .orElseThrow(() -> new UnknownSubscriptionException("Unknown provider subscription."));
             String paymentId = authorized.path("payment").path("id").asText("");
             JsonNode payment = paymentId.isBlank() ? authorized : provider.payment(paymentId);
             applyCanonicalPayment(subscription, payment, event.resourceId());
@@ -299,7 +309,8 @@ public class BillingService {
             Subscription subscription = repository.subscriptionByExternalReference(externalReference)
                     .or(() -> repository.subscriptionByProviderId(
                             payment.path("metadata").path("preapproval_id").asText("")))
-                    .orElseThrow(() -> new IllegalStateException("Payment is not associated with a LegalGate subscription."));
+                    .orElseThrow(() -> new UnknownSubscriptionException(
+                            "Payment is not associated with a LegalGate subscription."));
             applyCanonicalPayment(subscription, payment, null);
         }
     }
@@ -339,7 +350,7 @@ public class BillingService {
         String externalReference = canonical.path("external_reference").asText("");
         return repository.subscriptionByExternalReference(externalReference)
                 .or(() -> repository.subscriptionByProviderId(providerId))
-                .orElseThrow(() -> new IllegalStateException("Unknown LegalGate subscription."));
+                .orElseThrow(() -> new UnknownSubscriptionException("Unknown LegalGate subscription."));
     }
 
     private CheckoutResponse recoverOrReturn(Subscription subscription, String key) {
@@ -422,5 +433,12 @@ public class BillingService {
                 return null;
             }
         }
+    }
+}
+
+/** A webhook names a provider resource no local subscription matches; retrying cannot fix it. */
+class UnknownSubscriptionException extends IllegalStateException {
+    UnknownSubscriptionException(String message) {
+        super(message);
     }
 }

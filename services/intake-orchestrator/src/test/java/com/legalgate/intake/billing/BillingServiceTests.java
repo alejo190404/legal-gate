@@ -205,6 +205,24 @@ class BillingServiceTests {
     }
 
     @Test
+    void unknownPreapprovalWebhookIsParkedInsteadOfRetriedForever() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        when(repository.claimWebhookBatch(25)).thenReturn(java.util.List.of(new BillingModels.WebhookEvent(
+                eventId, "subscription_preapproval", "updated", "preapproval-orphan", "{}", 7)));
+        when(provider.subscription("preapproval-orphan")).thenReturn(new ObjectMapper().readTree(
+                "{\"id\":\"preapproval-orphan\",\"status\":\"authorized\",\"external_reference\":\"\"}"));
+        when(repository.subscriptionByExternalReference(ArgumentMatchers.any())).thenReturn(Optional.empty());
+        when(repository.subscriptionByProviderId(ArgumentMatchers.any())).thenReturn(Optional.empty());
+
+        service.processWebhookBatch();
+
+        // Parked terminally: the row it would attach to does not exist, so retrying can never help.
+        verify(repository).failWebhook(
+                ArgumentMatchers.eq(eventId), ArgumentMatchers.eq(8),
+                ArgumentMatchers.contains("Unknown LegalGate subscription"));
+    }
+
+    @Test
     void cancelCallsProviderBeforeMarkingLocalSubscription() {
         Subscription subscription = activeSubscription();
         when(repository.currentSubscription("tenant")).thenReturn(Optional.of(subscription));
