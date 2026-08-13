@@ -32,7 +32,7 @@
 
         <div class="status-banner" [class.has-error]="errorMessage()">
           <strong>{{ errorMessage() || statusMessage() }}</strong>
-          <span>La cuenta administradora se gestiona con WorkOS</span>
+          <!-- <span>La cuenta administradora se gestiona con WorkOS</span> -->
         </div>
       </section>
     </main>
@@ -652,7 +652,7 @@
               (click)="loadConsultations()"
               [disabled]="isLoading()"
             >
-              <pixel-icon name="check-double" [size]="16" />
+              <pixel-icon name="refresh" [size]="16" />
             </button>
             <button class="btn" type="button" (click)="openCreate()">
               <pixel-icon name="plus" [size]="15" />Nueva consulta

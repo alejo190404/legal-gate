@@ -1,6 +1,10 @@
 package com.legalgate.intake.repository;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
 
 import com.legalgate.intake.classifier.ClassifierUnavailableException;
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
@@ -15,8 +19,6 @@ import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.IntakeService;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 
 // Manually created consultations must take the same path as inbound email:
 // LLM classification, lawyer scheduling, and queued notifications. MANUAL_REVIEW is gone.
@@ -61,8 +63,8 @@ class IntakeServiceManualConsultationTests {
         service.saveSettings(TENANT, new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "General", "General intake", List.of(), List.of("manana"),
-                        List.of("NORMAL", "URGENT"), null,
-                        List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENT", 2, 1, true)),
+                        List.of("NORMAL", "URGENTE"), null,
+                        List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENTE", 2, 1, true)),
                         "ana@firm.co")),
                 List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, null))));
         return service;

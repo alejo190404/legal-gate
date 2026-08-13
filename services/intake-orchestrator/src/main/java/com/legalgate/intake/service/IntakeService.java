@@ -1,26 +1,6 @@
 
 package com.legalgate.intake.service;
 
-import com.legalgate.intake.classifier.ClassifierUnavailableException;
-import com.legalgate.intake.classifier.ConsultationClassifierClient;
-import com.legalgate.intake.classifier.ConsultationClassifierRequest;
-import com.legalgate.intake.classifier.ConsultationClassifierResponse;
-import com.legalgate.intake.config.IntakeProperties;
-import com.legalgate.intake.mail.InboundEmailReceived;
-import com.legalgate.intake.model.ClassificationResult;
-import com.legalgate.intake.model.ConsultationListResponse;
-import com.legalgate.intake.model.ConsultationResponse;
-import com.legalgate.intake.model.CreateConsultationRequest;
-import com.legalgate.intake.model.EventResponse;
-import com.legalgate.intake.model.LawyerAvailabilityWindow;
-import com.legalgate.intake.model.LawyerProfile;
-import com.legalgate.intake.model.NotificationOutboxItem;
-import com.legalgate.intake.model.NotificationStatus;
-import com.legalgate.intake.model.TenantRoutingRule;
-import com.legalgate.intake.model.TenantSettingsRequest;
-import com.legalgate.intake.model.TenantSettingsResponse;
-import com.legalgate.intake.model.UrgencyDefinition;
-import com.legalgate.intake.repository.IntakeRepository;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.DayOfWeek;
@@ -42,9 +22,31 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.legalgate.intake.classifier.ClassifierUnavailableException;
+import com.legalgate.intake.classifier.ConsultationClassifierClient;
+import com.legalgate.intake.classifier.ConsultationClassifierRequest;
+import com.legalgate.intake.classifier.ConsultationClassifierResponse;
+import com.legalgate.intake.config.IntakeProperties;
+import com.legalgate.intake.mail.InboundEmailReceived;
+import com.legalgate.intake.model.ClassificationResult;
+import com.legalgate.intake.model.ConsultationListResponse;
+import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.CreateConsultationRequest;
+import com.legalgate.intake.model.EventResponse;
+import com.legalgate.intake.model.LawyerAvailabilityWindow;
+import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.NotificationStatus;
+import com.legalgate.intake.model.TenantRoutingRule;
+import com.legalgate.intake.model.TenantSettingsRequest;
+import com.legalgate.intake.model.TenantSettingsResponse;
+import com.legalgate.intake.model.UrgencyDefinition;
+import com.legalgate.intake.repository.IntakeRepository;
 
 @Service
 public class IntakeService {
@@ -52,9 +54,9 @@ public class IntakeService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Bogota");
     private static final List<UrgencyDefinition> DEFAULT_URGENCY_DEFINITIONS = List.of(
             new UrgencyDefinition("NORMAL", 1, 5, true),
-            new UrgencyDefinition("URGENT", 2, 1, true)
+            new UrgencyDefinition("URGENTE", 2, 1, true)
     );
-    private static final List<String> DEFAULT_URGENCY_LEVELS = List.of("NORMAL", "URGENT");
+    private static final List<String> DEFAULT_URGENCY_LEVELS = List.of("NORMAL", "URGENTE");
 
     private static final TenantRoutingRule DEFAULT_ROUTING_RULE = new TenantRoutingRule(
             "Default intake route", null, List.of("audiencia", "captura", "tutela", "vencimiento"), List.of(),
@@ -827,7 +829,7 @@ public class IntakeService {
         List<UrgencyDefinition> definitions = new ArrayList<>();
         for (int index = 0; index < names.size(); index++) {
             String name = names.get(index);
-            definitions.add(new UrgencyDefinition(name, index + 1, "URGENT".equalsIgnoreCase(name) ? 1 : 5, true));
+            definitions.add(new UrgencyDefinition(name, index + 1, "URGENTE".equalsIgnoreCase(name) ? 1 : 5, true));
         }
         return definitions;
     }

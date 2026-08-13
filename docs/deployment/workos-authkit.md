@@ -77,7 +77,7 @@ Do not configure `WORKOS_AUDIENCE`; WorkOS identifies this application through t
 | `WORKOS_API_KEY` | Server API key from the matching WorkOS environment |
 | `LEGALGATE_INTERNAL_SERVICE_TOKEN` | Shared random service token |
 | `LEGALGATE_INTAKE_PERSISTENCE` | `jdbc` |
-| `SPRING_DATASOURCE_URL` | Production PostgreSQL/Supabase connection |
+| `SPRING_DATASOURCE_URL` | Production PostgreSQL/Neon connection |
 | `SPRING_DATASOURCE_USERNAME` | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | Database password |
 | `SPRING_FLYWAY_ENABLED` | `true` for the cutover deployment |
@@ -98,7 +98,7 @@ Migration `V11__cut_over_to_workos_tenants.sql` intentionally truncates all tena
 drops the local `users` table and password login functions, and creates the WorkOS provisioning
 mapping. Before applying it:
 
-1. Back up Supabase and confirm the backup can be restored.
+1. Back up the Neon branch (or take a Neon branch snapshot) and confirm the backup can be restored.
 2. Configure the fresh production WorkOS environment and all variables above.
 3. Deploy Intake with Flyway enabled and confirm V11 completed.
 4. Deploy Mail Ingress, then Gateway, then the frontend.

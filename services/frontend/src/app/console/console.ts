@@ -58,7 +58,7 @@ interface Consultation {
   summary: string;
   preferredWindow: string | null;
   status: string;
-  urgency: 'NORMAL' | 'URGENT' | string;
+  urgency: 'NORMAL' | 'URGENTE' | string;
   consultationType: string | null;
   assignedLawyerEmail: string | null;
   classification: ClassificationResult;
@@ -369,10 +369,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         destinationEmail: '',
         urgentKeywords: 'audiencia, captura, tutela, vencimiento',
         consultationWindows: '',
-        urgencyLevels: 'NORMAL, URGENT',
+        urgencyLevels: 'NORMAL, URGENTE',
         urgencyDefinitions: [
           { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
-          { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+          { name: 'URGENTE', rank: 2, slaDays: 1, active: true },
         ],
       },
     ],
@@ -511,7 +511,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.errorMessage.set(
-            'No se pudo configurar la firma. Verifica los datos e intenta nuevamente.',
+            'Verifica los datos e intenta nuevamente.',
           );
           this.isSubmitting.set(false);
         },
@@ -1247,10 +1247,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         destinationEmail: lawyer.email || this.sessionEmail(),
         urgentKeywords: '',
         consultationWindows: '',
-        urgencyLevels: 'NORMAL, URGENT',
+        urgencyLevels: 'NORMAL, URGENTE',
         urgencyDefinitions: [
           { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
-          { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+          { name: 'URGENTE', rank: 2, slaDays: 1, active: true },
         ],
       },
     ];
@@ -1429,7 +1429,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       ? matchedRule.urgencyLevels
       : settings?.urgencyLevels?.length
         ? settings.urgencyLevels
-        : ['NORMAL', 'URGENT'];
+        : ['NORMAL', 'URGENTE'];
     return consultation.urgency === levels[levels.length - 1];
   }
 
@@ -1671,10 +1671,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       destinationEmail: '',
       urgentKeywords: '',
       consultationWindows: '',
-      urgencyLevels: 'NORMAL, URGENT',
+      urgencyLevels: 'NORMAL, URGENTE',
       urgencyDefinitions: [
         { name: 'NORMAL', rank: 1, slaDays: 5, active: true },
-        { name: 'URGENT', rank: 2, slaDays: 1, active: true },
+        { name: 'URGENTE', rank: 2, slaDays: 1, active: true },
       ],
     };
   }
@@ -1939,7 +1939,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
             consultationWindows: settings.consultationWindows ?? [],
             urgencyLevels: settings.urgencyLevels?.length
               ? settings.urgencyLevels
-              : ['NORMAL', 'URGENT'],
+              : ['NORMAL', 'URGENTE'],
             lawyerId: fallbackLawyerId,
             urgencyDefinitions: this.urgencyDefinitionsFromLevels(settings.urgencyLevels),
             destinationEmail: settings.destinationEmail,
@@ -1984,11 +1984,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   }
 
   private urgencyDefinitionsFromLevels(levels: string[] | undefined): UrgencyDefinition[] {
-    const names = levels?.length ? levels : ['NORMAL', 'URGENT'];
+    const names = levels?.length ? levels : ['NORMAL', 'E'];
     return names.map((name, index) => ({
       name,
       rank: index + 1,
-      slaDays: name.toUpperCase() === 'URGENT' ? 1 : 5,
+      slaDays: name.toUpperCase() === 'URGENTE' ? 1 : 5,
       active: true,
     }));
   }

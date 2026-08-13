@@ -123,7 +123,7 @@ set routing_rules = coalesce((
                     select jsonb_agg(jsonb_build_object(
                         'name', level.value,
                         'rank', level.ordinality,
-                        'slaDays', case when upper(level.value) = 'URGENT' then 1 else 5 end,
+                        'slaDays', case when upper(level.value) = 'URGENTE' then 1 else 5 end,
                         'active', true
                     ) order by level.ordinality)
                     from jsonb_array_elements_text(

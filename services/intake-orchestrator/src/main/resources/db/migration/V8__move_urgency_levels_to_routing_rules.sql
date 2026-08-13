@@ -17,7 +17,7 @@ set routing_rules = coalesce((
 ), '[]'::jsonb);
 
 with urgency_union as (
-    select tenant_id, coalesce(jsonb_agg(level order by first_seen), '["NORMAL", "URGENT"]'::jsonb) as levels
+    select tenant_id, coalesce(jsonb_agg(level order by first_seen), '["NORMAL", "URGENTE"]'::jsonb) as levels
     from (
         select tenant_settings.tenant_id,
                urgency.level,

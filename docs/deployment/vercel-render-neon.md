@@ -1,7 +1,7 @@
-# Vercel, Render, Supabase, and WorkOS
+# Vercel, Render, Neon, and WorkOS
 
 Deploy the Angular frontend to Vercel, Gateway/Intake/Mail Ingress to Render, and PostgreSQL to
-Supabase. The browser calls the Gateway directly using `LEGALGATE_API_BASE_URL`; it must never call
+Neon. The browser calls the Gateway directly using `LEGALGATE_API_BASE_URL`; it must never call
 Intake or Mail Ingress.
 
 The complete environment-variable list, WorkOS Dashboard configuration, destructive migration

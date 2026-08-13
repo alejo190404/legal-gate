@@ -44,6 +44,6 @@ cd ../consultation-classifier && pytest
 ## Production
 
 Follow [WorkOS AuthKit production setup](docs/deployment/workos-authkit.md) before deploying. The
-V11 Flyway migration is intentionally destructive and requires a verified Supabase backup. Follow
+V11 Flyway migration is intentionally destructive and requires a verified Neon backup. Follow
 [Mercado Pago tenant billing setup](docs/deployment/mercadopago-billing.md) before enabling billing
 enforcement.

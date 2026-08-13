@@ -157,7 +157,7 @@ describe('ConsoleComponent session + billing flow', () => {
       tenantId: 'firma-1',
       urgentKeywords: [],
       consultationWindows: [],
-      urgencyLevels: ['NORMAL', 'URGENT'],
+      urgencyLevels: ['NORMAL', 'URGENTE'],
       destinationEmail: 'uno@firma.test',
       intakeEmail: 'firma-1@intake.legal-gate.co',
       routingRules: put.request.body.routingRules,

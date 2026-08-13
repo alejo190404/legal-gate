@@ -1,5 +1,5 @@
 alter table tenant_settings
-    add column if not exists urgency_levels jsonb not null default '["NORMAL","URGENT"]'::jsonb;
+    add column if not exists urgency_levels jsonb not null default '["NORMAL","URGENTE"]'::jsonb;
 
 alter table tenant_settings
     drop constraint if exists tenant_settings_urgency_levels_array;

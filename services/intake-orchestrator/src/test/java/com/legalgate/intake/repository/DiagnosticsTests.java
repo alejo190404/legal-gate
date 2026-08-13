@@ -1,7 +1,15 @@
 package com.legalgate.intake.repository;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
+
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Optional;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.legalgate.intake.classifier.ClassifierUnavailableException;
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
@@ -23,13 +31,6 @@ import com.legalgate.intake.model.UrgencyDefinition;
 import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.IntakeService;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.List;
-import java.util.Optional;
-import org.junit.jupiter.api.Test;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Seam 1: the intake service's consultation service, built on the real in-memory repository with
@@ -435,8 +436,8 @@ class DiagnosticsTests {
         return new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "Laboral", "Despidos y contratos", List.of(), List.of("manana"),
-                        List.of("NORMAL", "URGENT"), null,
-                        List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENT", 2, 1, true)),
+                        List.of("NORMAL", "URGENTE"), null,
+                        List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENTE", 2, 1, true)),
                         "ana@firm.co")),
                 List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, null)),
                 prompt,
