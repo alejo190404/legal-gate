@@ -235,6 +235,87 @@ class CloudMailinWebhookControllerTests {
         org.assertj.core.api.Assertions.assertThat(eventCaptor.getValue().autoResponder()).isFalse();
     }
 
+    // Email Boilerplate: a corporate gateway appends its notice below the sender's own words, so
+    // what the intake service receives must stop where the sender stopped writing.
+    @Test
+    void removesACorporateLegalNoticeFromThePlainBody() throws Exception {
+        assertPlainBodyForwardedAs(
+                """
+                El contrato era a termino fijo y me despidieron sin justa causa.
+
+                AVISO LEGAL: El presente correo electronico no representa la opinion oficial de la
+                PONTIFICIA UNIVERSIDAD JAVERIANA. Este mensaje es confidencial.""",
+                "El contrato era a termino fijo y me despidieron sin justa causa.");
+    }
+
+    // The markers are stored unaccented, so a gateway that drops tildes matches on case alone.
+    // The case worth pinning is the other one: a notice that keeps its tildes must still match.
+    @Test
+    void removesANoticeThatKeepsItsTildesAndMixedCase() throws Exception {
+        assertPlainBodyForwardedAs(
+                """
+                Trabajé tres años en esa empresa.
+
+                La Información contenida en este mensaje es privilegiada.""",
+                "Trabajé tres años en esa empresa.");
+    }
+
+    // Both guards below turn a mis-detection into a no-op: nothing the potential client wrote is
+    // ever lost, at the price of leaving boilerplate in place.
+    @Test
+    void keepsTheOriginalBodyWhenRemovalWouldLeaveNothing() throws Exception {
+        String onlyBoilerplate = "\n\nAviso legal: este mensaje es confidencial.";
+        assertPlainBodyForwardedAs(onlyBoilerplate, onlyBoilerplate);
+    }
+
+    @Test
+    void keepsTheOriginalBodyWhenTheNoticeIsAtTheTop() throws Exception {
+        String noticeFirst = """
+                Aviso legal: este mensaje es confidencial.
+
+                Buenas tardes, necesito ayuda con un despido injustificado.""";
+        assertPlainBodyForwardedAs(noticeFirst, noticeFirst);
+    }
+
+    @Test
+    void keepsAConsultationThatMentionsAvisoLegalMidSentence() throws Exception {
+        String consultation = "Recibí un aviso legal de la universidad y no sé qué responder.";
+        assertPlainBodyForwardedAs(consultation, consultation);
+    }
+
+    private void assertPlainBodyForwardedAs(String plain, String expected) throws Exception {
+        when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
+                .thenReturn(Optional.of("firma-demo"));
+
+        mockMvc.perform(post("/webhooks/cloudmailin")
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payloadWithPlain(plain)))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<InboundEmailReceived> eventCaptor = ArgumentCaptor.forClass(InboundEmailReceived.class);
+        verify(inboundEmailClient).send(eventCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(eventCaptor.getValue().plain()).isEqualTo(expected);
+    }
+
+    private String payloadWithPlain(String plain) {
+        return """
+                {
+                  "headers": {
+                    "from": "Maria Perez <maria@example.com>",
+                    "subject": "Re: Consulta laboral",
+                    "message_id": "<message-123@example.com>"
+                  },
+                  "envelope": {
+                    "to": "intake@firma.test",
+                    "recipients": ["intake@firma.test"],
+                    "from": "maria@example.com"
+                  },
+                  "plain": "%s"
+                }
+                """.formatted(plain.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"));
+    }
+
     private String replyPayload(String recipient) {
         return """
                 {

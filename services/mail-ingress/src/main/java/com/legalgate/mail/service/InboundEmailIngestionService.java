@@ -16,13 +16,16 @@ public class InboundEmailIngestionService {
 
     private final TenantLookupService tenantLookupService;
     private final InboundEmailClient inboundEmailClient;
+    private final EmailBoilerplateStripper emailBoilerplateStripper;
 
     public InboundEmailIngestionService(
             TenantLookupService tenantLookupService,
-            InboundEmailClient inboundEmailClient
+            InboundEmailClient inboundEmailClient,
+            EmailBoilerplateStripper emailBoilerplateStripper
     ) {
         this.tenantLookupService = tenantLookupService;
         this.inboundEmailClient = inboundEmailClient;
+        this.emailBoilerplateStripper = emailBoilerplateStripper;
     }
 
     public InboundEmailIngestionResult ingest(NormalizedInboundEmail email) {
@@ -49,7 +52,10 @@ public class InboundEmailIngestionService {
                 email.headerFrom(),
                 email.subject(),
                 email.messageId(),
-                email.plain(),
+                // Every provider funnels through here, so boilerplate dies once for all of them.
+                // ponytail: the HTML body is left alone — line-anchored markers are unreliable
+                // against tag soup, and intake only falls back to HTML when plain is empty.
+                emailBoilerplateStripper.strip(email.plain()),
                 email.html(),
                 Instant.now(),
                 email.autoResponder()
