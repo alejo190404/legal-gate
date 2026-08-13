@@ -13,8 +13,6 @@ target/
 skills-lock.json
 .neon
 .env.local
-CLAUDE.md
-CONTEXT-MAP.md
 *.pyc
 **/__pycache__/
 *.pyo
