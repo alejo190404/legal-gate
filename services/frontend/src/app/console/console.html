@@ -856,12 +856,11 @@
                       }
                       @if (dx.transcript.length) {
                         <div class="section-h">Conversación</div>
-                        @for (message of dx.transcript; track message.id) {
-                          <div class="detail-row" style="align-items: flex-start">
-                            <span class="k">{{ diagnosticsRoleLabel(message.role) }}</span>
-                            <span style="font-size: 13px; text-align: right; white-space: pre-wrap">{{ message.body }}</span>
-                          </div>
-                        }
+                        <button class="btn sec wide" type="button" (click)="openTranscript()">
+                          <pixel-icon name="mail-open" [size]="14" />
+                          Ver conversación completa
+                          <span class="count">{{ dx.transcript.length }}</span>
+                        </button>
                       }
                       <div class="section-h">Prompt usado</div>
                       <div class="email" style="white-space: pre-wrap">{{ dx.promptSnapshot }}</div>
@@ -1470,6 +1469,37 @@
               {{ isSubmitting() ? 'Creando…' : 'Crear consulta' }}
             </button>
           </form>
+        </section>
+      }
+
+      @if (isTranscriptOpen() && diagnostics(); as dx) {
+        <div class="modal-backdrop" role="presentation" (click)="closeTranscript()"></div>
+        <section
+          class="tutorial-modal pixel-card transcript-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="transcript-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Diagnóstico</p>
+              <h2 id="transcript-title">Conversación</h2>
+              <p class="lbl">
+                {{ dx.transcript.length }} mensajes · {{ dx.rounds }} de 3 rondas
+              </p>
+            </div>
+            <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="closeTranscript()">
+              ×
+            </button>
+          </header>
+          <div class="transcript">
+            @for (message of dx.transcript; track message.id) {
+              <div class="bubble" [class.client]="message.role === 'CLIENT'">
+                <div class="bubble-hd">{{ diagnosticsRoleLabel(message.role) }}</div>
+                <div class="bubble-body">{{ message.body }}</div>
+              </div>
+            }
+          </div>
         </section>
       }
 

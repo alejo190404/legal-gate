@@ -308,6 +308,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly inboxQuery = signal('');
   readonly selectedConsultationId = signal<string | null>(null);
   readonly diagnostics = signal<DiagnosticsView | null>(null);
+  readonly isTranscriptOpen = signal(false);
   readonly isConsoleMenuOpen = signal(false);
   readonly isCreateOpen = signal(false);
   readonly isTutorialOpen = signal(false);
@@ -874,12 +875,22 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   selectConsultation(id: string): void {
     this.selectedConsultationId.set(id);
+    this.isTranscriptOpen.set(false);
     this.loadDiagnostics(id);
   }
 
   closeDetail(): void {
     this.selectedConsultationId.set(null);
     this.diagnostics.set(null);
+    this.isTranscriptOpen.set(false);
+  }
+
+  openTranscript(): void {
+    this.isTranscriptOpen.set(true);
+  }
+
+  closeTranscript(): void {
+    this.isTranscriptOpen.set(false);
   }
 
   // Diagnostics only exists for consultations that arrived by email under a prompt, so a 404
@@ -1033,8 +1044,9 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   }
 
   @HostListener('window:keydown.escape')
-  closeTutorialWithEscape(): void {
+  closeOverlaysWithEscape(): void {
     this.closeTutorial();
+    this.closeTranscript();
   }
 
   loadConsultations(): void {
