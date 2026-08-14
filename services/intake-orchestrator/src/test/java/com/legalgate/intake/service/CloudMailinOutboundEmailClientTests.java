@@ -63,15 +63,23 @@ class CloudMailinOutboundEmailClientTests {
         Map<String, Object> payload = client("Vargas & Asociados")
                 .payload(notification("LAWYER", null), "<CAF=original@mail.gmail.com>");
 
-        assertThat(payload).doesNotContainKey("headers");
+        assertThat(headers(payload))
+                .containsOnlyKeys("Message-ID");
     }
 
     @Test
     void aConsultationWithNoAnchorSendsWithNoThreadingHeaders() {
         Map<String, Object> payload = client("Vargas & Asociados").payload(notification("CLIENT", null), null);
 
-        assertThat(payload).doesNotContainKey("headers");
+        assertThat(headers(payload)).containsOnlyKeys("Message-ID");
         assertThat(payload).containsEntry("to", "cliente@example.com");
+    }
+
+    @Test
+    void everyMessageCarriesItsOwnIdentityOnTheSendingDomain() {
+        Map<String, Object> payload = client("Vargas & Asociados").payload(notification("CLIENT", null), null);
+
+        assertThat(headers(payload)).containsEntry("Message-ID", "<notification-1@legal-gate.co>");
     }
 
     @Test

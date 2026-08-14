@@ -76,7 +76,7 @@ class CloudMailinOutboundEmailClient {
                     "content_type", "text/calendar; method=REQUEST; charset=UTF-8"
             )));
         }
-        Map<String, String> headers = threadingHeaders(notification, threadAnchor);
+        Map<String, String> headers = mailHeaders(notification, threadAnchor);
         if (!headers.isEmpty()) {
             payload.put("headers", headers);
         }
@@ -84,8 +84,13 @@ class CloudMailinOutboundEmailClient {
     }
 
     /** The Consultation Thread is anchored flat at the potential client's first email; see ADR 0004. */
-    private Map<String, String> threadingHeaders(NotificationOutboxItem notification, String threadAnchor) {
+    private Map<String, String> mailHeaders(NotificationOutboxItem notification, String threadAnchor) {
         Map<String, String> headers = new LinkedHashMap<>();
+        if (!isBlank(notification.id())) {
+            // Every message carries its own identity, threaded or not, on the sending address's
+            // own domain so it does not read as forged.
+            headers.put("Message-ID", angleBracketed(notification.id() + "@" + senderDomain(notification)));
+        }
         // The thread is the conversation with the potential client; staff mail is not part of it.
         if (!"CLIENT".equals(notification.recipientRole()) || isBlank(threadAnchor)) {
             return headers;
@@ -93,10 +98,6 @@ class CloudMailinOutboundEmailClient {
         String anchor = angleBracketed(threadAnchor);
         if ("<>".equals(anchor)) {
             return headers;
-        }
-        if (!isBlank(notification.id())) {
-            // The Message-ID takes the sending address's own domain, so it does not read as forged.
-            headers.put("Message-ID", angleBracketed(notification.id() + "@" + senderDomain(notification)));
         }
         headers.put("In-Reply-To", anchor);
         headers.put("References", anchor);
