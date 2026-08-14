@@ -35,6 +35,9 @@ public class EmailTemplateRenderer {
     private static final DateTimeFormatter ZONE = DateTimeFormatter.ofPattern("zzz", ES);
     private static final DateTimeFormatter LAWYER_DATE = DateTimeFormatter.ofPattern("d 'de' MMMM yyyy", ES);
 
+    /** What the receipt names when no lawyer is on the Event yet — never a LegalGate one. */
+    static final String UNASSIGNED_LAWYER = "Por asignar";
+
     private static final String NEUTRAL_SALUTATION = "Estimado(a):";
     private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
 
@@ -58,10 +61,18 @@ public class EmailTemplateRenderer {
         return render(lawyerTemplate, fields);
     }
 
-    String renderClient(ConsultationResponse consultation, EventResponse event) {
+    /**
+     * The scheduling receipt a potential client gets. It carries the firm's name and no LegalGate
+     * mark of any kind (ADR 0004): the firm is who they wrote to, and LegalGate is a supplier they
+     * have never heard of. {@code firmName} is resolved by the caller with the sender-name fallback,
+     * unlike a signature: a card whose header is blank is worse than one naming the same sender the
+     * message already arrives from, and a tenant with no display name has none to show.
+     */
+    String renderClient(ConsultationResponse consultation, EventResponse event, String firmName) {
         ZonedDateTime start = event.scheduledStart() == null ? null : ZonedDateTime.ofInstant(event.scheduledStart(), BUSINESS_ZONE);
         ZonedDateTime end = event.scheduledEnd() == null ? null : ZonedDateTime.ofInstant(event.scheduledEnd(), BUSINESS_ZONE);
         Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("firm_name", nullToEmpty(firmName).trim());
         fields.put("client_first_name", firstName(consultation.clientName()));
         fields.put("date_day", start == null ? "" : start.format(DAY));
         fields.put("date_month", start == null ? "" : start.format(MONTH));
@@ -69,7 +80,7 @@ public class EmailTemplateRenderer {
         fields.put("time_range", timeRange(start, end));
         fields.put("timezone", start == null ? "" : start.format(ZONE));
         fields.put("duration", durationLabel(event.scheduledStart(), event.scheduledEnd()));
-        fields.put("lawyer_name", firstNonBlank(event.lawyerDisplayName(), "Abogado LegalGate"));
+        fields.put("lawyer_name", firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER));
         fields.put("summary", nullToEmpty(consultation.summary()));
         return render(clientTemplate, fields);
     }

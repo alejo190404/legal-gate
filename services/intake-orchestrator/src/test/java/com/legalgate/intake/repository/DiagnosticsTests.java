@@ -429,14 +429,16 @@ class DiagnosticsTests {
     }
 
     private DiagnosticsService diagnosticsFor(String prompt) {
-        IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer());
+        IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()));
         intakeService.saveSettings(TENANT, settingsRequest(prompt));
         return new DiagnosticsService(repository, intakeService, classifier, properties(),
                 new EmailTemplateRenderer(), new FirmNameResolver(repository, properties()));
     }
 
     private void saveSettings(String prompt) {
-        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer())
+        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()))
                 .saveSettings(TENANT, settingsRequest(prompt));
     }
 

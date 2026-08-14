@@ -26,7 +26,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateFormatsDateAndEscapesSummary() {
-        String html = renderer.renderClient(consultation(), event());
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
 
         assertThat(html).contains("Juan");            // client_first_name (first token)
         assertThat(html).contains("julio");           // Spanish month in America/Bogota
@@ -45,9 +45,40 @@ class EmailTemplateRendererTests {
                 "Tutela", "URGENTE", 1, null, 100,
                 null, null, "SCHEDULED", "SYSTEM");
 
-        String html = renderer.renderClient(consultation(), openEnded);
+        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo");
 
         assertThat(html).doesNotContain("{{");
+    }
+
+    @Test
+    void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+
+        assertThat(html).containsOnlyOnce("Firma Ejemplo"); // named once, in the header, like letterhead
+        assertThat(html).doesNotContain("LegalGate"); // no wordmark, no product footer
+        assertThat(html).doesNotContain("LEGALGATE");
+        assertThat(html).doesNotContain("`");         // the backtick-corrupted CSS values are gone
+    }
+
+    @Test
+    void clientTemplateFallsBackToWhateverNameTheMailIsSentFrom() {
+        // A tenant with no organization display name has no other name to show, and a blank header
+        // is worse than the sender name the message already arrives from (issue #48, ADR 0004).
+        assertThat(renderer.renderClient(consultation(), event(), "LegalGate Agenda"))
+                .containsOnlyOnce("LegalGate Agenda");
+    }
+
+    @Test
+    void clientTemplateNamesNoLawyerRatherThanAnyLegalGateOne() {
+        EventResponse unassigned = new EventResponse(
+                "event-1", "lawyer-1", null, null,
+                "Tutela", "URGENTE", 1, Instant.parse("2026-07-03T00:00:00Z"), 100,
+                Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"),
+                "SCHEDULED", "SYSTEM");
+
+        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo"))
+                .doesNotContain("LegalGate")
+                .contains("Por asignar");
     }
 
     @Test

@@ -78,13 +78,16 @@ public class IntakeService {
     private final IntakeProperties intakeProperties;
     private final ConsultationClassifierClient consultationClassifierClient;
     private final EmailTemplateRenderer emailTemplateRenderer;
+    private final FirmNameResolver firmNameResolver;
 
     public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties,
-            ConsultationClassifierClient consultationClassifierClient, EmailTemplateRenderer emailTemplateRenderer) {
+            ConsultationClassifierClient consultationClassifierClient, EmailTemplateRenderer emailTemplateRenderer,
+            FirmNameResolver firmNameResolver) {
         this.intakeRepository = intakeRepository;
         this.intakeProperties = intakeProperties;
         this.consultationClassifierClient = consultationClassifierClient;
         this.emailTemplateRenderer = emailTemplateRenderer;
+        this.firmNameResolver = firmNameResolver;
     }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
@@ -508,11 +511,12 @@ public class IntakeService {
             ));
         }
         if (consultation.clientEmail() != null && !consultation.clientEmail().isBlank()) {
+            String firmName = firmNameResolver.firmNameFor(consultation.tenantId());
             notifications.add(new NotificationOutboxItem(
                     consultation.id(), event.id(), type, "CLIENT", consultation.clientEmail(),
                     subjectFor(type, consultation, event),
-                    clientEmailBody(consultation, event),
-                    emailTemplateRenderer.renderClient(consultation, event),
+                    clientEmailBody(consultation, event, firmName),
+                    emailTemplateRenderer.renderClient(consultation, event, firmName),
                     ics
             ));
         }
@@ -551,9 +555,10 @@ public class IntakeService {
         ).trim();
     }
 
-    private String clientEmailBody(ConsultationResponse consultation, EventResponse event) {
+    /** Plaintext half of the same client receipt, so the fallback part carries no LegalGate either. */
+    private String clientEmailBody(ConsultationResponse consultation, EventResponse event, String firmName) {
         return """
-                Tu consulta LegalGate fue agendada.
+                Tu consulta con %s fue agendada.
 
                 Hora: %s - %s
                 Abogado: %s <%s>
@@ -561,9 +566,10 @@ public class IntakeService {
                 Resumen:
                 %s
                 """.formatted(
+                firmName,
                 event.scheduledStart(),
                 event.scheduledEnd(),
-                firstNonBlank(event.lawyerDisplayName(), "Abogado LegalGate"),
+                firstNonBlank(event.lawyerDisplayName(), EmailTemplateRenderer.UNASSIGNED_LAWYER),
                 event.lawyerEmail(),
                 event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
                 consultation.summary()
