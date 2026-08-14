@@ -15,9 +15,4 @@ public record ConsultationDiagnosticsResponse(
     public static final String ACCEPT = "accept";
     public static final String ASK = "ask";
     public static final String REJECT = "reject";
-
-    /** For the verdicts that carry no Acknowledgment, and for tests that do not exercise one. */
-    public ConsultationDiagnosticsResponse(String verdict, String question, String reason, String summary) {
-        this(verdict, question, null, reason, summary);
-    }
 }

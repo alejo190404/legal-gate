@@ -26,7 +26,7 @@ GOLDEN_DIAGNOSE_REQUEST = {
         {"role": "CLIENT", "body": "El 3 de marzo."},
     ],
     "systemPrompt": "Decide si la firma toma el caso.",
-    "promptVersion": "consultation-diagnostics-v1",
+    "promptVersion": "consultation-diagnostics-v2",
 }
 
 GOLDEN_DIAGNOSE_RESPONSE = {

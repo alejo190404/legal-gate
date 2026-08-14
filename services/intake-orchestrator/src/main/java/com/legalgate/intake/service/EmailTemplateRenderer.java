@@ -151,10 +151,12 @@ public class EmailTemplateRenderer {
      */
     private String acknowledgmentLine(String acknowledgment) {
         String subject = nullToEmpty(acknowledgment).trim();
-        while (subject.endsWith(".")) {
-            subject = subject.substring(0, subject.length() - 1).trim();
+        if (subject.isEmpty()) {
+            return NEUTRAL_ACKNOWLEDGMENT;
         }
-        return subject.isEmpty() ? NEUTRAL_ACKNOWLEDGMENT : "Recibimos su mensaje sobre " + subject + ".";
+        // The model punctuating its own restatement must not end the sentence twice; anything it
+        // wrote is otherwise left alone, abbreviations and all.
+        return "Recibimos su mensaje sobre " + subject + (subject.endsWith(".") ? "" : ".");
     }
 
     /**

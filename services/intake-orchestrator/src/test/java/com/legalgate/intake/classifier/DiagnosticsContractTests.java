@@ -41,7 +41,7 @@ class DiagnosticsContractTests {
                 {"role": "CLIENT", "body": "El 3 de marzo."}
               ],
               "systemPrompt": "Decide si la firma toma el caso.",
-              "promptVersion": "consultation-diagnostics-v1"
+              "promptVersion": "consultation-diagnostics-v2"
             }
             """;
 
@@ -68,7 +68,7 @@ class DiagnosticsContractTests {
                         new ConsultationDiagnosticsRequest.Message("LEGALGATE", "Cual fue la fecha del despido?"),
                         new ConsultationDiagnosticsRequest.Message("CLIENT", "El 3 de marzo.")),
                 "Decide si la firma toma el caso.",
-                "consultation-diagnostics-v1");
+                "consultation-diagnostics-v2");
 
         assertThat(objectMapper.readTree(objectMapper.writeValueAsString(request)))
                 .isEqualTo(objectMapper.readTree(GOLDEN_DIAGNOSE_REQUEST));
