@@ -30,6 +30,18 @@ One exchange within Diagnostics: LegalGate asks, the potential client answers. R
 
 The unguessable identifier that ties a potential client's reply back to the Consultation it belongs to. It travels in the address the client replies to, and is what stops a reply from being mistaken for a brand-new Consultation.
 
+## Acknowledgment
+
+The opening line of a Diagnostics message that repeats back, in the potential client's own terms, what they wrote in about. It is a receipt of the message, never a characterization of the matter — naming a legal concept the potential client did not name would read as an assessment.
+
+## Consultation Thread
+
+Every message exchanged with a potential client about one Consultation, seen as the single email conversation it is. The potential client's first email is what the thread hangs from; nothing LegalGate sends about that Consultation stands on its own.
+
+## Firm Voice
+
+The identity a potential client sees on everything LegalGate sends them: the firm's name, signed by the firm. A potential client wrote to a firm and hears back from that firm — LegalGate is not a party to the correspondence and never appears in it. Distinct from what lawyers and firm staff receive, which is LegalGate's own product surface and is branded as such.
+
 ## Non-Engagement Notice
 
 The message sent to a potential client whose matter the firm declines. It states that no attorney-client relationship was formed and that other counsel should be sought promptly. It never contains legal advice.
