@@ -39,6 +39,7 @@ public class EmailTemplateRenderer {
     static final String UNASSIGNED_LAWYER = "Por asignar";
 
     private static final String NEUTRAL_SALUTATION = "Estimado(a):";
+    private static final String NEUTRAL_ACKNOWLEDGMENT = "Recibimos su mensaje.";
     private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
     private static final String NON_ENGAGEMENT_SUBJECT = "Sobre su consulta";
     private static final String DISCLAIMER =
@@ -91,11 +92,16 @@ public class EmailTemplateRenderer {
     /**
      * The Diagnostics question as firm correspondence: plaintext, in the Firm Voice, with every
      * fixed sentence supplied here rather than by the model (ADR 0004). The model contributes the
-     * question and nothing else, so no generation can put a sentence of its own into a firm's
-     * first contact with a stranger.
+     * question and the Acknowledgment and nothing else, so no generation can put a sentence of its
+     * own into a firm's first contact with a stranger.
+     *
+     * <p>{@code acknowledgment} is what the potential client wrote about, in their own terms; the
+     * caller passes null when the model gave nothing usable and the neutral receipt is used instead.
      */
-    String renderDiagnosticsQuestion(String clientName, String firmName, String question) {
+    String renderDiagnosticsQuestion(String clientName, String firmName, String acknowledgment, String question) {
         return salutation(clientName) + "\n"
+                + "\n"
+                + acknowledgmentLine(acknowledgment) + "\n"
                 + "\n"
                 + "Para poder revisar su consulta necesitamos algunos datos adicionales:\n"
                 + "\n"
@@ -136,6 +142,19 @@ public class EmailTemplateRenderer {
             return fallback;
         }
         return subject.regionMatches(true, 0, "re:", 0, 3) ? subject : "Re: " + subject;
+    }
+
+    /**
+     * The Acknowledgment: a receipt of the message, never a characterization of the matter. The
+     * restatement is the model's, held to the potential client's own words; anything missing falls
+     * back to the bare receipt, which says less but can never say something wrong.
+     */
+    private String acknowledgmentLine(String acknowledgment) {
+        String subject = nullToEmpty(acknowledgment).trim();
+        while (subject.endsWith(".")) {
+            subject = subject.substring(0, subject.length() - 1).trim();
+        }
+        return subject.isEmpty() ? NEUTRAL_ACKNOWLEDGMENT : "Recibimos su mensaje sobre " + subject + ".";
     }
 
     /**

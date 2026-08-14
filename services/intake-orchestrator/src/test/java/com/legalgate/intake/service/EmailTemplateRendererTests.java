@@ -84,9 +84,11 @@ class EmailTemplateRendererTests {
     @Test
     void diagnosticsQuestionIsFirmCorrespondenceAroundTheModelsQuestion() {
         String body = renderer.renderDiagnosticsQuestion(
-                "Alejandro Barragán", "Firma Ejemplo", "  ¿Cual fue la fecha del despido?  ");
+                "Alejandro Barragán", "Firma Ejemplo", "la acusación en su institución educativa",
+                "  ¿Cual fue la fecha del despido?  ");
 
-        assertThat(body).startsWith("Estimado(a) Alejandro:\n\n");
+        assertThat(body).startsWith(
+                "Estimado(a) Alejandro:\n\nRecibimos su mensaje sobre la acusación en su institución educativa.\n\n");
         assertThat(body).contains("Para poder revisar su consulta necesitamos algunos datos adicionales:");
         assertThat(body).contains("¿Cual fue la fecha del despido?");
         assertThat(body).contains("Quedamos atentos a su respuesta.");
@@ -98,8 +100,19 @@ class EmailTemplateRendererTests {
     }
 
     @Test
+    void theAcknowledgmentFallsBackToABareReceiptRatherThanNamingWhatNobodyWrote() {
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?"))
+                .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?"))
+                .contains("Recibimos su mensaje.\n\n");
+        // The model punctuating its own restatement must not produce "sobre su despido..".
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?"))
+                .contains("Recibimos su mensaje sobre su despido.\n\n");
+    }
+
+    @Test
     void diagnosticsQuestionNeverSignsWithALawyer() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "¿Tiene el contrato?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?");
 
         assertThat(body).doesNotContain("Ana Abogada");
         assertThat(body).doesNotContain("Abogado");
@@ -118,7 +131,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void signatureOmitsTheFirmLineRatherThanLeakingLegalGateToAPotentialClient() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "¿Fecha?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?");
 
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\n\n---");
         assertThat(body).doesNotContain("LegalGate");
@@ -166,7 +179,7 @@ class EmailTemplateRendererTests {
     }
 
     private String salutationFor(String clientName) {
-        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "¿Fecha?").split("\n")[0];
+        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").split("\n")[0];
     }
 
     private ConsultationResponse consultation() {

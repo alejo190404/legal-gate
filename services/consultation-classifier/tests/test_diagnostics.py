@@ -32,6 +32,7 @@ GOLDEN_DIAGNOSE_REQUEST = {
 GOLDEN_DIAGNOSE_RESPONSE = {
     "verdict": "ask",
     "question": "Que tipo de contrato tenia?",
+    "acknowledgment": "el despido en su trabajo",
     "reason": "Falta el tipo de contrato.",
     "summary": "Despido el 3 de marzo.",
 }
@@ -71,7 +72,19 @@ def test_diagnose_returns_ask_verdict_with_question() -> None:
 
     assert response.verdict == "ask"
     assert response.question == "Que tipo de contrato tenia?"
+    assert response.acknowledgment == "el despido en su trabajo"
     assert response.summary == "Despido el 3 de marzo."
+
+
+def test_diagnose_carries_a_missing_acknowledgment_as_none_rather_than_failing() -> None:
+    payload = {key: value for key, value in GOLDEN_DIAGNOSE_RESPONSE.items() if key != "acknowledgment"}
+
+    response = classifier_returning(payload).diagnose(
+        ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST)
+    )
+
+    assert response.acknowledgment is None
+    assert response.verdict == "ask"
 
 
 @pytest.mark.parametrize("verdict", ["accept", "reject"])

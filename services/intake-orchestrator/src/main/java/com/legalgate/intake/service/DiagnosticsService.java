@@ -43,6 +43,7 @@ public class DiagnosticsService {
     public static final String CONSULTATION_STATUS_ABANDONED = "DIAGNOSTICS_ABANDONED";
 
     static final int MAX_ROUNDS = 3;
+    static final int MAX_ACKNOWLEDGMENT_WORDS = 15;
     static final String REPLY_TAG_PREFIX = "d";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DiagnosticsService.class);
@@ -250,7 +251,7 @@ public class DiagnosticsService {
                 session.tenantId(),
                 session.awaitingReply(now, verdict.reason(), verdict.summary()),
                 List.of(DiagnosticsMessage.fromLegalGate(verdict.question())),
-                List.of(questionNotification(consultation, session, verdict.question())));
+                List.of(questionNotification(consultation, session, verdict)));
     }
 
     private void accept(DiagnosticsSession session, ConsultationResponse consultation,
@@ -351,6 +352,20 @@ public class DiagnosticsService {
         };
     }
 
+    /**
+     * The Acknowledgment is the one generated sentence in a first contact with a stranger, so it is
+     * held to a hard length: a restatement that grows past it has stopped repeating the potential
+     * client and started characterizing their matter. Anything blank or over the cap is dropped in
+     * favour of the neutral receipt — a degraded email is fine, a failed round is not, so unlike
+     * {@link #isUsable} this never rejects the response.
+     */
+    private String usableAcknowledgment(String acknowledgment) {
+        if (acknowledgment == null || acknowledgment.isBlank()) {
+            return null;
+        }
+        return acknowledgment.trim().split("\\s+").length > MAX_ACKNOWLEDGMENT_WORDS ? null : acknowledgment;
+    }
+
     private ConsultationDiagnosticsRequest diagnoseRequestFor(DiagnosticsSession session, List<DiagnosticsMessage> transcript) {
         return new ConsultationDiagnosticsRequest(
                 session.promptSnapshot(),
@@ -364,13 +379,15 @@ public class DiagnosticsService {
     }
 
     /** Plaintext firm correspondence, envelope and subject both supplied by the template layer. */
-    private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session, String question) {
+    private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session,
+            ConsultationDiagnosticsResponse verdict) {
         return new NotificationOutboxItem(
                 consultation.id(), null, "DIAGNOSTICS_QUESTION", "CLIENT", consultation.clientEmail(),
                 replyAddressFor(session),
                 emailTemplateRenderer.diagnosticsQuestionSubject(originalSubjectOf(session)),
                 emailTemplateRenderer.renderDiagnosticsQuestion(
-                        consultation.clientName(), firmNameOf(session), question),
+                        consultation.clientName(), firmNameOf(session),
+                        usableAcknowledgment(verdict.acknowledgment()), verdict.question()),
                 null, null);
     }
 

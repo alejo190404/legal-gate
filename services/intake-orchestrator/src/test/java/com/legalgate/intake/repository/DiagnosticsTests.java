@@ -96,7 +96,8 @@ class DiagnosticsTests {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-4@example.com>"));
         classifier.verdicts.add(new ConsultationDiagnosticsResponse(
-                "ask", "Cual fue la fecha del despido?", "Falta la fecha.", "Despido sin fecha."));
+                "ask", "Cual fue la fecha del despido?", "el despido en su trabajo",
+                "Falta la fecha.", "Despido sin fecha."));
 
         diagnostics.processDueDiagnostics();
 
@@ -106,7 +107,8 @@ class DiagnosticsTests {
         assertThat(queued.get(0).recipientEmail()).isEqualTo("maria@example.com");
         assertThat(queued.get(0).body()).contains("Cual fue la fecha del despido?");
         // Firm correspondence, not a bare prompt: salutation, framing, signature, plaintext only.
-        assertThat(queued.get(0).body()).startsWith("Estimado(a) Maria:");
+        assertThat(queued.get(0).body())
+                .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje sobre el despido en su trabajo.");
         assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
         assertThat(queued.get(0).body()).doesNotContain("LegalGate");
         assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
@@ -120,6 +122,54 @@ class DiagnosticsTests {
         assertThat(session.rounds()).isEqualTo(1);
         assertThat(session.status()).isEqualTo(DiagnosticsSession.PENDING);
         assertThat(reload(pending).eventId()).isNull();
+    }
+
+    @Test
+    void anUnusableAcknowledgmentDegradesToTheNeutralReceiptAndStillAsks() {
+        String overLong = "el despido que sufrio en su trabajo el pasado mes de marzo despues de "
+                + "varios anos de servicio continuo en la empresa";
+
+        List<String> unusable = new java.util.ArrayList<>(List.of(overLong, "   "));
+        unusable.add(null);
+        for (int index = 0; index < unusable.size(); index++) {
+            String acknowledgment = unusable.get(index);
+            DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+            ConsultationResponse pending = diagnostics.receiveInboundEmail(
+                    inboundEmail("<m-ack-" + index + "@example.com>"));
+            classifier.verdicts.add(new ConsultationDiagnosticsResponse(
+                    "ask", "Cual fue la fecha del despido?", acknowledgment, "Falta la fecha.", "Sin fecha."));
+
+            diagnostics.processDueDiagnostics();
+
+            List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
+            assertThat(queued).hasSize(1);
+            assertThat(queued.get(0).body())
+                    .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n")
+                    .contains("Cual fue la fecha del despido?");
+            assertThat(sessionFor(pending).rounds()).isEqualTo(1);
+            assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.PENDING);
+        }
+    }
+
+    /**
+     * The guard against tone work quietly costing a firm the information it asked for: the firm's
+     * own Diagnostics Prompt travels verbatim, and the system prompt around it still says the
+     * firm's description outranks everything else it asks the model to do.
+     */
+    @Test
+    void theFirmsDiagnosticsPromptStillGovernsWhatGetsAsked() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        diagnostics.receiveInboundEmail(inboundEmail("<m-governs@example.com>"));
+        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "ack", "Falta.", "Sin fecha."));
+
+        diagnostics.processDueDiagnostics();
+
+        ConsultationDiagnosticsRequest sent = classifier.lastDiagnoseRequest;
+        assertThat(sent.diagnosticsPrompt()).isEqualTo(PROMPT);
+        assertThat(sent.systemPrompt())
+                .contains("outranks")
+                .contains("everything the firm asked for");
+        assertThat(sent.promptVersion()).isEqualTo("consultation-diagnostics-v2");
     }
 
     @Test
@@ -551,6 +601,7 @@ class DiagnosticsTests {
         private RuntimeException classifyFailure;
         private RuntimeException diagnoseFailure;
         private int diagnoseCalls;
+        private ConsultationDiagnosticsRequest lastDiagnoseRequest;
 
         @Override
         public ConsultationClassifierResponse classify(ConsultationClassifierRequest request) {
@@ -563,6 +614,7 @@ class DiagnosticsTests {
         @Override
         public ConsultationDiagnosticsResponse diagnose(ConsultationDiagnosticsRequest request) {
             diagnoseCalls++;
+            lastDiagnoseRequest = request;
             if (diagnoseFailure != null) {
                 throw diagnoseFailure;
             }

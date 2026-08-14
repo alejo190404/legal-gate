@@ -33,8 +33,12 @@ class IntakePropertiesTests {
     void defaultsTheDiagnosticsPromptWhenNoneIsConfigured() {
         IntakeProperties properties = properties("intake.legal-gate.co", "test-service-token");
 
-        assertThat(properties.consultationDiagnosticsPromptVersion()).isEqualTo("consultation-diagnostics-v1");
+        assertThat(properties.consultationDiagnosticsPromptVersion()).isEqualTo("consultation-diagnostics-v2");
         assertThat(properties.consultationDiagnosticsSystemPrompt()).contains("accept");
+        // v2 asks for the Acknowledgment, and still ranks the firm's own prompt above how it reads.
+        assertThat(properties.consultationDiagnosticsSystemPrompt())
+                .contains("acknowledgment")
+                .contains("outranks");
     }
 
     private IntakeProperties properties(String emailDomain, String internalServiceToken) {

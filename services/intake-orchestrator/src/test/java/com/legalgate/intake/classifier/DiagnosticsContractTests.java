@@ -49,6 +49,7 @@ class DiagnosticsContractTests {
             {
               "verdict": "ask",
               "question": "Que tipo de contrato tenia?",
+              "acknowledgment": "el despido en su trabajo",
               "reason": "Falta el tipo de contrato.",
               "summary": "Despido el 3 de marzo."
             }
@@ -80,6 +81,7 @@ class DiagnosticsContractTests {
 
         assertThat(response.verdict()).isEqualTo(ConsultationDiagnosticsResponse.ASK);
         assertThat(response.question()).isEqualTo("Que tipo de contrato tenia?");
+        assertThat(response.acknowledgment()).isEqualTo("el despido en su trabajo");
         assertThat(response.reason()).isEqualTo("Falta el tipo de contrato.");
         assertThat(response.summary()).isEqualTo("Despido el 3 de marzo.");
     }
