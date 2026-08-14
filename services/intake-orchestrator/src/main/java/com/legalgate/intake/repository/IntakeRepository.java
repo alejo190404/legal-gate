@@ -18,6 +18,8 @@ public interface IntakeRepository {
 
     Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId);
 
+    Optional<String> tenantDisplayName(String tenantSlug);
+
     TenantProvisioning startTenantProvisioning(String ownerId, String displayName, String slug, String intakeEmail);
 
     TenantProvisioning activateTenantProvisioning(String tenantId, String slug, String organizationId);

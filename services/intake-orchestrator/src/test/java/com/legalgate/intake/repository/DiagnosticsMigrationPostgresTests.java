@@ -187,6 +187,17 @@ class DiagnosticsMigrationPostgresTests {
         }
     }
 
+    @Test
+    void theFirmsOwnDisplayNameSurvivesLaterWritesSoClientMailSendsUnderIt() {
+        JdbcIntakeRepository repository = repository();
+        repository.startTenantProvisioning("user_firm_voice", "Vargas & Asociados", "tenant-firm-voice",
+                "tenant-firm-voice@intake.legal-gate.co");
+
+        savePending(repository, "tenant-firm-voice");
+
+        assertThat(repository.tenantDisplayName("tenant-firm-voice")).contains("Vargas & Asociados");
+    }
+
     private ConsultationResponse savePending(JdbcIntakeRepository repository, String tenantSlug) {
         ConsultationResponse consultation = new ConsultationResponse(
                 UUID.randomUUID().toString(), tenantSlug, "Maria Perez", "maria@example.com",

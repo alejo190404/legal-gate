@@ -23,6 +23,7 @@ import java.sql.Timestamp;
 import java.sql.Time;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -59,6 +60,21 @@ class JdbcIntakeRepository implements IntakeRepository {
     @Override
     public Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId) {
         return queryTenant("select * from app_find_tenant_by_provisioning_owner(?)", ownerId);
+    }
+
+    @Override
+    public Optional<String> tenantDisplayName(String tenantSlug) {
+        if (tenantSlug == null || tenantSlug.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            return jdbcTemplate.query("select display_name from tenants where slug = ?",
+                            (rs, rowNum) -> rs.getString("display_name"), tenantSlug)
+                    .stream()
+                    .filter(Objects::nonNull)
+                    .findFirst();
+        });
     }
 
     @Override
@@ -116,7 +132,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         try {
             return transactionTemplate.execute(status -> {
                 setTenantContext(tenantSlug);
-                UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+                UUID tenantId = ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
                 jdbcTemplate.update("""
                         insert into tenant_settings (
                           tenant_id, urgent_keywords, consultation_windows, urgency_levels,
@@ -156,7 +172,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public TenantSettingsResponse settingsFor(String tenantSlug, TenantSettingsResponse defaultSettings) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
                     select t.slug, s.urgent_keywords, s.consultation_windows, s.urgency_levels,
                            s.destination_email, s.intake_email, s.routing_rules,
@@ -189,7 +205,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.source_message_id = ?", this::mapConsultation, tenantSlug, sourceMessageId)
                     .stream()
                     .findFirst();
@@ -206,7 +222,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         try {
             return transactionTemplate.execute(status -> {
                 setTenantContext(tenantSlug);
-                UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+                UUID tenantId = ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
                 UUID consultationId = UUID.fromString(consultation.id());
                 jdbcTemplate.update("""
                         insert into consultations (
@@ -253,7 +269,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     ) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+            UUID tenantId = ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             UUID consultationId = UUID.fromString(consultation.id());
             if (consultation.event() != null) {
                 insertEvent(tenantId, consultationId, consultation, consultation.event());
@@ -287,7 +303,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.id = ?",
                             this::mapConsultation, tenantSlug, UUID.fromString(consultationId))
                     .stream()
@@ -304,7 +320,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     ) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+            UUID tenantId = ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             UUID sessionId = session.id() == null ? UUID.randomUUID() : UUID.fromString(session.id());
             jdbcTemplate.update("""
                     insert into diagnostics_sessions (
@@ -507,7 +523,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             List<ConsultationResponse> consultations = jdbcTemplate.query(
                     consultationSelect() + " where t.slug = ? order by c.created_at asc",
                     this::mapConsultation,
@@ -524,7 +540,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.event_id = ?", this::mapConsultation, tenantSlug, UUID.fromString(eventId))
                     .stream()
                     .findFirst();
@@ -535,7 +551,7 @@ class JdbcIntakeRepository implements IntakeRepository {
     public List<LawyerProfile> lawyersForTenant(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return lawyersForCurrentTenant();
         });
     }
@@ -547,7 +563,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query("""
                     select e.id as event_id_read, e.lawyer_id, l.display_name as lawyer_display_name, l.email as lawyer_email,
                            e.route_name, e.urgency_name, e.sla_days, e.sla_deadline, e.priority_score,
@@ -569,7 +585,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         transactionTemplate.executeWithoutResult(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, displayName(tenantSlug));
+            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             updateEventsInCurrentTransaction(events);
         });
     }
@@ -581,7 +597,7 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         transactionTemplate.executeWithoutResult(status -> {
             setTenantContext(tenantSlug);
-            UUID tenantId = ensureTenant(tenantSlug, displayName(tenantSlug));
+            UUID tenantId = ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             insertNotifications(tenantId, tenantSlug, notifications);
         });
     }
@@ -934,10 +950,12 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     private UUID ensureTenant(String tenantSlug, String displayName) {
+        // The seeded name is only for rows this call creates: an existing display_name is the firm's
+        // own name, shown to potential clients, and must survive every write that passes through here.
         return jdbcTemplate.queryForObject("""
                 insert into tenants (slug, display_name)
                 values (?, ?)
-                on conflict (slug) do update set display_name = excluded.display_name
+                on conflict (slug) do update set display_name = tenants.display_name
                 returning id
                 """, UUID.class, tenantSlug, displayName);
     }
@@ -946,7 +964,8 @@ class JdbcIntakeRepository implements IntakeRepository {
         jdbcTemplate.queryForObject("select set_config('app.tenant_slug', ?, true)", String.class, tenantSlug);
     }
 
-    private String displayName(String tenantSlug) {
+    /** Seed name for a tenant row created before onboarding named the firm. */
+    private String fallbackDisplayName(String tenantSlug) {
         return tenantSlug.replace('-', ' ');
     }
 

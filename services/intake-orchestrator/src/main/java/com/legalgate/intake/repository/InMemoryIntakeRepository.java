@@ -13,6 +13,7 @@ import com.legalgate.intake.model.TenantSettingsResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -46,6 +47,15 @@ class InMemoryIntakeRepository implements IntakeRepository {
     @Override
     public Optional<TenantProvisioning> tenantForProvisioningOwner(String ownerId) {
         return Optional.ofNullable(tenantsByOwner.get(ownerId));
+    }
+
+    @Override
+    public Optional<String> tenantDisplayName(String tenantSlug) {
+        return tenantsByOwner.values().stream()
+                .filter(tenant -> tenant.slug().equals(tenantSlug))
+                .map(TenantProvisioning::displayName)
+                .filter(Objects::nonNull)
+                .findFirst();
     }
 
     @Override

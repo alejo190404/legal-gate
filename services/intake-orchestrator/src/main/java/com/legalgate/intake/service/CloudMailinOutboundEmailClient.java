@@ -21,9 +21,12 @@ class CloudMailinOutboundEmailClient {
 
     private final IntakeProperties intakeProperties;
     private final RestClient restClient;
+    private final FirmNameResolver firmNameResolver;
 
-    CloudMailinOutboundEmailClient(IntakeProperties intakeProperties, RestClient.Builder restClientBuilder) {
+    CloudMailinOutboundEmailClient(IntakeProperties intakeProperties, RestClient.Builder restClientBuilder,
+            FirmNameResolver firmNameResolver) {
         this.intakeProperties = intakeProperties;
+        this.firmNameResolver = firmNameResolver;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
         requestFactory.setReadTimeout(READ_TIMEOUT_MILLIS);
@@ -39,12 +42,7 @@ class CloudMailinOutboundEmailClient {
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        // Diagnostics messages carry a token-bearing From address so the client's reply lands
-        // back on the right consultation; everything else sends from the shared agenda address.
-        String fromEmail = isBlank(notification.fromEmail())
-                ? intakeProperties.notificationsFromEmail()
-                : notification.fromEmail().trim();
-        payload.put("from", intakeProperties.notificationsFromName() + " <" + fromEmail + ">");
+        payload.put("from", fromHeader(notification));
         payload.put("to", notification.recipientEmail());
         payload.put("test_mode", intakeProperties.outboundTestMode());
         payload.put("subject", notification.subject());
@@ -73,6 +71,28 @@ class CloudMailinOutboundEmailClient {
 
         Object id = response == null ? null : response.get("id");
         return id == null ? null : id.toString();
+    }
+
+    String fromHeader(NotificationOutboxItem notification) {
+        // Diagnostics messages carry a token-bearing From address so the client's reply lands
+        // back on the right consultation; everything else sends from the shared agenda address.
+        String fromEmail = isBlank(notification.fromEmail())
+                ? intakeProperties.notificationsFromEmail()
+                : notification.fromEmail().trim();
+        // A potential client wrote to a firm and hears back from that firm. Lawyers and firm staff
+        // are the LegalGate customer, so their mail keeps LegalGate branding unchanged.
+        if (!"CLIENT".equals(notification.recipientRole())) {
+            return intakeProperties.notificationsFromName() + " <" + fromEmail + ">";
+        }
+        return quoted(firmNameResolver.firmNameFor(notification.tenantId())) + " <" + fromEmail + ">";
+    }
+
+    /** Firm names are tenant-supplied, so they are quoted and stripped of anything that could forge a header. */
+    private String quoted(String displayName) {
+        String sanitized = displayName.replaceAll("\\p{Cntrl}+", " ").trim()
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
+        return "\"" + sanitized + "\"";
     }
 
     boolean isEnabled() {
