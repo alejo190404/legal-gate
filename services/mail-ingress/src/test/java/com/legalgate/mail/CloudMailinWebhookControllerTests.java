@@ -283,6 +283,17 @@ class CloudMailinWebhookControllerTests {
         assertPlainBodyForwardedAs(consultation, consultation);
     }
 
+    // A line can open with the letters of a marker and still be the client writing, which is why a
+    // marker has to end at a word boundary rather than merely prefix the line.
+    @Test
+    void keepsAConsultationWhoseLineOpensWithAWordExtendingAMarker() throws Exception {
+        String consultation = """
+                Buenas tardes, tengo una duda.
+
+                Aviso legalmente exigido no me llego nunca antes del despido.""";
+        assertPlainBodyForwardedAs(consultation, consultation);
+    }
+
     private void assertPlainBodyForwardedAs(String plain, String expected) throws Exception {
         when(tenantLookupService.tenantForIntakeEmail(eq("intake@firma.test")))
                 .thenReturn(Optional.of("firma-demo"));

@@ -19,7 +19,7 @@ Detection is a hardcoded list of fixed gateway phrases. A marker matches only at
 
 Two guards make a mis-detection a no-op instead of data loss. If the strip leaves a blank body, the original is kept. If the earliest marker sits at the very top with nothing above it, the original is kept — that shape is a forwarded disclaimer-laden thread with the answer below, not a trailer.
 
-The signature delimiter `-- ` and the bare word `disclaimer` are deliberately not markers. A signature carries the client's name, phone and ID, sometimes exactly what the firm asked for; and a client asking about a contract's disclaimer is a real consultation.
+The signature delimiter (`--` followed by a space) and the bare word `disclaimer` are deliberately not markers. A signature carries the client's name, phone and ID, sometimes exactly what the firm asked for; and a client asking about a contract's disclaimer is a real consultation.
 
 Three narrowings come with it:
 

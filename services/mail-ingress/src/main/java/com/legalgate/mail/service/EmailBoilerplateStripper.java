@@ -57,8 +57,9 @@ public class EmailBoilerplateStripper {
         if (kept.isBlank()) {
             return plain;
         }
-        LOGGER.info("Removed {} characters of email boilerplate: {}",
-                plain.length() - cut, plain.substring(cut).trim());
+        // The removed text is sender-controlled and sits inside a message the firm never agreed to
+        // have logged, so only its size is recorded.
+        LOGGER.info("Removed {} characters of email boilerplate", plain.length() - cut);
         return kept;
     }
 
@@ -71,8 +72,7 @@ public class EmailBoilerplateStripper {
         while (lineStart <= plain.length()) {
             int lineEnd = plain.indexOf('\n', lineStart);
             String line = plain.substring(lineStart, lineEnd < 0 ? plain.length() : lineEnd);
-            String folded = fold(line.strip());
-            if (MARKERS.stream().anyMatch(folded::startsWith)) {
+            if (opensWithMarker(fold(line.strip()))) {
                 return lineStart;
             }
             if (lineEnd < 0) {
@@ -81,6 +81,16 @@ public class EmailBoilerplateStripper {
             lineStart = lineEnd + 1;
         }
         return -1;
+    }
+
+    /**
+     * A marker has to end where a word ends: "aviso legalmente despedido" opens with the letters of
+     * a marker but is the client writing, and a bare prefix test would cut their message there.
+     */
+    private static boolean opensWithMarker(String folded) {
+        return MARKERS.stream().anyMatch(marker -> folded.startsWith(marker)
+                && (folded.length() == marker.length()
+                        || !Character.isLetterOrDigit(folded.charAt(marker.length()))));
     }
 
     /** Gateways disagree on case and on tildes — one observed in the wild drops them on purpose. */
