@@ -1,5 +1,6 @@
 package com.legalgate.intake.service;
 
+import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.util.List;
@@ -31,13 +32,32 @@ class NotificationDeliveryService {
         List<NotificationOutboxItem> notifications = intakeRepository.claimPendingNotifications(BATCH_SIZE);
         for (NotificationOutboxItem notification : notifications) {
             try {
-                String providerMessageId = outboundEmailClient.send(notification);
+                String providerMessageId = outboundEmailClient.send(notification, threadAnchor(notification));
                 intakeRepository.markNotificationSent(notification.id(), providerMessageId);
             } catch (Exception ex) {
                 LOGGER.warn("Failed to send LegalGate notification id={} type={} recipientRole={}",
                         notification.id(), notification.type(), notification.recipientRole(), ex);
                 intakeRepository.markNotificationFailed(notification.id(), ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * The Consultation Thread anchor (ADR 0004), resolved here so the outbox carries no message ids.
+     * Threading is an enhancement, never a delivery risk: a failed lookup sends the mail unthreaded.
+     */
+    private String threadAnchor(NotificationOutboxItem notification) {
+        if (notification.consultationId() == null || notification.tenantId() == null) {
+            return null;
+        }
+        try {
+            return intakeRepository.consultationById(notification.tenantId(), notification.consultationId())
+                    .map(ConsultationResponse::sourceMessageId)
+                    .orElse(null);
+        } catch (Exception ex) {
+            LOGGER.debug("Could not resolve the thread anchor for notification id={}; sending unthreaded.",
+                    notification.id(), ex);
+            return null;
         }
     }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +31,7 @@ import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
 import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
+import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
 
 /**
@@ -77,7 +79,7 @@ class DiagnosticsTests {
     void acceptOnTheFirstPassClassifiesAndSchedulesWithoutAskingAnything() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-3@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Despido el 3 de marzo."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Despido el 3 de marzo."));
         classifier.classification = classification();
 
         diagnostics.processDueDiagnostics();
@@ -94,8 +96,9 @@ class DiagnosticsTests {
     void theAskPathQueuesAClientQuestionFromATokenBearingAddressAndCountsTheRound() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-4@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse(
-                "ask", "Cual fue la fecha del despido?", "Falta la fecha.", "Despido sin fecha."));
+        classifier.verdicts.add(verdict(
+                "ask", "Cual fue la fecha del despido?", "el despido en su trabajo",
+                "Falta la fecha.", "Despido sin fecha."));
 
         diagnostics.processDueDiagnostics();
 
@@ -104,6 +107,13 @@ class DiagnosticsTests {
         assertThat(queued.get(0).type()).isEqualTo("DIAGNOSTICS_QUESTION");
         assertThat(queued.get(0).recipientEmail()).isEqualTo("maria@example.com");
         assertThat(queued.get(0).body()).contains("Cual fue la fecha del despido?");
+        // Firm correspondence, not a bare prompt: salutation, framing, signature, plaintext only.
+        assertThat(queued.get(0).body())
+                .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje sobre el despido en su trabajo.");
+        assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
+        assertThat(queued.get(0).body()).doesNotContain("LegalGate");
+        assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
+        assertThat(queued.get(0).htmlBody()).isNull();
         assertThat(queued.get(0).icsContent()).isNull();
         assertThat(queued.get(0).fromEmail())
                 .startsWith("firma-demo+d")
@@ -116,10 +126,57 @@ class DiagnosticsTests {
     }
 
     @Test
+    void anUnusableAcknowledgmentDegradesToTheNeutralReceiptAndStillAsks() {
+        String overLong = "el despido que sufrio en su trabajo el pasado mes de marzo despues de "
+                + "varios anos de servicio continuo en la empresa";
+
+        List<String> unusable = Arrays.asList(overLong, "   ", null);
+        for (int index = 0; index < unusable.size(); index++) {
+            String acknowledgment = unusable.get(index);
+            DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+            ConsultationResponse pending = diagnostics.receiveInboundEmail(
+                    inboundEmail("<m-ack-" + index + "@example.com>"));
+            classifier.verdicts.add(verdict(
+                    "ask", "Cual fue la fecha del despido?", acknowledgment, "Falta la fecha.", "Sin fecha."));
+
+            diagnostics.processDueDiagnostics();
+
+            List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
+            assertThat(queued).hasSize(1);
+            assertThat(queued.get(0).body())
+                    .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n")
+                    .contains("Cual fue la fecha del despido?");
+            assertThat(sessionFor(pending).rounds()).isEqualTo(1);
+            assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.PENDING);
+        }
+    }
+
+    /**
+     * The guard against tone work quietly costing a firm the information it asked for: the firm's
+     * own Diagnostics Prompt travels verbatim, and the system prompt around it still says the
+     * firm's description outranks everything else it asks the model to do.
+     */
+    @Test
+    void theFirmsDiagnosticsPromptStillGovernsWhatGetsAsked() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        diagnostics.receiveInboundEmail(inboundEmail("<m-governs@example.com>"));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "ack", "Falta.", "Sin fecha."));
+
+        diagnostics.processDueDiagnostics();
+
+        ConsultationDiagnosticsRequest sent = classifier.lastDiagnoseRequest;
+        assertThat(sent.diagnosticsPrompt()).isEqualTo(PROMPT);
+        assertThat(sent.systemPrompt())
+                .contains("outranks")
+                .contains("everything the firm asked for");
+        assertThat(sent.promptVersion()).isEqualTo("consultation-diagnostics-v2");
+    }
+
+    @Test
     void theRejectPathQueuesANonEngagementNoticeAndRecordsTheVerdictReasonAndPromptSnapshot() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-5@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse(
+        classifier.verdicts.add(verdict(
                 "reject", null, "La firma no toma casos penales.", "Asunto penal."));
 
         diagnostics.processDueDiagnostics();
@@ -135,14 +192,34 @@ class DiagnosticsTests {
         List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
         assertThat(queued).hasSize(1);
         assertThat(queued.get(0).type()).isEqualTo("NON_ENGAGEMENT_NOTICE");
-        assertThat(queued.get(0).body()).contains("no se ha formado ninguna relacion");
+        assertThat(queued.get(0).body()).contains("No se ha formado ninguna relacion abogado-cliente");
+        // Same Firm Voice envelope and same thread as every other client message.
+        assertThat(queued.get(0).body()).startsWith("Estimado(a) Maria:");
+        assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
+        assertThat(queued.get(0).body()).doesNotContain("LegalGate");
+        assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
+        assertThat(queued.get(0).htmlBody()).isNull();
+    }
+
+    @Test
+    void aFirmAuthoredNoticeGoesOutVerbatimInsideTheEnvelope() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
+        saveNonEngagementNotice(notice);
+        ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-verbatim@example.com>"));
+        classifier.verdicts.add(verdict("reject", null, "Fuera de alcance.", "Resumen."));
+        diagnostics.processDueDiagnostics();
+
+        List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
+        assertThat(queued).hasSize(1);
+        assertThat(queued.get(0).body()).contains(notice);
     }
 
     @Test
     void theRecordedPromptSnapshotSurvivesTheFirmRewritingItsPrompt() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-6@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("reject", null, "Fuera de alcance.", "Resumen."));
+        classifier.verdicts.add(verdict("reject", null, "Fuera de alcance.", "Resumen."));
         diagnostics.processDueDiagnostics();
 
         saveSettings("Ahora tomamos de todo.");
@@ -154,7 +231,7 @@ class DiagnosticsTests {
     void aClientReplyAttachesToTheSameConsultationAndTriggersTheNextRound() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-7@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta la fecha.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta la fecha.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
 
         ConsultationResponse afterReply = diagnostics.receiveInboundEmail(
@@ -168,7 +245,7 @@ class DiagnosticsTests {
                         org.assertj.core.groups.Tuple.tuple("LEGALGATE", "Fecha?"),
                         org.assertj.core.groups.Tuple.tuple("CLIENT", "El 3 de marzo."));
 
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Despido el 3 de marzo."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Despido el 3 de marzo."));
         classifier.classification = classification();
         diagnostics.processDueDiagnostics();
 
@@ -179,7 +256,7 @@ class DiagnosticsTests {
     void severalRepliesInOneRoundDoNotTriggerAnExtraDiagnoseCall() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-8@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
         int callsAfterFirstRound = classifier.diagnoseCalls;
 
@@ -196,11 +273,11 @@ class DiagnosticsTests {
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-9@example.com>"));
 
         for (int round = 1; round <= 3; round++) {
-            classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+            classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
             diagnostics.processDueDiagnostics();
             diagnostics.receiveInboundEmail(reply(pending, "No recuerdo.", "<m-9-r" + round + "@example.com>"));
         }
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
 
         assertThat(sessionFor(pending).rounds()).isEqualTo(3);
@@ -213,7 +290,7 @@ class DiagnosticsTests {
     void sevenDaysOfClientSilenceParksTheMatterWithoutDeletingIt() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-10@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
         backdateSilence(pending, Instant.now().minusSeconds(8 * 24 * 3600));
 
@@ -227,7 +304,7 @@ class DiagnosticsTests {
     void aReplyToATerminalConsultationIsRecordedAndFlaggedButNeverReopensDiagnostics() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-11@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("reject", null, "Fuera de alcance.", "Resumen."));
+        classifier.verdicts.add(verdict("reject", null, "Fuera de alcance.", "Resumen."));
         diagnostics.processDueDiagnostics();
         repository.claimPendingNotifications(10);
         int diagnoseCalls = classifier.diagnoseCalls;
@@ -260,7 +337,7 @@ class DiagnosticsTests {
     void anAutomatedReplyIsRecordedWithoutBeingAnswered() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-13@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
         repository.claimPendingNotifications(10);
         int diagnoseCalls = classifier.diagnoseCalls;
@@ -281,7 +358,7 @@ class DiagnosticsTests {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-14@example.com>"));
         Instant arrival = pending.createdAt();
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Resumen."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Resumen."));
         classifier.classification = classification();
 
         diagnostics.processDueDiagnostics();
@@ -314,7 +391,7 @@ class DiagnosticsTests {
     void aResponseThatFailsValidationIsRetriedLikeAServiceFailure() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-16@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", null, "Falta.", "Resumen."));
+        classifier.verdicts.add(verdict("ask", null, "Falta.", "Resumen."));
 
         diagnostics.processDueDiagnostics();
 
@@ -328,7 +405,7 @@ class DiagnosticsTests {
     void classificationFailureAfterAcceptanceIsRetriedRatherThanStampedUnclassifiable() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-17@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Resumen."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Resumen."));
         classifier.classifyFailure = new ClassifierUnavailableException("gemini down");
 
         diagnostics.processDueDiagnostics();
@@ -338,7 +415,7 @@ class DiagnosticsTests {
 
         classifier.classifyFailure = null;
         classifier.classification = classification();
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Resumen."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Resumen."));
         makeDue(pending);
         diagnostics.processDueDiagnostics();
 
@@ -350,7 +427,7 @@ class DiagnosticsTests {
     void theConsoleOverrideEndsDiagnosticsEarlyAndSchedulesTheMatter() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-18@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
         classifier.classification = classification();
 
@@ -368,9 +445,9 @@ class DiagnosticsTests {
     void transcriptsOfTerminalMattersArePurgedWhileTheVerdictIsKept() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-19@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("ask", "Fecha?", "Falta.", "Sin fecha."));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("reject", null, "Fuera de alcance.", "Resumen."));
+        classifier.verdicts.add(verdict("reject", null, "Fuera de alcance.", "Resumen."));
         diagnostics.receiveInboundEmail(reply(pending, "No se.", "<m-19-r@example.com>"));
         diagnostics.processDueDiagnostics();
         backdateResolution(pending, Instant.now().minusSeconds(200L * 24 * 3600));
@@ -388,7 +465,7 @@ class DiagnosticsTests {
     void anInterruptedAcceptanceResumesWithoutReservingASecondSlot() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-20@example.com>"));
-        classifier.verdicts.add(new ConsultationDiagnosticsResponse("accept", null, "Completo.", "Resumen."));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Resumen."));
         classifier.classification = classification();
         diagnostics.processDueDiagnostics();
         String eventId = reload(pending).eventId();
@@ -422,17 +499,30 @@ class DiagnosticsTests {
     }
 
     private DiagnosticsService diagnosticsFor(String prompt) {
-        IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer());
+        IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()));
         intakeService.saveSettings(TENANT, settingsRequest(prompt));
-        return new DiagnosticsService(repository, intakeService, classifier, properties());
+        return new DiagnosticsService(repository, intakeService, classifier, properties(),
+                new EmailTemplateRenderer(), new FirmNameResolver(repository, properties()));
     }
 
     private void saveSettings(String prompt) {
-        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer())
+        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()))
                 .saveSettings(TENANT, settingsRequest(prompt));
     }
 
+    private void saveNonEngagementNotice(String notice) {
+        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()))
+                .saveSettings(TENANT, settingsRequest(PROMPT, notice));
+    }
+
     private TenantSettingsRequest settingsRequest(String prompt) {
+        return settingsRequest(prompt, null);
+    }
+
+    private TenantSettingsRequest settingsRequest(String prompt, String nonEngagementNotice) {
         return new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "Laboral", "Despidos y contratos", List.of(), List.of("manana"),
@@ -441,7 +531,7 @@ class DiagnosticsTests {
                         "ana@firm.co")),
                 List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, null)),
                 prompt,
-                null);
+                nonEngagementNotice);
     }
 
     private InboundEmailReceived inboundEmail(String messageId) {
@@ -495,6 +585,16 @@ class DiagnosticsTests {
                 TENANT, sessionFor(consultation).withResolvedAt(resolvedAt), List.of(), List.of());
     }
 
+    /** Most tests here care about nothing but the verdict, so they leave the Acknowledgment out. */
+    private ConsultationDiagnosticsResponse verdict(String verdict, String question, String reason, String summary) {
+        return verdict(verdict, question, null, reason, summary);
+    }
+
+    private ConsultationDiagnosticsResponse verdict(
+            String verdict, String question, String acknowledgment, String reason, String summary) {
+        return new ConsultationDiagnosticsResponse(verdict, question, acknowledgment, reason, summary);
+    }
+
     private ConsultationClassifierResponse classification() {
         return new ConsultationClassifierResponse(0, "Laboral", "NORMAL", "Despido", "Resumen", "Maria", "Ruta laboral.", 0.9);
     }
@@ -511,6 +611,7 @@ class DiagnosticsTests {
         private RuntimeException classifyFailure;
         private RuntimeException diagnoseFailure;
         private int diagnoseCalls;
+        private ConsultationDiagnosticsRequest lastDiagnoseRequest;
 
         @Override
         public ConsultationClassifierResponse classify(ConsultationClassifierRequest request) {
@@ -523,6 +624,7 @@ class DiagnosticsTests {
         @Override
         public ConsultationDiagnosticsResponse diagnose(ConsultationDiagnosticsRequest request) {
             diagnoseCalls++;
+            lastDiagnoseRequest = request;
             if (diagnoseFailure != null) {
                 throw diagnoseFailure;
             }

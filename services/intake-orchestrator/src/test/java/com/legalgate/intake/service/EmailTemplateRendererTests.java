@@ -26,7 +26,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateFormatsDateAndEscapesSummary() {
-        String html = renderer.renderClient(consultation(), event());
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
 
         assertThat(html).contains("Juan");            // client_first_name (first token)
         assertThat(html).contains("julio");           // Spanish month in America/Bogota
@@ -45,9 +45,141 @@ class EmailTemplateRendererTests {
                 "Tutela", "URGENTE", 1, null, 100,
                 null, null, "SCHEDULED", "SYSTEM");
 
-        String html = renderer.renderClient(consultation(), openEnded);
+        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo");
 
         assertThat(html).doesNotContain("{{");
+    }
+
+    @Test
+    void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+
+        assertThat(html).containsOnlyOnce("Firma Ejemplo"); // named once, in the header, like letterhead
+        assertThat(html).doesNotContain("LegalGate"); // no wordmark, no product footer
+        assertThat(html).doesNotContain("LEGALGATE");
+        assertThat(html).doesNotContain("`");         // the backtick-corrupted CSS values are gone
+    }
+
+    @Test
+    void clientTemplateFallsBackToWhateverNameTheMailIsSentFrom() {
+        // A tenant with no organization display name has no other name to show, and a blank header
+        // is worse than the sender name the message already arrives from (issue #48, ADR 0004).
+        assertThat(renderer.renderClient(consultation(), event(), "LegalGate Agenda"))
+                .containsOnlyOnce("LegalGate Agenda");
+    }
+
+    @Test
+    void clientTemplateNamesNoLawyerRatherThanAnyLegalGateOne() {
+        EventResponse unassigned = new EventResponse(
+                "event-1", "lawyer-1", null, null,
+                "Tutela", "URGENTE", 1, Instant.parse("2026-07-03T00:00:00Z"), 100,
+                Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"),
+                "SCHEDULED", "SYSTEM");
+
+        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo"))
+                .doesNotContain("LegalGate")
+                .contains("Por asignar");
+    }
+
+    @Test
+    void diagnosticsQuestionIsFirmCorrespondenceAroundTheModelsQuestion() {
+        String body = renderer.renderDiagnosticsQuestion(
+                "Alejandro Barragán", "Firma Ejemplo", "la acusación en su institución educativa",
+                "  ¿Cual fue la fecha del despido?  ");
+
+        assertThat(body).startsWith(
+                "Estimado(a) Alejandro:\n\nRecibimos su mensaje sobre la acusación en su institución educativa.\n\n");
+        assertThat(body).contains("Para poder revisar su consulta necesitamos algunos datos adicionales:");
+        assertThat(body).contains("¿Cual fue la fecha del despido?");
+        assertThat(body).contains("Quedamos atentos a su respuesta.");
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
+        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        // The reply-linking sentence is an automation tell now that the message is a threaded Re:.
+        assertThat(body).doesNotContain("vinculada automaticamente");
+        assertThat(body).doesNotContain("<");
+    }
+
+    @Test
+    void theAcknowledgmentFallsBackToABareReceiptRatherThanNamingWhatNobodyWrote() {
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?"))
+                .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?"))
+                .contains("Recibimos su mensaje.\n\n");
+        // The model punctuating its own restatement must not produce "sobre su despido..".
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?"))
+                .contains("Recibimos su mensaje sobre su despido.\n\n");
+    }
+
+    @Test
+    void diagnosticsQuestionNeverSignsWithALawyer() {
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?");
+
+        assertThat(body).doesNotContain("Ana Abogada");
+        assertThat(body).doesNotContain("Abogado");
+    }
+
+    @Test
+    void salutationFallsBackToANeutralFormWhenTheNameCannotBeTrusted() {
+        assertThat(salutationFor("Unknown client")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("maria@example.com")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("albarragan")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("juan perez")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("   ")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor(null)).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("Maria Perez")).isEqualTo("Estimado(a) Maria:");
+    }
+
+    @Test
+    void signatureOmitsTheFirmLineRatherThanLeakingLegalGateToAPotentialClient() {
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?");
+
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\n\n---");
+        assertThat(body).doesNotContain("LegalGate");
+    }
+
+    @Test
+    void theNonEngagementNoticeWearsTheSameEnvelopeAsTheQuestion() {
+        String body = renderer.renderNonEngagementNotice(
+                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.");
+
+        assertThat(body).startsWith("Estimado(a) Maria:\n\n");
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
+        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        // The firm is declining; nothing here invites a reply.
+        assertThat(body).doesNotContain("Quedamos atentos");
+    }
+
+    @Test
+    void aFirmAuthoredNoticeIsReproducedVerbatim() {
+        String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
+
+        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n");
+
+        // Nothing inserted, reworded or stripped between the salutation and the signature.
+        assertThat(body).isEqualTo("Estimado(a) Maria:\n\n" + notice + "\n\nCordialmente,\n"
+                + "Equipo de consultas\nFirma Ejemplo\n\n---\n"
+                + "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n");
+    }
+
+    @Test
+    void noticeSubjectStaysOnTheConsultationThread() {
+        assertThat(renderer.nonEngagementSubject("  Consulta laboral ")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.nonEngagementSubject("Re: Consulta laboral")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.nonEngagementSubject("  ")).isEqualTo("Sobre su consulta");
+        assertThat(renderer.nonEngagementSubject(null)).isEqualTo("Sobre su consulta");
+    }
+
+    @Test
+    void questionSubjectRepliesOnTheClientsOwnSubjectLine() {
+        assertThat(renderer.diagnosticsQuestionSubject("  Consulta laboral ")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.diagnosticsQuestionSubject("Re: Consulta laboral")).isEqualTo("Re: Consulta laboral");
+        // A blank subject must never go out as a bare "Re:".
+        assertThat(renderer.diagnosticsQuestionSubject("  ")).isEqualTo("Necesitamos algunos datos para revisar su consulta");
+        assertThat(renderer.diagnosticsQuestionSubject(null)).isEqualTo("Necesitamos algunos datos para revisar su consulta");
+    }
+
+    private String salutationFor(String clientName) {
+        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").split("\n")[0];
     }
 
     private ConsultationResponse consultation() {

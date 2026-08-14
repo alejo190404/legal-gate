@@ -109,6 +109,9 @@ class ConsultationDiagnosticsResponse(BaseModel):
 
     verdict: Literal["accept", "ask", "reject"]
     question: str | None = None
+    # What the potential client wrote about, in their own terms. Optional on every verdict: intake
+    # holds it to a length cap and degrades to a neutral line, so a missing one is never a failure.
+    acknowledgment: str | None = None
     reason: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 

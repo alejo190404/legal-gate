@@ -43,6 +43,7 @@ public class DiagnosticsService {
     public static final String CONSULTATION_STATUS_ABANDONED = "DIAGNOSTICS_ABANDONED";
 
     static final int MAX_ROUNDS = 3;
+    static final int MAX_ACKNOWLEDGMENT_WORDS = 15;
     static final String REPLY_TAG_PREFIX = "d";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DiagnosticsService.class);
@@ -62,31 +63,38 @@ public class DiagnosticsService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int REPLY_TOKEN_BYTES = 16;
 
-    private static final String DEFAULT_NON_ENGAGEMENT_NOTICE = """
-            Gracias por escribirnos.
-
-            Despues de revisar su mensaje, la firma no puede asumir este asunto.
-
-            Este mensaje no constituye asesoria legal y no se ha formado ninguna relacion
-            abogado-cliente. Le recomendamos buscar otro abogado lo antes posible, ya que su
-            asunto puede estar sujeto a terminos o plazos legales.
-            """;
+    // The body only: the template layer wraps it in the salutation, signature and the
+    // not-legal-advice disclaimer, so neither is repeated here.
+    // One line per paragraph: a hard-wrapped paragraph rewraps badly on a phone.
+    private static final String DEFAULT_NON_ENGAGEMENT_NOTICE =
+            "Gracias por escribirnos.\n"
+            + "\n"
+            + "Despues de revisar su mensaje, la firma no puede asumir este asunto.\n"
+            + "\n"
+            + "No se ha formado ninguna relacion abogado-cliente. Le recomendamos buscar otro abogado"
+            + " lo antes posible, ya que su asunto puede estar sujeto a terminos o plazos legales.\n";
 
     private final IntakeRepository intakeRepository;
     private final IntakeService intakeService;
     private final ConsultationClassifierClient consultationClassifierClient;
     private final IntakeProperties intakeProperties;
+    private final EmailTemplateRenderer emailTemplateRenderer;
+    private final FirmNameResolver firmNameResolver;
 
     public DiagnosticsService(
             IntakeRepository intakeRepository,
             IntakeService intakeService,
             ConsultationClassifierClient consultationClassifierClient,
-            IntakeProperties intakeProperties
+            IntakeProperties intakeProperties,
+            EmailTemplateRenderer emailTemplateRenderer,
+            FirmNameResolver firmNameResolver
     ) {
         this.intakeRepository = intakeRepository;
         this.intakeService = intakeService;
         this.consultationClassifierClient = consultationClassifierClient;
         this.intakeProperties = intakeProperties;
+        this.emailTemplateRenderer = emailTemplateRenderer;
+        this.firmNameResolver = firmNameResolver;
     }
 
     /** Whether this email is a potential client answering a Diagnostics question we already sent. */
@@ -243,7 +251,7 @@ public class DiagnosticsService {
                 session.tenantId(),
                 session.awaitingReply(now, verdict.reason(), verdict.summary()),
                 List.of(DiagnosticsMessage.fromLegalGate(verdict.question())),
-                List.of(questionNotification(consultation, session, verdict.question())));
+                List.of(questionNotification(consultation, session, verdict)));
     }
 
     private void accept(DiagnosticsSession session, ConsultationResponse consultation,
@@ -344,6 +352,21 @@ public class DiagnosticsService {
         };
     }
 
+    /**
+     * The Acknowledgment is the one generated sentence in a first contact with a stranger, so it is
+     * held to a hard length: a restatement that grows past it has stopped repeating the potential
+     * client and started characterizing their matter. Anything blank or over the cap is dropped in
+     * favour of the neutral receipt — a degraded email is fine, a failed round is not, so unlike
+     * {@link #isUsable} this never rejects the response.
+     */
+    private String usableAcknowledgment(String acknowledgment) {
+        if (acknowledgment == null || acknowledgment.isBlank()) {
+            return null;
+        }
+        String sanitized = acknowledgment.replaceAll("[\\p{Cntrl}\\s]+", " ").trim();
+        return sanitized.split("\\s+").length > MAX_ACKNOWLEDGMENT_WORDS ? null : sanitized;
+    }
+
     private ConsultationDiagnosticsRequest diagnoseRequestFor(DiagnosticsSession session, List<DiagnosticsMessage> transcript) {
         return new ConsultationDiagnosticsRequest(
                 session.promptSnapshot(),
@@ -356,24 +379,38 @@ public class DiagnosticsService {
         );
     }
 
-    private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session, String question) {
-        String body = question.trim() + """
-
-
-                Responda a este correo y su respuesta quedara vinculada automaticamente a su consulta.
-                Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.
-                """;
+    /** Plaintext firm correspondence, envelope and subject both supplied by the template layer. */
+    private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session,
+            ConsultationDiagnosticsResponse verdict) {
         return new NotificationOutboxItem(
                 consultation.id(), null, "DIAGNOSTICS_QUESTION", "CLIENT", consultation.clientEmail(),
-                replyAddressFor(session), "Necesitamos algunos datos para revisar su consulta", body, null, null);
+                replyAddressFor(session),
+                emailTemplateRenderer.diagnosticsQuestionSubject(originalSubjectOf(session)),
+                emailTemplateRenderer.renderDiagnosticsQuestion(
+                        consultation.clientName(), firmNameOf(session),
+                        usableAcknowledgment(verdict.acknowledgment()), verdict.question()),
+                null, null);
     }
 
+    /** Same envelope as the question; the firm's own notice is the body and is not touched here. */
     private NotificationOutboxItem nonEngagementNotification(ConsultationResponse consultation, DiagnosticsSession session) {
         String configured = intakeService.settingsForTenant(session.tenantId()).nonEngagementNotice();
-        String body = configured == null || configured.isBlank() ? DEFAULT_NON_ENGAGEMENT_NOTICE : configured.trim();
+        String body = configured == null || configured.isBlank() ? DEFAULT_NON_ENGAGEMENT_NOTICE : configured;
         return new NotificationOutboxItem(
                 consultation.id(), null, "NON_ENGAGEMENT_NOTICE", "CLIENT", consultation.clientEmail(),
-                replyAddressFor(session), "Sobre su consulta", body, null, null);
+                replyAddressFor(session),
+                emailTemplateRenderer.nonEngagementSubject(originalSubjectOf(session)),
+                emailTemplateRenderer.renderNonEngagementNotice(
+                        consultation.clientName(), firmNameOf(session), body),
+                null, null);
+    }
+
+    private String originalSubjectOf(DiagnosticsSession session) {
+        return session.originalEmail() == null ? null : session.originalEmail().subject();
+    }
+
+    private String firmNameOf(DiagnosticsSession session) {
+        return firmNameResolver.firmDisplayName(session.tenantId()).orElse(null);
     }
 
     private ConsultationClassifierRequest.InboundEmail inboundEmailFor(InboundEmailReceived event) {

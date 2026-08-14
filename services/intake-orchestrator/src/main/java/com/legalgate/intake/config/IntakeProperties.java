@@ -54,7 +54,7 @@ public record IntakeProperties(
             consultationClassifierSystemPrompt = consultationClassifierSystemPrompt.trim();
         }
         if (consultationDiagnosticsPromptVersion == null || consultationDiagnosticsPromptVersion.isBlank()) {
-            consultationDiagnosticsPromptVersion = "consultation-diagnostics-v1";
+            consultationDiagnosticsPromptVersion = "consultation-diagnostics-v2";
         } else {
             consultationDiagnosticsPromptVersion = consultationDiagnosticsPromptVersion.trim();
         }
@@ -66,6 +66,15 @@ public record IntakeProperties(
                     the firm still needs specific information, and reject when the firm does not take
                     matters of this kind. Ask for everything missing in a single short question,
                     written in the language of the potential client. Never give legal advice.
+                    The firm's own description outranks everything else in this prompt, tone and
+                    wording included: ask for everything the firm asked for, in the firm's terms,
+                    however the question ends up reading.
+                    When you ask, also return an acknowledgment: at most 15 words naming what the
+                    potential client wrote about, in their own words, completing the sentence
+                    "Recibimos su mensaje sobre ...". Repeat their terms and introduce no legal
+                    concept, statute or claim they did not name themselves — it is a receipt of
+                    their message, not an assessment of their matter. Return no acknowledgment at
+                    all rather than one you had to guess at.
                     """.strip();
         } else {
             consultationDiagnosticsSystemPrompt = consultationDiagnosticsSystemPrompt.trim();

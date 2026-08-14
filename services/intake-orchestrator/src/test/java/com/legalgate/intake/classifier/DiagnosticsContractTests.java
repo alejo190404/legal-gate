@@ -41,7 +41,7 @@ class DiagnosticsContractTests {
                 {"role": "CLIENT", "body": "El 3 de marzo."}
               ],
               "systemPrompt": "Decide si la firma toma el caso.",
-              "promptVersion": "consultation-diagnostics-v1"
+              "promptVersion": "consultation-diagnostics-v2"
             }
             """;
 
@@ -49,6 +49,7 @@ class DiagnosticsContractTests {
             {
               "verdict": "ask",
               "question": "Que tipo de contrato tenia?",
+              "acknowledgment": "el despido en su trabajo",
               "reason": "Falta el tipo de contrato.",
               "summary": "Despido el 3 de marzo."
             }
@@ -67,7 +68,7 @@ class DiagnosticsContractTests {
                         new ConsultationDiagnosticsRequest.Message("LEGALGATE", "Cual fue la fecha del despido?"),
                         new ConsultationDiagnosticsRequest.Message("CLIENT", "El 3 de marzo.")),
                 "Decide si la firma toma el caso.",
-                "consultation-diagnostics-v1");
+                "consultation-diagnostics-v2");
 
         assertThat(objectMapper.readTree(objectMapper.writeValueAsString(request)))
                 .isEqualTo(objectMapper.readTree(GOLDEN_DIAGNOSE_REQUEST));
@@ -80,6 +81,7 @@ class DiagnosticsContractTests {
 
         assertThat(response.verdict()).isEqualTo(ConsultationDiagnosticsResponse.ASK);
         assertThat(response.question()).isEqualTo("Que tipo de contrato tenia?");
+        assertThat(response.acknowledgment()).isEqualTo("el despido en su trabajo");
         assertThat(response.reason()).isEqualTo("Falta el tipo de contrato.");
         assertThat(response.summary()).isEqualTo("Despido el 3 de marzo.");
     }
