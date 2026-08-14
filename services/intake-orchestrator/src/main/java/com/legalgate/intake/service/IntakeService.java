@@ -51,6 +51,9 @@ import com.legalgate.intake.repository.IntakeRepository;
 @Service
 public class IntakeService {
 
+    /** Stands in for a client name we could not read off the inbound email; never shown to a client. */
+    static final String UNKNOWN_CLIENT = "Unknown client";
+
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Bogota");
     private static final List<UrgencyDefinition> DEFAULT_URGENCY_DEFINITIONS = List.of(
             new UrgencyDefinition("NORMAL", 1, 5, true),
@@ -174,7 +177,7 @@ public class IntakeService {
         String consultationId = UUID.randomUUID().toString();
         ConsultationResponse consultation = new ConsultationResponse(
                 consultationId, event.tenantId(),
-                firstNonBlank(classifierResponse.clientName(), senderDisplayName(event.headerFrom()), "Unknown client"),
+                firstNonBlank(classifierResponse.clientName(), senderDisplayName(event.headerFrom()), UNKNOWN_CLIENT),
                 clientEmailFor(event), firstNonBlank(classifierResponse.summary(), event.plain(), event.subject(), "Inbound email received.").trim(),
                 preferredWindow, "RECEIVED", classifierResponse.urgency().trim(), selectedRoute.name(), scheduledEvent.lawyerEmail(),
                 new ClassificationResult("LLM_CLASSIFIED", List.of(), sanitizeNullable(classifierResponse.concept()), sanitizeNullable(classifierResponse.explanation()), classifierResponse.confidence()),
@@ -200,7 +203,7 @@ public class IntakeService {
     public ConsultationResponse savePendingDiagnosticsConsultation(InboundEmailReceived event, String status, String explanation) {
         ConsultationResponse consultation = new ConsultationResponse(
                 UUID.randomUUID().toString(), event.tenantId(),
-                firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
+                firstNonBlank(senderDisplayName(event.headerFrom()), UNKNOWN_CLIENT),
                 clientEmailFor(event),
                 firstNonBlank(event.plain(), event.subject(), event.html(), "Inbound email received.").trim(),
                 null, status, "PENDING", null, null,
@@ -307,7 +310,7 @@ public class IntakeService {
         EventResponse scheduledEvent = scheduled.event();
         String consultationId = UUID.randomUUID().toString();
         ConsultationResponse consultation = new ConsultationResponse(
-                consultationId, event.tenantId(), firstNonBlank(senderDisplayName(event.headerFrom()), "Unknown client"),
+                consultationId, event.tenantId(), firstNonBlank(senderDisplayName(event.headerFrom()), UNKNOWN_CLIENT),
                 clientEmailFor(event), firstNonBlank(event.plain(), event.subject(), event.html(), "Inbound email received.").trim(),
                 preferredWindow, "RECEIVED", urgency, primaryRoute.name(), scheduledEvent.lawyerEmail(),
                 new ClassificationResult(label, List.of(), null,

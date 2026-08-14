@@ -18,9 +18,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 
 /**
- * Renders the outbound consultation emails into rich HTML from the classpath templates.
- * Merge fields are flat {@code {{key}}} tokens, so a plain string replace over an escaped
- * value map is enough — no template engine dependency.
+ * Renders the outbound consultation emails: rich HTML from the classpath templates for the
+ * transactional notices, plaintext for the conversational mail a potential client receives
+ * (ADR 0004). Merge fields are flat {@code {{key}}} tokens, so a plain string replace over an
+ * escaped value map is enough — no template engine dependency.
  */
 @Component
 public class EmailTemplateRenderer {
@@ -33,6 +34,9 @@ public class EmailTemplateRenderer {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", ES);
     private static final DateTimeFormatter ZONE = DateTimeFormatter.ofPattern("zzz", ES);
     private static final DateTimeFormatter LAWYER_DATE = DateTimeFormatter.ofPattern("d 'de' MMMM yyyy", ES);
+
+    private static final String NEUTRAL_SALUTATION = "Estimado(a):";
+    private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
 
     private final String lawyerTemplate;
     private final String clientTemplate;
@@ -70,6 +74,55 @@ public class EmailTemplateRenderer {
         return render(clientTemplate, fields);
     }
 
+    /**
+     * The Diagnostics question as firm correspondence: plaintext, in the Firm Voice, with every
+     * fixed sentence supplied here rather than by the model (ADR 0004). The model contributes the
+     * question and nothing else, so no generation can put a sentence of its own into a firm's
+     * first contact with a stranger.
+     */
+    String renderDiagnosticsQuestion(String clientName, String firmName, String question) {
+        return salutation(clientName) + "\n"
+                + "\n"
+                + "Para poder revisar su consulta necesitamos algunos datos adicionales:\n"
+                + "\n"
+                + nullToEmpty(question).trim() + "\n"
+                + "\n"
+                + "Quedamos atentos a su respuesta.\n"
+                + "\n"
+                + "Cordialmente,\n"
+                // Never a lawyer: during Diagnostics nobody has been assigned or read the matter.
+                + "Equipo de consultas\n"
+                + signatureFirmLine(firmName)
+                + "\n"
+                + "---\n"
+                + "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n";
+    }
+
+    /** Keeps the Diagnostics question on the potential client's own subject line, as a reply to it. */
+    String diagnosticsQuestionSubject(String originalSubject) {
+        String subject = nullToEmpty(originalSubject).trim();
+        if (subject.isEmpty()) {
+            return DIAGNOSTICS_QUESTION_SUBJECT;
+        }
+        return subject.regionMatches(true, 0, "re:", 0, 3) ? subject : "Re: " + subject;
+    }
+
+    /**
+     * A name we cannot vouch for is worse in a salutation than no name at all: an email address or
+     * a bare lowercase handle in "Estimado ..." reads as a mail merge, which is what this avoids.
+     */
+    private String salutation(String clientName) {
+        String name = nullToEmpty(clientName).trim();
+        String first = firstName(name);
+        boolean trustworthy = !first.isEmpty()
+                && !name.equalsIgnoreCase(IntakeService.UNKNOWN_CLIENT)
+                && !name.contains("@")
+                // An all-lowercase token is a mail handle someone typed, not a name they sign with.
+                && !first.equals(first.toLowerCase(ES));
+        // Gendered, and the firm knows nothing about the person: "Estimado(a)" either way.
+        return trustworthy ? "Estimado(a) " + first + ":" : NEUTRAL_SALUTATION;
+    }
+
     private String render(String template, Map<String, String> fields) {
         String rendered = template;
         for (Map.Entry<String, String> field : fields.entrySet()) {
@@ -91,6 +144,12 @@ public class EmailTemplateRenderer {
             return "";
         }
         return fullName.trim().split("\\s+")[0];
+    }
+
+    /** The firm's own name, or nothing: a signature must never leak LegalGate to a potential client. */
+    private String signatureFirmLine(String firmName) {
+        String firm = nullToEmpty(firmName).trim();
+        return firm.isEmpty() ? "" : firm + "\n";
     }
 
     private String lawyerDateTime(Instant start, Instant end) {

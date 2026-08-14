@@ -30,6 +30,7 @@ import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
 import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
+import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
 
 /**
@@ -104,6 +105,12 @@ class DiagnosticsTests {
         assertThat(queued.get(0).type()).isEqualTo("DIAGNOSTICS_QUESTION");
         assertThat(queued.get(0).recipientEmail()).isEqualTo("maria@example.com");
         assertThat(queued.get(0).body()).contains("Cual fue la fecha del despido?");
+        // Firm correspondence, not a bare prompt: salutation, framing, signature, plaintext only.
+        assertThat(queued.get(0).body()).startsWith("Estimado(a) Maria:");
+        assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
+        assertThat(queued.get(0).body()).doesNotContain("LegalGate");
+        assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
+        assertThat(queued.get(0).htmlBody()).isNull();
         assertThat(queued.get(0).icsContent()).isNull();
         assertThat(queued.get(0).fromEmail())
                 .startsWith("firma-demo+d")
@@ -424,7 +431,8 @@ class DiagnosticsTests {
     private DiagnosticsService diagnosticsFor(String prompt) {
         IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer());
         intakeService.saveSettings(TENANT, settingsRequest(prompt));
-        return new DiagnosticsService(repository, intakeService, classifier, properties());
+        return new DiagnosticsService(repository, intakeService, classifier, properties(),
+                new EmailTemplateRenderer(), new FirmNameResolver(repository, properties()));
     }
 
     private void saveSettings(String prompt) {

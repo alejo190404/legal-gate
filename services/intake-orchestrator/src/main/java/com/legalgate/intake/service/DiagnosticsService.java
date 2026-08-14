@@ -76,17 +76,23 @@ public class DiagnosticsService {
     private final IntakeService intakeService;
     private final ConsultationClassifierClient consultationClassifierClient;
     private final IntakeProperties intakeProperties;
+    private final EmailTemplateRenderer emailTemplateRenderer;
+    private final FirmNameResolver firmNameResolver;
 
     public DiagnosticsService(
             IntakeRepository intakeRepository,
             IntakeService intakeService,
             ConsultationClassifierClient consultationClassifierClient,
-            IntakeProperties intakeProperties
+            IntakeProperties intakeProperties,
+            EmailTemplateRenderer emailTemplateRenderer,
+            FirmNameResolver firmNameResolver
     ) {
         this.intakeRepository = intakeRepository;
         this.intakeService = intakeService;
         this.consultationClassifierClient = consultationClassifierClient;
         this.intakeProperties = intakeProperties;
+        this.emailTemplateRenderer = emailTemplateRenderer;
+        this.firmNameResolver = firmNameResolver;
     }
 
     /** Whether this email is a potential client answering a Diagnostics question we already sent. */
@@ -356,16 +362,17 @@ public class DiagnosticsService {
         );
     }
 
+    /** Plaintext firm correspondence, envelope and subject both supplied by the template layer. */
     private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session, String question) {
-        String body = question.trim() + """
-
-
-                Responda a este correo y su respuesta quedara vinculada automaticamente a su consulta.
-                Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.
-                """;
+        String originalSubject = session.originalEmail() == null ? null : session.originalEmail().subject();
         return new NotificationOutboxItem(
                 consultation.id(), null, "DIAGNOSTICS_QUESTION", "CLIENT", consultation.clientEmail(),
-                replyAddressFor(session), "Necesitamos algunos datos para revisar su consulta", body, null, null);
+                replyAddressFor(session),
+                emailTemplateRenderer.diagnosticsQuestionSubject(originalSubject),
+                emailTemplateRenderer.renderDiagnosticsQuestion(
+                        consultation.clientName(),
+                        firmNameResolver.firmDisplayName(session.tenantId()).orElse(null), question),
+                null, null);
     }
 
     private NotificationOutboxItem nonEngagementNotification(ConsultationResponse consultation, DiagnosticsSession session) {

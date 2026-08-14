@@ -50,6 +50,62 @@ class EmailTemplateRendererTests {
         assertThat(html).doesNotContain("{{");
     }
 
+    @Test
+    void diagnosticsQuestionIsFirmCorrespondenceAroundTheModelsQuestion() {
+        String body = renderer.renderDiagnosticsQuestion(
+                "Alejandro Barragán", "Firma Ejemplo", "  ¿Cual fue la fecha del despido?  ");
+
+        assertThat(body).startsWith("Estimado(a) Alejandro:\n\n");
+        assertThat(body).contains("Para poder revisar su consulta necesitamos algunos datos adicionales:");
+        assertThat(body).contains("¿Cual fue la fecha del despido?");
+        assertThat(body).contains("Quedamos atentos a su respuesta.");
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
+        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        // The reply-linking sentence is an automation tell now that the message is a threaded Re:.
+        assertThat(body).doesNotContain("vinculada automaticamente");
+        assertThat(body).doesNotContain("<");
+    }
+
+    @Test
+    void diagnosticsQuestionNeverSignsWithALawyer() {
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "¿Tiene el contrato?");
+
+        assertThat(body).doesNotContain("Ana Abogada");
+        assertThat(body).doesNotContain("Abogado");
+    }
+
+    @Test
+    void salutationFallsBackToANeutralFormWhenTheNameCannotBeTrusted() {
+        assertThat(salutationFor("Unknown client")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("maria@example.com")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("albarragan")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("juan perez")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("   ")).isEqualTo("Estimado(a):");
+        assertThat(salutationFor(null)).isEqualTo("Estimado(a):");
+        assertThat(salutationFor("Maria Perez")).isEqualTo("Estimado(a) Maria:");
+    }
+
+    @Test
+    void signatureOmitsTheFirmLineRatherThanLeakingLegalGateToAPotentialClient() {
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "¿Fecha?");
+
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\n\n---");
+        assertThat(body).doesNotContain("LegalGate");
+    }
+
+    @Test
+    void questionSubjectRepliesOnTheClientsOwnSubjectLine() {
+        assertThat(renderer.diagnosticsQuestionSubject("  Consulta laboral ")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.diagnosticsQuestionSubject("Re: Consulta laboral")).isEqualTo("Re: Consulta laboral");
+        // A blank subject must never go out as a bare "Re:".
+        assertThat(renderer.diagnosticsQuestionSubject("  ")).isEqualTo("Necesitamos algunos datos para revisar su consulta");
+        assertThat(renderer.diagnosticsQuestionSubject(null)).isEqualTo("Necesitamos algunos datos para revisar su consulta");
+    }
+
+    private String salutationFor(String clientName) {
+        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "¿Fecha?").split("\n")[0];
+    }
+
     private ConsultationResponse consultation() {
         return new ConsultationResponse(
                 "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a",
