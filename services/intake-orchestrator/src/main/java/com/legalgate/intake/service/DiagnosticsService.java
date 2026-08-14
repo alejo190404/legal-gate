@@ -363,7 +363,8 @@ public class DiagnosticsService {
         if (acknowledgment == null || acknowledgment.isBlank()) {
             return null;
         }
-        return acknowledgment.trim().split("\\s+").length > MAX_ACKNOWLEDGMENT_WORDS ? null : acknowledgment;
+        String sanitized = acknowledgment.replaceAll("[\\p{Cntrl}\\s]+", " ").trim();
+        return sanitized.split("\\s+").length > MAX_ACKNOWLEDGMENT_WORDS ? null : sanitized;
     }
 
     private ConsultationDiagnosticsRequest diagnoseRequestFor(DiagnosticsSession session, List<DiagnosticsMessage> transcript) {
