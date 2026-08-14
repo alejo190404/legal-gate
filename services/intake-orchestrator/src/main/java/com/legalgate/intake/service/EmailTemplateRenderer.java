@@ -40,6 +40,9 @@ public class EmailTemplateRenderer {
 
     private static final String NEUTRAL_SALUTATION = "Estimado(a):";
     private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
+    private static final String NON_ENGAGEMENT_SUBJECT = "Sobre su consulta";
+    private static final String DISCLAIMER =
+            "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n";
 
     private final String lawyerTemplate;
     private final String clientTemplate;
@@ -100,20 +103,37 @@ public class EmailTemplateRenderer {
                 + "\n"
                 + "Quedamos atentos a su respuesta.\n"
                 + "\n"
-                + "Cordialmente,\n"
-                // Never a lawyer: during Diagnostics nobody has been assigned or read the matter.
-                + "Equipo de consultas\n"
-                + signatureFirmLine(firmName)
+                + signOff(firmName);
+    }
+
+    /**
+     * The Non-Engagement Notice in the same envelope: salutation, signature, disclaimer. The notice
+     * itself is the letter's body and goes out verbatim — a firm that wrote a complete letter into
+     * the field must not end up with two greetings, so nothing here reads, rewords or strips it.
+     */
+    String renderNonEngagementNotice(String clientName, String firmName, String notice) {
+        return salutation(clientName) + "\n"
                 + "\n"
-                + "---\n"
-                + "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n";
+                + nullToEmpty(notice).strip() + "\n"
+                + "\n"
+                // No "quedamos atentos": the firm is declining, not inviting a reply.
+                + signOff(firmName);
     }
 
     /** Keeps the Diagnostics question on the potential client's own subject line, as a reply to it. */
     String diagnosticsQuestionSubject(String originalSubject) {
+        return replySubject(originalSubject, DIAGNOSTICS_QUESTION_SUBJECT);
+    }
+
+    /** The notice stays in the Consultation Thread, on the same subject line as everything else. */
+    String nonEngagementSubject(String originalSubject) {
+        return replySubject(originalSubject, NON_ENGAGEMENT_SUBJECT);
+    }
+
+    private String replySubject(String originalSubject, String fallback) {
         String subject = nullToEmpty(originalSubject).trim();
         if (subject.isEmpty()) {
-            return DIAGNOSTICS_QUESTION_SUBJECT;
+            return fallback;
         }
         return subject.regionMatches(true, 0, "re:", 0, 3) ? subject : "Re: " + subject;
     }
@@ -155,6 +175,17 @@ public class EmailTemplateRenderer {
             return "";
         }
         return fullName.trim().split("\\s+")[0];
+    }
+
+    /** How every plaintext letter to a potential client ends: same signature, same disclaimer. */
+    private String signOff(String firmName) {
+        return "Cordialmente,\n"
+                // Never a lawyer: during Diagnostics nobody has been assigned or read the matter.
+                + "Equipo de consultas\n"
+                + signatureFirmLine(firmName)
+                + "\n"
+                + "---\n"
+                + DISCLAIMER;
     }
 
     /** The firm's own name, or nothing: a signature must never leak LegalGate to a potential client. */

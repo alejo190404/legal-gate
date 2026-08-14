@@ -125,6 +125,38 @@ class EmailTemplateRendererTests {
     }
 
     @Test
+    void theNonEngagementNoticeWearsTheSameEnvelopeAsTheQuestion() {
+        String body = renderer.renderNonEngagementNotice(
+                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.");
+
+        assertThat(body).startsWith("Estimado(a) Maria:\n\n");
+        assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
+        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        // The firm is declining; nothing here invites a reply.
+        assertThat(body).doesNotContain("Quedamos atentos");
+    }
+
+    @Test
+    void aFirmAuthoredNoticeIsReproducedVerbatim() {
+        String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
+
+        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n");
+
+        // Nothing inserted, reworded or stripped between the salutation and the signature.
+        assertThat(body).isEqualTo("Estimado(a) Maria:\n\n" + notice + "\n\nCordialmente,\n"
+                + "Equipo de consultas\nFirma Ejemplo\n\n---\n"
+                + "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n");
+    }
+
+    @Test
+    void noticeSubjectStaysOnTheConsultationThread() {
+        assertThat(renderer.nonEngagementSubject("  Consulta laboral ")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.nonEngagementSubject("Re: Consulta laboral")).isEqualTo("Re: Consulta laboral");
+        assertThat(renderer.nonEngagementSubject("  ")).isEqualTo("Sobre su consulta");
+        assertThat(renderer.nonEngagementSubject(null)).isEqualTo("Sobre su consulta");
+    }
+
+    @Test
     void questionSubjectRepliesOnTheClientsOwnSubjectLine() {
         assertThat(renderer.diagnosticsQuestionSubject("  Consulta laboral ")).isEqualTo("Re: Consulta laboral");
         assertThat(renderer.diagnosticsQuestionSubject("Re: Consulta laboral")).isEqualTo("Re: Consulta laboral");

@@ -142,7 +142,27 @@ class DiagnosticsTests {
         List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
         assertThat(queued).hasSize(1);
         assertThat(queued.get(0).type()).isEqualTo("NON_ENGAGEMENT_NOTICE");
-        assertThat(queued.get(0).body()).contains("no se ha formado ninguna relacion");
+        assertThat(queued.get(0).body()).contains("No se ha formado ninguna relacion abogado-cliente");
+        // Same Firm Voice envelope and same thread as every other client message.
+        assertThat(queued.get(0).body()).startsWith("Estimado(a) Maria:");
+        assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
+        assertThat(queued.get(0).body()).doesNotContain("LegalGate");
+        assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
+        assertThat(queued.get(0).htmlBody()).isNull();
+    }
+
+    @Test
+    void aFirmAuthoredNoticeGoesOutVerbatimInsideTheEnvelope() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
+        saveNonEngagementNotice(notice);
+        ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-verbatim@example.com>"));
+        classifier.verdicts.add(new ConsultationDiagnosticsResponse("reject", null, "Fuera de alcance.", "Resumen."));
+        diagnostics.processDueDiagnostics();
+
+        List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
+        assertThat(queued).hasSize(1);
+        assertThat(queued.get(0).body()).contains(notice);
     }
 
     @Test
@@ -442,7 +462,17 @@ class DiagnosticsTests {
                 .saveSettings(TENANT, settingsRequest(prompt));
     }
 
+    private void saveNonEngagementNotice(String notice) {
+        new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
+                new FirmNameResolver(repository, properties()))
+                .saveSettings(TENANT, settingsRequest(PROMPT, notice));
+    }
+
     private TenantSettingsRequest settingsRequest(String prompt) {
+        return settingsRequest(prompt, null);
+    }
+
+    private TenantSettingsRequest settingsRequest(String prompt, String nonEngagementNotice) {
         return new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "Laboral", "Despidos y contratos", List.of(), List.of("manana"),
@@ -451,7 +481,7 @@ class DiagnosticsTests {
                         "ana@firm.co")),
                 List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, null)),
                 prompt,
-                null);
+                nonEngagementNotice);
     }
 
     private InboundEmailReceived inboundEmail(String messageId) {

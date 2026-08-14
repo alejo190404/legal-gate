@@ -62,15 +62,16 @@ public class DiagnosticsService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int REPLY_TOKEN_BYTES = 16;
 
-    private static final String DEFAULT_NON_ENGAGEMENT_NOTICE = """
-            Gracias por escribirnos.
-
-            Despues de revisar su mensaje, la firma no puede asumir este asunto.
-
-            Este mensaje no constituye asesoria legal y no se ha formado ninguna relacion
-            abogado-cliente. Le recomendamos buscar otro abogado lo antes posible, ya que su
-            asunto puede estar sujeto a terminos o plazos legales.
-            """;
+    // The body only: the template layer wraps it in the salutation, signature and the
+    // not-legal-advice disclaimer, so neither is repeated here.
+    // One line per paragraph: a hard-wrapped paragraph rewraps badly on a phone.
+    private static final String DEFAULT_NON_ENGAGEMENT_NOTICE =
+            "Gracias por escribirnos.\n"
+            + "\n"
+            + "Despues de revisar su mensaje, la firma no puede asumir este asunto.\n"
+            + "\n"
+            + "No se ha formado ninguna relacion abogado-cliente. Le recomendamos buscar otro abogado"
+            + " lo antes posible, ya que su asunto puede estar sujeto a terminos o plazos legales.\n";
 
     private final IntakeRepository intakeRepository;
     private final IntakeService intakeService;
@@ -364,23 +365,34 @@ public class DiagnosticsService {
 
     /** Plaintext firm correspondence, envelope and subject both supplied by the template layer. */
     private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session, String question) {
-        String originalSubject = session.originalEmail() == null ? null : session.originalEmail().subject();
         return new NotificationOutboxItem(
                 consultation.id(), null, "DIAGNOSTICS_QUESTION", "CLIENT", consultation.clientEmail(),
                 replyAddressFor(session),
-                emailTemplateRenderer.diagnosticsQuestionSubject(originalSubject),
+                emailTemplateRenderer.diagnosticsQuestionSubject(originalSubjectOf(session)),
                 emailTemplateRenderer.renderDiagnosticsQuestion(
-                        consultation.clientName(),
-                        firmNameResolver.firmDisplayName(session.tenantId()).orElse(null), question),
+                        consultation.clientName(), firmNameOf(session), question),
                 null, null);
     }
 
+    /** Same envelope as the question; the firm's own notice is the body and is not touched here. */
     private NotificationOutboxItem nonEngagementNotification(ConsultationResponse consultation, DiagnosticsSession session) {
         String configured = intakeService.settingsForTenant(session.tenantId()).nonEngagementNotice();
-        String body = configured == null || configured.isBlank() ? DEFAULT_NON_ENGAGEMENT_NOTICE : configured.trim();
+        String body = configured == null || configured.isBlank() ? DEFAULT_NON_ENGAGEMENT_NOTICE : configured;
         return new NotificationOutboxItem(
                 consultation.id(), null, "NON_ENGAGEMENT_NOTICE", "CLIENT", consultation.clientEmail(),
-                replyAddressFor(session), "Sobre su consulta", body, null, null);
+                replyAddressFor(session),
+                emailTemplateRenderer.nonEngagementSubject(originalSubjectOf(session)),
+                emailTemplateRenderer.renderNonEngagementNotice(
+                        consultation.clientName(), firmNameOf(session), body),
+                null, null);
+    }
+
+    private String originalSubjectOf(DiagnosticsSession session) {
+        return session.originalEmail() == null ? null : session.originalEmail().subject();
+    }
+
+    private String firmNameOf(DiagnosticsSession session) {
+        return firmNameResolver.firmDisplayName(session.tenantId()).orElse(null);
     }
 
     private ConsultationClassifierRequest.InboundEmail inboundEmailFor(InboundEmailReceived event) {

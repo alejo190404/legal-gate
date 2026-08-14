@@ -1333,6 +1333,11 @@
                       [(ngModel)]="settingsForm.nonEngagementNotice"
                       name="nonEngagementNotice"
                     ></textarea>
+                    <small class="lg-small">
+                      Escribe solo el cuerpo del mensaje: el correo sale con el saludo
+                      («Estimado(a) …»), la despedida firmada por tu firma y el aviso de que no
+                      constituye asesoría legal. No agregues tu propio saludo ni tu propia firma.
+                    </small>
                   </div>
                   @if (settingsErrorMessage()) {
                     <div class="panel-error"><strong>{{ settingsErrorMessage() }}</strong></div>
