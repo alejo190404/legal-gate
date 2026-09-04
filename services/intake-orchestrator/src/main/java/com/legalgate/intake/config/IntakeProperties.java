@@ -23,7 +23,9 @@ public record IntakeProperties(
         boolean outboundTestMode,
         String internalServiceToken,
         String workosApiKey,
-        String workosApiBaseUrl
+        String workosApiBaseUrl,
+        String emailProvider,
+        String resendApiKey
 ) {
     public IntakeProperties {
         if (emailDomain == null || emailDomain.isBlank()) {
@@ -97,6 +99,14 @@ public record IntakeProperties(
         }
         if (workosApiBaseUrl == null || workosApiBaseUrl.isBlank()) {
             workosApiBaseUrl = "https://api.workos.com";
+        }
+        emailProvider = emailProvider == null || emailProvider.isBlank()
+                ? "cloudmailin"
+                : emailProvider.trim().toLowerCase(Locale.ROOT);
+        if (!emailProvider.equals("cloudmailin") && !emailProvider.equals("resend")) {
+            throw new IllegalStateException(
+                    "legalgate.intake.email-provider must be cloudmailin or resend, not " + emailProvider + "."
+            );
         }
     }
 

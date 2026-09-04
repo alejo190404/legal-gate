@@ -602,7 +602,7 @@ class DiagnosticsTests {
     private IntakeProperties properties() {
         return new IntakeProperties(
                 "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
-                false, null, null, null, null, false, "test-token", "test-key", null);
+                false, null, null, null, null, false, "test-token", "test-key", null, null, null);
     }
 
     private static final class StubClassifier implements ConsultationClassifierClient {

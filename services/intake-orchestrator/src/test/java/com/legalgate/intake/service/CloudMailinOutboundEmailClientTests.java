@@ -1,57 +1,43 @@
 package com.legalgate.intake.service;
 
+import static com.legalgate.intake.service.OutboundMailEnvelopeTests.envelope;
+import static com.legalgate.intake.service.OutboundMailEnvelopeTests.notification;
+import static com.legalgate.intake.service.OutboundMailEnvelopeTests.properties;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.model.NotificationOutboxItem;
-import com.legalgate.intake.repository.IntakeRepository;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
+/** CloudMailin's own payload shape. The envelope rules are in {@link OutboundMailEnvelopeTests}. */
 class CloudMailinOutboundEmailClientTests {
 
     @Test
-    void clientFacingMailSendsUnderTheFirmName() {
-        String from = client("Vargas & Asociados").fromHeader(notification("CLIENT", "diag+tok3n@intake.legal-gate.co"));
+    void everyMessageCarriesItsOwnIdentityOnTheSendingDomain() {
+        Map<String, Object> payload = client().payload(notification("CLIENT", null), null);
 
-        assertThat(from).isEqualTo("\"Vargas & Asociados\" <diag+tok3n@intake.legal-gate.co>");
+        assertThat(headers(payload)).containsEntry("Message-ID", "<notification-1@legal-gate.co>");
     }
 
     @Test
-    void staffMailKeepsLegalGateBranding() {
-        String from = client("Vargas & Asociados").fromHeader(notification("LAWYER", null));
+    void payloadUsesCloudMailinsFieldNames() {
+        Map<String, Object> payload = client().payload(withIcs(), null);
 
-        assertThat(from).isEqualTo("LegalGate Agenda <agenda@legal-gate.co>");
+        assertThat(payload)
+                .containsEntry("to", "cliente@example.com")
+                .containsEntry("plain", "Cuerpo")
+                .containsEntry("test_mode", false)
+                .containsEntry("tags", java.util.List.of(
+                        "legalgate", "consultation", "tenant:firma-demo", "DIAGNOSTICS_QUESTION", "CLIENT"));
+        assertThat(attachment(payload))
+                .containsEntry("file_name", "legalgate-consultation.ics")
+                .containsEntry("content_type", "text/calendar; method=REQUEST; charset=UTF-8");
     }
 
     @Test
-    void quotesAndEscapesFirmNamesThatWouldBreakTheFromHeader() {
-        String from = client("Vargas, \"Los\" Abogados\r\nBcc: leak@example.com")
-                .fromHeader(notification("CLIENT", null));
-
-        assertThat(from).isEqualTo("\"Vargas, \\\"Los\\\" Abogados Bcc: leak@example.com\" <agenda@legal-gate.co>");
-    }
-
-    @Test
-    void mailAboutAConsultationThreadsUnderThePotentialClientsOriginalMessage() {
-        Map<String, Object> payload = client("Vargas & Asociados")
-                .payload(notification("CLIENT", "diag+tok3n@intake.legal-gate.co"), "<CAF=original@mail.gmail.com>");
-
-        assertThat(headers(payload))
-                .containsEntry("Message-ID", "<notification-1@intake.legal-gate.co>")
-                .containsEntry("In-Reply-To", "<CAF=original@mail.gmail.com>")
-                .containsEntry("References", "<CAF=original@mail.gmail.com>");
-    }
-
-    @Test
-    void wrapsAStoredAnchorThatArrivedWithoutAngleBrackets() {
-        Map<String, Object> payload = client("Vargas & Asociados")
-                .payload(notification("CLIENT", null), "CAF=original@mail.gmail.com");
+    void theEnvelopesThreadHeadersTravelWithThePayload() {
+        Map<String, Object> payload = client().payload(notification("CLIENT", null), "<CAF=original@mail.gmail.com>");
 
         assertThat(headers(payload))
                 .containsEntry("In-Reply-To", "<CAF=original@mail.gmail.com>")
@@ -60,35 +46,9 @@ class CloudMailinOutboundEmailClientTests {
 
     @Test
     void staffMailStaysOutOfTheConsultationThread() {
-        Map<String, Object> payload = client("Vargas & Asociados")
-                .payload(notification("LAWYER", null), "<CAF=original@mail.gmail.com>");
-
-        assertThat(headers(payload))
-                .containsOnlyKeys("Message-ID");
-    }
-
-    @Test
-    void aConsultationWithNoAnchorSendsWithNoThreadingHeaders() {
-        Map<String, Object> payload = client("Vargas & Asociados").payload(notification("CLIENT", null), null);
+        Map<String, Object> payload = client().payload(notification("LAWYER", null), "<CAF=original@mail.gmail.com>");
 
         assertThat(headers(payload)).containsOnlyKeys("Message-ID");
-        assertThat(payload).containsEntry("to", "cliente@example.com");
-    }
-
-    @Test
-    void everyMessageCarriesItsOwnIdentityOnTheSendingDomain() {
-        Map<String, Object> payload = client("Vargas & Asociados").payload(notification("CLIENT", null), null);
-
-        assertThat(headers(payload)).containsEntry("Message-ID", "<notification-1@legal-gate.co>");
-    }
-
-    @Test
-    void stripsAnAnchorThatWouldForgeAnExtraHeader() {
-        Map<String, Object> payload = client("Vargas & Asociados")
-                .payload(notification("CLIENT", null), "<original@mail.gmail.com>\r\nBcc: leak@example.com");
-
-        assertThat(headers(payload))
-                .containsEntry("In-Reply-To", "<original@mail.gmail.comBcc:leak@example.com>");
     }
 
     @SuppressWarnings("unchecked")
@@ -96,20 +56,21 @@ class CloudMailinOutboundEmailClientTests {
         return (Map<String, String>) payload.get("headers");
     }
 
-    private CloudMailinOutboundEmailClient client(String tenantDisplayName) {
-        IntakeProperties properties = new IntakeProperties(
-                "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
-                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.workos.com");
-        IntakeRepository repository = mock(IntakeRepository.class);
-        when(repository.tenantDisplayName(anyString())).thenReturn(Optional.ofNullable(tenantDisplayName));
-        return new CloudMailinOutboundEmailClient(
-                properties, RestClient.builder(), new FirmNameResolver(repository, properties));
+    @SuppressWarnings("unchecked")
+    private Map<String, String> attachment(Map<String, Object> payload) {
+        return ((java.util.List<Map<String, String>>) payload.get("attachments")).get(0);
     }
 
-    private NotificationOutboxItem notification(String recipientRole, String fromEmail) {
+    private CloudMailinOutboundEmailClient client() {
+        return new CloudMailinOutboundEmailClient(
+                properties(false, null), RestClient.builder(), envelope("Vargas & Asociados"));
+    }
+
+    private NotificationOutboxItem withIcs() {
+        NotificationOutboxItem base = notification("CLIENT", null);
         return new NotificationOutboxItem(
-                "notification-1", "firma-demo", "consultation-1", null, "DIAGNOSTICS_QUESTION", recipientRole,
-                "cliente@example.com", fromEmail, "Asunto", "Cuerpo", null, null,
-                "PENDING", 0, null, null, null, null, null);
+                base.id(), base.tenantId(), base.consultationId(), base.eventId(), base.type(), base.recipientRole(),
+                base.recipientEmail(), base.fromEmail(), base.subject(), base.body(), null, "BEGIN:VCALENDAR",
+                base.status(), base.attempts(), null, null, null, null, null);
     }
 }

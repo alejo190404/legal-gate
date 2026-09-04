@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 
 @Service
 class NotificationDeliveryService {
@@ -16,9 +17,9 @@ class NotificationDeliveryService {
     private static final int BATCH_SIZE = 20;
 
     private final IntakeRepository intakeRepository;
-    private final CloudMailinOutboundEmailClient outboundEmailClient;
+    private final OutboundEmailClient outboundEmailClient;
 
-    NotificationDeliveryService(IntakeRepository intakeRepository, CloudMailinOutboundEmailClient outboundEmailClient) {
+    NotificationDeliveryService(IntakeRepository intakeRepository, OutboundEmailClient outboundEmailClient) {
         this.intakeRepository = intakeRepository;
         this.outboundEmailClient = outboundEmailClient;
     }
@@ -34,6 +35,14 @@ class NotificationDeliveryService {
             try {
                 String providerMessageId = outboundEmailClient.send(notification, threadAnchor(notification));
                 intakeRepository.markNotificationSent(notification.id(), providerMessageId);
+            } catch (HttpClientErrorException.TooManyRequests ex) {
+                // The row stays SENDING and claimPendingNotifications re-claims it once
+                // next_attempt_at passes, so the send is deferred without spending an attempt.
+                // Marking it failed would march real client mail toward DEAD on a busy day.
+                // ponytail: fixed five-minute retry, read `ratelimit-reset` if throughput matters.
+                LOGGER.warn("Provider rate limit reached; deferring notification id={} and the rest of this batch.",
+                        notification.id());
+                break;
             } catch (Exception ex) {
                 LOGGER.warn("Failed to send LegalGate notification id={} type={} recipientRole={}",
                         notification.id(), notification.type(), notification.recipientRole(), ex);

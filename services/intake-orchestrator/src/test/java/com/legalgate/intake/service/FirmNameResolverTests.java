@@ -38,6 +38,7 @@ class FirmNameResolverTests {
     private FirmNameResolver resolver(IntakeRepository repository) {
         return new FirmNameResolver(repository, new IntakeProperties(
                 "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
-                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.workos.com"));
+                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.workos.com",
+                null, null));
     }
 }

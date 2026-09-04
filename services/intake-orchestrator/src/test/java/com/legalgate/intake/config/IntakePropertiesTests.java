@@ -41,9 +41,26 @@ class IntakePropertiesTests {
                 .contains("outranks");
     }
 
+    @Test
+    void rejectsAnUnknownEmailProvider() {
+        assertThatThrownBy(() -> new IntakeProperties(
+                "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
+                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.workos.com",
+                "mailgun", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cloudmailin or resend");
+    }
+
+    @Test
+    void defaultsTheEmailProviderToCloudMailinSoAnUnsetVariableChangesNothing() {
+        assertThat(properties("intake.legal-gate.co", "test-service-token").emailProvider())
+                .isEqualTo("cloudmailin");
+    }
+
     private IntakeProperties properties(String emailDomain, String internalServiceToken) {
         return new IntakeProperties(
                 "memory", false, emailDomain, null, null, null, null, null, null,
-                false, null, null, null, null, false, internalServiceToken, "sk_test", "https://api.workos.com");
+                false, null, null, null, null, false, internalServiceToken, "sk_test", "https://api.workos.com",
+                null, null);
     }
 }

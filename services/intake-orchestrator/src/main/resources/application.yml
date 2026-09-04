@@ -33,6 +33,8 @@ legalgate:
     consultation-diagnostics-prompt-version: ${LEGALGATE_CONSULTATION_DIAGNOSTICS_PROMPT_VERSION:consultation-diagnostics-v2}
     consultation-diagnostics-system-prompt: ${LEGALGATE_CONSULTATION_DIAGNOSTICS_SYSTEM_PROMPT:}
     outbound-email-enabled: ${LEGALGATE_OUTBOUND_EMAIL_ENABLED:false}
+    email-provider: ${LEGALGATE_EMAIL_PROVIDER:cloudmailin}
+    resend-api-key: ${RESEND_API_KEY:}
     cloudmailin-smtp-username: ${LEGALGATE_CLOUDMAILIN_SMTP_USERNAME:}
     cloudmailin-api-token: ${LEGALGATE_CLOUDMAILIN_API_TOKEN:}
     notifications-from-email: ${LEGALGATE_NOTIFICATIONS_FROM_EMAIL:agenda@legal-gate.co}
