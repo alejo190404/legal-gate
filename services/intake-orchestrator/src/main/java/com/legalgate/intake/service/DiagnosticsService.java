@@ -51,11 +51,16 @@ public class DiagnosticsService {
     private static final Duration SILENCE_TIMEOUT = Duration.ofDays(7);
     private static final Duration TRANSCRIPT_RETENTION = Duration.ofDays(180);
 
-    // Roughly 30s, 1m, 2m, 5m, 15m, 30m: about an hour of retrying before a matter is handed
-    // to a human, so LLM_FAILED is a signal worth alerting on rather than routine noise.
+    // 5m, 10m, 15m: half an hour of retrying before a matter is handed to a human unfiltered.
+    // A potential client waiting on a first reply is the thing being spent here, not compute.
     private static final List<Duration> RETRY_BACKOFF = List.of(
-            Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(2),
-            Duration.ofMinutes(5), Duration.ofMinutes(15), Duration.ofMinutes(30));
+            Duration.ofMinutes(5), Duration.ofMinutes(10), Duration.ofMinutes(15));
+
+    /** Why a Consultation reached the firm without a Verdict; see ADR 0005. */
+    static final String UNFILTERED_DIAGNOSTICS_UNAVAILABLE = "DIAGNOSTICS_UNAVAILABLE";
+    static final String UNFILTERED_DIAGNOSTICS_INVALID_RESPONSE = "DIAGNOSTICS_INVALID_RESPONSE";
+    static final String UNFILTERED_CLASSIFICATION_UNAVAILABLE = "CLASSIFICATION_UNAVAILABLE";
+    static final String UNFILTERED_DIAGNOSTICS_ERROR = "DIAGNOSTICS_ERROR";
 
     private static final String AUTO_RESPONDER_REASON =
             "Correo automatico (fuera de oficina o lista); Diagnostics nunca le responde.";
@@ -149,7 +154,7 @@ public class DiagnosticsService {
             InboundEmailReceived event, ConsultationResponse consultation, String prompt, Instant now) {
         return new DiagnosticsSession(null, event.tenantId(), consultation.id(), newReplyToken(),
                 DiagnosticsSession.PENDING, null, null, null, prompt.trim(), inboundEmailFor(event),
-                0, 0, now, null, null, null, now);
+                0, 0, now, null, null, null, now, null);
     }
 
     private Optional<DiagnosticsSession> sessionForReply(InboundEmailReceived event) {
@@ -164,7 +169,7 @@ public class DiagnosticsService {
                 process(session);
             } catch (RuntimeException ex) {
                 LOGGER.warn("Diagnostics session id={} tenant={} failed", session.id(), session.tenantId(), ex);
-                retryOrFailOpen(session, ex.getMessage());
+                retryOrFailOpen(session, ex.getMessage(), UNFILTERED_DIAGNOSTICS_ERROR);
             }
         }
     }
@@ -208,7 +213,8 @@ public class DiagnosticsService {
                             && message.createdAt() != null && message.createdAt().isAfter(session.resolvedAt()));
             return new DiagnosticsView(consultationId, session.status(), session.verdict(), session.reason(),
                     session.extractedSummary(), session.promptSnapshot(), session.rounds(),
-                    session.awaitingReplySince(), session.resolvedAt(), lateReply, transcript);
+                    session.awaitingReplySince(), session.resolvedAt(), lateReply,
+                    session.unfilteredCause(), transcript);
         });
     }
 
@@ -226,12 +232,13 @@ public class DiagnosticsService {
         try {
             verdict = consultationClassifierClient.diagnose(diagnoseRequestFor(session, transcript));
         } catch (ClassifierUnavailableException ex) {
-            retryOrFailOpen(session, ex.getMessage());
+            retryOrFailOpen(session, ex.getMessage(), UNFILTERED_DIAGNOSTICS_UNAVAILABLE);
             return;
         }
         if (!isUsable(verdict)) {
-            // A response that fails validation is treated exactly like a service failure.
-            retryOrFailOpen(session, "diagnostics_invalid_response");
+            // A response that fails validation is retried like a service failure, but it is not
+            // one: Diagnostics answered. The two are recorded apart so the console can say which.
+            retryOrFailOpen(session, "diagnostics_invalid_response", UNFILTERED_DIAGNOSTICS_INVALID_RESPONSE);
             return;
         }
         switch (verdict.verdict()) {
@@ -267,7 +274,8 @@ public class DiagnosticsService {
                         session.tenantId(), consultation, session.originalEmail(), summary, allowFallback);
             } catch (ClassifierUnavailableException ex) {
                 // Classification inherits the same retry budget now that it is off the webhook path.
-                retryOrFailOpen(accepting, ex.getMessage());
+                // The Verdict was reached here — only the routing failed — so the cause says so.
+                retryOrFailOpen(accepting, ex.getMessage(), UNFILTERED_CLASSIFICATION_UNAVAILABLE);
                 return;
             }
         }
@@ -297,7 +305,7 @@ public class DiagnosticsService {
                 List.of(), List.of());
     }
 
-    private void retryOrFailOpen(DiagnosticsSession session, String error) {
+    private void retryOrFailOpen(DiagnosticsSession session, String error, String unfilteredCause) {
         if (session.attempts() < RETRY_BACKOFF.size()) {
             Instant next = Instant.now().plus(RETRY_BACKOFF.get(session.attempts()));
             intakeRepository.saveDiagnosticsSession(session.tenantId(), session.retrying(next, error), List.of(), List.of());
@@ -312,8 +320,10 @@ public class DiagnosticsService {
         if (consultation == null) {
             return;
         }
-        accept(session, consultation, session.extractedSummary(),
-                "Diagnostics no estuvo disponible tras reintentar durante una hora; la consulta continua sin filtrar.", true);
+        // The matter proceeds without a Verdict. That is recorded as its own fact rather than
+        // written into `reason`, which the console shows as the model's own words. ADR 0005.
+        accept(session.unfiltered(unfilteredCause), consultation, session.extractedSummary(),
+                session.reason(), true);
     }
 
     private ConsultationResponse recordReply(DiagnosticsSession session, InboundEmailReceived event) {

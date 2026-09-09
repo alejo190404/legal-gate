@@ -214,7 +214,7 @@ class DiagnosticsMigrationPostgresTests {
                 DiagnosticsSession.PENDING, null, null, null, "Tomamos casos laborales.",
                 new ConsultationClassifierRequest.InboundEmail("Consulta laboral", "Me despidieron.", null,
                         "Maria Perez <maria@example.com>", List.of("firma@intake.legal-gate.co"), "<m@example.com>"),
-                0, 0, now, null, null, null, now);
+                0, 0, now, null, null, null, now, null);
     }
 
     private JdbcIntakeRepository repository() {

@@ -28,7 +28,9 @@ public record DiagnosticsSession(
         Instant awaitingReplySince,
         String lastError,
         Instant resolvedAt,
-        Instant createdAt
+        Instant createdAt,
+        /** Null when a Verdict was reached; otherwise why Diagnostics could not reach one. */
+        String unfilteredCause
 ) {
     public static final String PENDING = "PENDING";
     public static final String ACCEPTED = "ACCEPTED";
@@ -42,13 +44,13 @@ public record DiagnosticsSession(
     public DiagnosticsSession dueNow(Instant now) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
                 extractedSummary, promptSnapshot, originalEmail, rounds, attempts, now, null, lastError,
-                resolvedAt, createdAt);
+                resolvedAt, createdAt, unfilteredCause);
     }
 
     public DiagnosticsSession awaitingReply(Instant now, String reason, String summary) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, PENDING,
                 ConsultationDiagnosticsResponse.ASK, reason, summary, promptSnapshot, originalEmail,
-                rounds + 1, 0, null, now, null, resolvedAt, createdAt);
+                rounds + 1, 0, null, now, null, resolvedAt, createdAt, unfilteredCause);
     }
 
     /**
@@ -59,37 +61,47 @@ public record DiagnosticsSession(
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, PENDING,
                 ConsultationDiagnosticsResponse.ACCEPT, reason, summary == null ? extractedSummary : summary,
                 promptSnapshot, originalEmail, rounds, attempts, nextAttemptAt, null, lastError,
-                resolvedAt, createdAt);
+                resolvedAt, createdAt, unfilteredCause);
     }
 
     public DiagnosticsSession withAwaitingReplySince(Instant since) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
                 extractedSummary, promptSnapshot, originalEmail, rounds, attempts, nextAttemptAt, since,
-                lastError, resolvedAt, createdAt);
+                lastError, resolvedAt, createdAt, unfilteredCause);
     }
 
     public DiagnosticsSession withResolvedAt(Instant at) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
                 extractedSummary, promptSnapshot, originalEmail, rounds, attempts, nextAttemptAt,
-                awaitingReplySince, lastError, at, createdAt);
+                awaitingReplySince, lastError, at, createdAt, unfilteredCause);
     }
 
     /** Retention: the transcript's other half. The verdict, reason and prompt snapshot stay. */
     public DiagnosticsSession withTranscriptPurged() {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
                 extractedSummary, promptSnapshot, null, rounds, attempts, nextAttemptAt, awaitingReplySince,
-                lastError, resolvedAt, createdAt);
+                lastError, resolvedAt, createdAt, unfilteredCause);
     }
 
     public DiagnosticsSession retrying(Instant nextAttempt, String error) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
                 extractedSummary, promptSnapshot, originalEmail, rounds, attempts + 1, nextAttempt,
-                awaitingReplySince, error, resolvedAt, createdAt);
+                awaitingReplySince, error, resolvedAt, createdAt, unfilteredCause);
+    }
+
+    /**
+     * The matter proceeds without a Verdict because Diagnostics could not reach one. Recorded as
+     * its own fact rather than as a {@code reason}, which is the model's words about the matter.
+     */
+    public DiagnosticsSession unfiltered(String cause) {
+        return new DiagnosticsSession(id, tenantId, consultationId, replyToken, status, verdict, reason,
+                extractedSummary, promptSnapshot, originalEmail, rounds, attempts, nextAttemptAt,
+                awaitingReplySince, lastError, resolvedAt, createdAt, cause);
     }
 
     public DiagnosticsSession resolved(String newStatus, String newVerdict, String newReason, String summary, Instant now) {
         return new DiagnosticsSession(id, tenantId, consultationId, replyToken, newStatus, newVerdict, newReason,
                 summary == null ? extractedSummary : summary, promptSnapshot, originalEmail, rounds, attempts,
-                null, null, lastError, now, createdAt);
+                null, null, lastError, now, createdAt, unfilteredCause);
     }
 }

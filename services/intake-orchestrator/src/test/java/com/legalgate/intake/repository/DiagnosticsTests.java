@@ -376,8 +376,8 @@ class DiagnosticsTests {
         classifier.diagnoseFailure = new ClassifierUnavailableException("gemini down");
         classifier.classification = classification();
 
-        // Six backoff steps, then the seventh pass gives up and proceeds as if accepted.
-        for (int attempt = 0; attempt <= 6; attempt++) {
+        // Three backoff steps, then the fourth pass gives up and proceeds as if accepted.
+        for (int attempt = 0; attempt <= 3; attempt++) {
             makeDue(pending);
             diagnostics.processDueDiagnostics();
         }
@@ -385,6 +385,44 @@ class DiagnosticsTests {
         assertThat(reload(pending).status()).isEqualTo("RECEIVED");
         assertThat(reload(pending).eventId()).isNotNull();
         assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.ACCEPTED);
+        // The matter arrived without a Verdict and says so, in its own field. ADR 0005.
+        assertThat(sessionFor(pending).unfilteredCause()).isEqualTo("DIAGNOSTICS_UNAVAILABLE");
+        assertThat(sessionFor(pending).reason()).isNull();
+    }
+
+    @Test
+    void anUnusableAnswerFailsOpenAsItsOwnCauseAndNotAsAnOutage() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-15b@example.com>"));
+        classifier.classification = classification();
+
+        // Diagnostics answers every time; every answer is unusable. Nothing was ever down.
+        for (int attempt = 0; attempt <= 3; attempt++) {
+            classifier.verdicts.add(verdict("ask", null, "Falta.", "Resumen."));
+            makeDue(pending);
+            diagnostics.processDueDiagnostics();
+        }
+
+        assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.ACCEPTED);
+        assertThat(sessionFor(pending).unfilteredCause()).isEqualTo("DIAGNOSTICS_INVALID_RESPONSE");
+    }
+
+    @Test
+    void aVerdictIsNeverOverwrittenByLegalGatesOwnProse() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-15c@example.com>"));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Resumen."));
+        classifier.classifyFailure = new ClassifierUnavailableException("gemini down");
+
+        // The model accepted; only routing failed. The reason stays the model's, and the cause
+        // says the Verdict was reached and the classification was not.
+        for (int attempt = 0; attempt <= 3; attempt++) {
+            makeDue(pending);
+            diagnostics.processDueDiagnostics();
+        }
+
+        assertThat(sessionFor(pending).reason()).isEqualTo("Completo.");
+        assertThat(sessionFor(pending).unfilteredCause()).isEqualTo("CLASSIFICATION_UNAVAILABLE");
     }
 
     @Test

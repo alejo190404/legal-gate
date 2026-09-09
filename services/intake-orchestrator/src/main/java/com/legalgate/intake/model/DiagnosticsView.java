@@ -15,6 +15,8 @@ public record DiagnosticsView(
         Instant awaitingReplySince,
         Instant resolvedAt,
         boolean lateReply,
+        /** Null when a Verdict was reached; otherwise why Diagnostics could not reach one. */
+        String unfilteredCause,
         List<DiagnosticsMessage> transcript
 ) {
 }

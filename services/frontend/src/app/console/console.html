@@ -832,6 +832,17 @@
                           <span style="font-size: 13px; text-align: right">{{ dx.extractedSummary }}</span>
                         </div>
                       }
+                      @if (dx.unfilteredCause) {
+                        <div class="detail-row">
+                          <span class="k">Aviso</span>
+                          <span style="text-align: right">
+                            <span class="tag kw">{{ unfilteredLabel(dx.unfilteredCause) }}</span>
+                            <span style="display: block; font-size: 13px; margin-top: 6px">{{
+                              unfilteredDetail(dx.unfilteredCause)
+                            }}</span>
+                          </span>
+                        </div>
+                      }
                       @if (dx.reason) {
                         <div class="detail-row">
                           <span class="k">Motivo</span>

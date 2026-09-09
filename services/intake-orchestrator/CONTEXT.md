@@ -22,6 +22,13 @@ Firm-authored free text describing which matters the firm takes and what informa
 
 The outcome LegalGate reaches on a Consultation under Diagnostics: the matter is ready to proceed, more information is needed from the potential client, or the firm does not take matters of this kind.
 
+## Unfiltered Acceptance
+
+A Consultation that reaches the firm without a Verdict, because Diagnostics could not produce one and
+LegalGate let the matter through rather than swallow it. It is not an accept — it is the absence of a
+decision, recorded as such, so the firm knows the matter was never qualified.
+_Avoid_: fail-open accept, auto-accept
+
 ## Diagnostics Round
 
 One exchange within Diagnostics: LegalGate asks, the potential client answers. Rounds are capped — a potential client who never supplies what the firm needs, or who stops replying, leaves the Consultation abandoned rather than scheduled.

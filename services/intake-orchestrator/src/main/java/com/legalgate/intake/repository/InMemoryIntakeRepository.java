@@ -204,7 +204,8 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 session.reason(), session.extractedSummary(), session.promptSnapshot(), session.originalEmail(),
                 session.rounds(), session.attempts(), session.nextAttemptAt(), session.awaitingReplySince(),
                 session.lastError(), session.resolvedAt(),
-                session.createdAt() == null ? Instant.now() : session.createdAt());
+                session.createdAt() == null ? Instant.now() : session.createdAt(),
+                session.unfilteredCause());
         diagnosticsSessions.put(id, stored);
         if (messages != null && !messages.isEmpty()) {
             List<DiagnosticsMessage> transcript = diagnosticsTranscripts.computeIfAbsent(id, ignored -> new ArrayList<>());

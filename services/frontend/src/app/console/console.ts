@@ -130,6 +130,7 @@ interface DiagnosticsView {
   awaitingReplySince: string | null;
   resolvedAt: string | null;
   lateReply: boolean;
+  unfilteredCause: string | null;
   transcript: DiagnosticsMessage[];
 }
 
@@ -1457,6 +1458,29 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       return 'Requiere agenda manual';
     }
     return `${this.formatDate(consultation.event.scheduledStart)} - ${this.formatTime(consultation.event.scheduledEnd)}`;
+  }
+
+  /**
+   * A consultation that reached the firm without a verdict. Shown apart from "Motivo", which is
+   * the model's own words about the matter and never LegalGate's plumbing.
+   */
+  unfilteredLabel(cause: string | null): string {
+    return cause === 'CLASSIFICATION_UNAVAILABLE' ? 'SIN CLASIFICAR' : 'SIN FILTRAR';
+  }
+
+  unfilteredDetail(cause: string | null): string {
+    switch (cause) {
+      case 'DIAGNOSTICS_UNAVAILABLE':
+        return 'Diagnostics no respondió tras 30 minutos de reintentos. La consulta se agendó sin que el filtro llegara a un veredicto.';
+      case 'DIAGNOSTICS_INVALID_RESPONSE':
+        return 'Diagnostics respondió, pero ninguna respuesta fue utilizable tras 30 minutos de reintentos. La consulta se agendó sin veredicto.';
+      case 'DIAGNOSTICS_ERROR':
+        return 'Diagnostics falló de forma inesperada en cada intento durante 30 minutos. La consulta se agendó sin veredicto.';
+      case 'CLASSIFICATION_UNAVAILABLE':
+        return 'El diagnóstico terminó con veredicto, pero la clasificación no respondió. La consulta se agendó sin ruta ni urgencia.';
+      default:
+        return 'La consulta se agendó sin que Diagnostics llegara a un veredicto.';
+    }
   }
 
   formatDate(value: string): string {

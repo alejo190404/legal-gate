@@ -326,8 +326,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                     insert into diagnostics_sessions (
                       id, tenant_id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
                       extracted_summary, prompt_snapshot, original_email, rounds, attempts,
-                      next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?, ?, ?, now(), now())
+                      next_attempt_at, awaiting_reply_since, last_error, resolved_at, unfiltered_cause,
+                      created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?, ?, ?, ?, now(), now())
                     on conflict (id) do update set
                       status = excluded.status,
                       verdict = excluded.verdict,
@@ -339,6 +340,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                       awaiting_reply_since = excluded.awaiting_reply_since,
                       last_error = excluded.last_error,
                       resolved_at = excluded.resolved_at,
+                      unfiltered_cause = excluded.unfiltered_cause,
                       updated_at = now()
                     """,
                     sessionId,
@@ -357,7 +359,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                     timestampOrNull(session.nextAttemptAt()),
                     timestampOrNull(session.awaitingReplySince()),
                     truncate(session.lastError(), 2000),
-                    timestampOrNull(session.resolvedAt()));
+                    timestampOrNull(session.resolvedAt()),
+                    session.unfilteredCause());
             for (DiagnosticsMessage message : messages == null ? List.<DiagnosticsMessage>of() : messages) {
                 jdbcTemplate.update("""
                         insert into diagnostics_messages (tenant_id, session_id, role, body, created_at)
@@ -487,7 +490,8 @@ class JdbcIntakeRepository implements IntakeRepository {
         return """
                 select id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
                        extracted_summary, prompt_snapshot, original_email, rounds, attempts,
-                       next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at
+                       next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at,
+                       unfiltered_cause
                 from diagnostics_sessions
                 """;
     }
@@ -511,7 +515,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                 instantOrNull(rs.getTimestamp("awaiting_reply_since")),
                 rs.getString("last_error"),
                 instantOrNull(rs.getTimestamp("resolved_at")),
-                instantOrNull(rs.getTimestamp("created_at"))
+                instantOrNull(rs.getTimestamp("created_at")),
+                rs.getString("unfiltered_cause")
         );
     }
 
