@@ -164,3 +164,32 @@ def test_endpoint_returns_the_golden_response(monkeypatch: pytest.MonkeyPatch) -
 
     assert response.status_code == 200
     assert response.json() == GOLDEN_DIAGNOSE_RESPONSE
+
+
+def test_endpoint_logs_the_request_and_the_response(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("app.main.classifier", classifier_returning(GOLDEN_DIAGNOSE_RESPONSE))
+
+    with caplog.at_level("INFO", logger="legalgate.consultation_classifier"):
+        TestClient(app).post("/diagnose-consultation", json=GOLDEN_DIAGNOSE_REQUEST)
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "diagnose-consultation request received" in logged
+    assert "Tomamos casos laborales" in logged
+    assert "diagnose-consultation response sent" in logged
+    assert "Que tipo de contrato tenia?" in logged
+    assert "elapsed=" in logged
+
+
+def test_endpoint_logs_a_failure_with_its_cause(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("app.main.classifier", classifier_returning("no soy json"))
+
+    with caplog.at_level("INFO", logger="legalgate.consultation_classifier"):
+        TestClient(app).post("/diagnose-consultation", json=GOLDEN_DIAGNOSE_REQUEST)
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "diagnose-consultation failed" in logged
+    assert "error=gemini_invalid_response" in logged
