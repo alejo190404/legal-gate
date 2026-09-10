@@ -35,7 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * The diagnostics tables and their JDBC path against real Postgres: the SQL the in-memory
  * repository cannot exercise (RLS, the worker's claim query, partial-index dedupe, purge).
  */
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class DiagnosticsMigrationPostgresTests {
 
     @Container
