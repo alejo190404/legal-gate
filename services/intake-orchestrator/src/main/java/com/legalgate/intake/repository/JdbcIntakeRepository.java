@@ -418,10 +418,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                         limit ?
                         for update skip locked
                     )
-                    returning id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
-                              extracted_summary, prompt_snapshot, original_email, rounds, attempts,
-                              next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at
-                    """, this::mapDiagnosticsSession, Math.max(1, limit));
+                    returning """ + DIAGNOSTICS_SESSION_COLUMNS,
+                    this::mapDiagnosticsSession, Math.max(1, limit));
         });
     }
 
@@ -486,14 +484,19 @@ class JdbcIntakeRepository implements IntakeRepository {
                 .findFirst();
     }
 
+    /**
+     * Every column {@link #mapDiagnosticsSession} reads, in one place. The claim query returns
+     * these rather than selecting them, and a list that drifts from the mapper fails only against
+     * Postgres — so the two queries share this instead of each spelling it out.
+     */
+    private static final String DIAGNOSTICS_SESSION_COLUMNS = """
+            id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
+            extracted_summary, prompt_snapshot, original_email, rounds, attempts,
+            next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at,
+            unfiltered_cause""";
+
     private String diagnosticsSessionSelect() {
-        return """
-                select id, tenant_slug, consultation_id, reply_token, status, verdict, reason,
-                       extracted_summary, prompt_snapshot, original_email, rounds, attempts,
-                       next_attempt_at, awaiting_reply_since, last_error, resolved_at, created_at,
-                       unfiltered_cause
-                from diagnostics_sessions
-                """;
+        return "select " + DIAGNOSTICS_SESSION_COLUMNS + "\nfrom diagnostics_sessions\n";
     }
 
     private DiagnosticsSession mapDiagnosticsSession(ResultSet rs, int rowNum) throws SQLException {
