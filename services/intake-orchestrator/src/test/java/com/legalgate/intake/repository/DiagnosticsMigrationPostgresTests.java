@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -59,6 +60,17 @@ class DiagnosticsMigrationPostgresTests {
                     grant usage, select on all sequences in schema public to intake_app;
                     grant execute on all functions in schema public to intake_app;
                     """);
+        }
+    }
+
+    /**
+     * One container serves the whole class, and the worker's claim query is deliberately
+     * tenant-blind, so a session another test left behind gets claimed by this one.
+     */
+    @BeforeEach
+    void emptyTheTables() throws Exception {
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("truncate table diagnostics_sessions, consultations cascade");
         }
     }
 

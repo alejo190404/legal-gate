@@ -418,7 +418,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                         limit ?
                         for update skip locked
                     )
-                    returning """ + DIAGNOSTICS_SESSION_COLUMNS,
+                    returning
+                    """ + DIAGNOSTICS_SESSION_COLUMNS,
                     this::mapDiagnosticsSession, Math.max(1, limit));
         });
     }
