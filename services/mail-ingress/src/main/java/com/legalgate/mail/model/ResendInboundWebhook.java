@@ -1,15 +1,18 @@
 package com.legalgate.mail.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * The Svix envelope Resend posts. Only the event type and the id of the stored message are used —
  * the message itself is fetched separately, because the webhook body does not carry it.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ResendInboundWebhook(
         String type,
         Data data
 ) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record Data(
             @JsonProperty("email_id") String emailId,
             String id

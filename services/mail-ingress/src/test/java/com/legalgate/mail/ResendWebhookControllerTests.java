@@ -89,7 +89,7 @@ class ResendWebhookControllerTests {
                 "Consulta laboral",
                 List.of("Firma Demo <firma-demo@intake.legal-gate.co>"),
                 null,
-                receivedFor,
+                receivedFor == null ? null : List.of(receivedFor),
                 "Necesito asesoría sobre un despido.",
                 "<p>Necesito asesoría sobre un despido.</p>",
                 Map.of("Message-ID", "<msg-1@example.com>")));

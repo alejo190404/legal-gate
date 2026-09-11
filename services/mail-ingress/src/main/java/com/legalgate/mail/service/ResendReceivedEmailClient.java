@@ -2,6 +2,8 @@ package com.legalgate.mail.service;
 
 import com.legalgate.mail.config.MailIngressProperties;
 import com.legalgate.mail.model.ResendReceivedEmail;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
 /** Fetches the stored message an {@code email.received} event points at. */
 @Service
 public class ResendReceivedEmailClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ResendReceivedEmailClient.class);
 
     private static final int CONNECT_TIMEOUT_MILLIS = 5_000;
     private static final int READ_TIMEOUT_MILLIS = 15_000;
@@ -45,6 +49,9 @@ public class ResendReceivedEmailClient {
                     .retrieve()
                     .body(ResendReceivedEmail.class);
         } catch (RestClientException ex) {
+            // Without this the caller sees only a bare 502, which looks the same whether Resend
+            // rejected the id, the key is wrong, or the API is down.
+            LOGGER.warn("Resend retrieve failed for message {}: {}", messageStoreId, ex.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "resend_retrieve_failed", ex);
         }
         if (email == null) {

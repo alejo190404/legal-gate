@@ -49,7 +49,7 @@ public class ResendIngestionService {
     private List<String> recipients(ResendReceivedEmail email) {
         List<String> addresses = new ArrayList<>();
         if (email.receivedFor() != null) {
-            addresses.add(email.receivedFor());
+            addresses.addAll(email.receivedFor());
         }
         if (email.to() != null) {
             addresses.addAll(email.to());
