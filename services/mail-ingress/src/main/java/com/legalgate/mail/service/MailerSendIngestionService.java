@@ -14,9 +14,14 @@ import org.springframework.stereotype.Service;
 public class MailerSendIngestionService {
 
     private final InboundEmailIngestionService inboundEmailIngestionService;
+    private final AutoResponderDetector autoResponderDetector;
 
-    public MailerSendIngestionService(InboundEmailIngestionService inboundEmailIngestionService) {
+    public MailerSendIngestionService(
+            InboundEmailIngestionService inboundEmailIngestionService,
+            AutoResponderDetector autoResponderDetector
+    ) {
         this.inboundEmailIngestionService = inboundEmailIngestionService;
+        this.autoResponderDetector = autoResponderDetector;
     }
 
     public InboundEmailIngestionResult ingest(MailerSendWebhook webhook) {
@@ -28,7 +33,8 @@ public class MailerSendIngestionService {
                 data == null ? null : data.subject(),
                 data == null ? null : data.messageId(),
                 plainFor(data),
-                htmlFor(data)
+                htmlFor(data),
+                autoResponderDetector.isAutoResponder(data == null ? null : data.headers())
         ));
     }
 

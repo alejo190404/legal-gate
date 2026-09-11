@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record MailIngressProperties(
         BasicAuth basicAuth,
         MailerSend mailersend,
+        Resend resend,
         IntakeOrchestrator intakeOrchestrator,
         // ponytail: scaffolding for the CloudMailin -> Resend migration window, so a false
         // positive in production is an env flip rather than a redeploy. Delete it with the
@@ -21,6 +22,9 @@ public record MailIngressProperties(
     }
 
     public record MailerSend(String webhookSecret) {
+    }
+
+    public record Resend(String webhookSecret, String apiKey) {
     }
 
     public record IntakeOrchestrator(URI baseUrl, String serviceToken) {

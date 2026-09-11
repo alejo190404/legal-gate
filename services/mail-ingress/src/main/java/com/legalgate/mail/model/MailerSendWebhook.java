@@ -2,6 +2,7 @@ package com.legalgate.mail.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 public record MailerSendWebhook(
         String type,
@@ -21,7 +22,8 @@ public record MailerSendWebhook(
             @JsonProperty("message_id") String messageId,
             Text text,
             String html,
-            String plain
+            String plain,
+            Map<String, Object> headers
     ) {
     }
 

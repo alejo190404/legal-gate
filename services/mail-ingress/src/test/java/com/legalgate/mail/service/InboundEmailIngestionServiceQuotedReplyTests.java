@@ -70,7 +70,7 @@ class InboundEmailIngestionServiceQuotedReplyTests {
                 inboundEmailClient,
                 new EmailBoilerplateStripper(),
                 new QuotedReplyStripper(),
-                new MailIngressProperties(null, null,
+                new MailIngressProperties(null, null, null,
                         new MailIngressProperties.IntakeOrchestrator(
                                 URI.create("http://localhost:8081"), "service-token"),
                         enabled));

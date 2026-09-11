@@ -21,6 +21,15 @@ class RecipientAddressExtractor {
         return List.copyOf(recipients);
     }
 
+    /** Shared with the Resend adapter, whose addresses arrive as plain lists. */
+    List<String> normalizeAll(List<String> values) {
+        Set<String> recipients = new LinkedHashSet<>();
+        if (values != null) {
+            values.forEach(value -> add(recipients, value));
+        }
+        return List.copyOf(recipients);
+    }
+
     private void add(Set<String> recipients, String value) {
         String normalized = normalize(value);
         if (normalized != null) {
