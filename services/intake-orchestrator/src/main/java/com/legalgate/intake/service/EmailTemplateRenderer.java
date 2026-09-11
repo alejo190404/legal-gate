@@ -13,6 +13,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
@@ -40,6 +41,9 @@ public class EmailTemplateRenderer {
 
     private static final String NEUTRAL_SALUTATION = "Estimado(a):";
     private static final String NEUTRAL_ACKNOWLEDGMENT = "Recibimos su mensaje.";
+    /** The lead-in {@link #acknowledgmentLine} supplies itself, as a model sometimes echoes it back. */
+    private static final Pattern ECHOED_LEAD_IN = Pattern.compile(
+            "^recibimos\\s+su\\s+mensaje\\b[\\s:,.]*(?:sobre\\b[\\s:,.]*)?", Pattern.CASE_INSENSITIVE);
     private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
     private static final String NON_ENGAGEMENT_SUBJECT = "Sobre su consulta";
     private static final String DISCLAIMER =
@@ -150,13 +154,23 @@ public class EmailTemplateRenderer {
      * back to the bare receipt, which says less but can never say something wrong.
      */
     private String acknowledgmentLine(String acknowledgment) {
-        String subject = nullToEmpty(acknowledgment).trim();
+        String subject = restatement(acknowledgment);
         if (subject.isEmpty()) {
             return NEUTRAL_ACKNOWLEDGMENT;
         }
         // The model punctuating its own restatement must not end the sentence twice; anything it
         // wrote is otherwise left alone, abbreviations and all.
         return "Recibimos su mensaje sobre " + subject + (subject.endsWith(".") ? "" : ".");
+    }
+
+    /**
+     * What the potential client wrote about, with any echoed lead-in removed: the model is asked to
+     * complete "Recibimos su mensaje sobre ..." and sometimes returns the whole sentence instead.
+     * Stripped here rather than at the caller so the line can only ever carry one lead-in, and so
+     * the length the Acknowledgment is held to measures the restatement and not the echo.
+     */
+    static String restatement(String acknowledgment) {
+        return ECHOED_LEAD_IN.matcher(nullToEmpty(acknowledgment).trim()).replaceFirst("").trim();
     }
 
     /**
@@ -251,7 +265,7 @@ public class EmailTemplateRenderer {
         return primary == null || primary.isBlank() ? fallback : primary;
     }
 
-    private String nullToEmpty(String value) {
+    private static String nullToEmpty(String value) {
         return value == null ? "" : value;
     }
 

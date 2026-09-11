@@ -373,7 +373,11 @@ public class DiagnosticsService {
         if (acknowledgment == null || acknowledgment.isBlank()) {
             return null;
         }
-        String sanitized = acknowledgment.replaceAll("[\\p{Cntrl}\\s]+", " ").trim();
+        String sanitized = EmailTemplateRenderer.restatement(
+                acknowledgment.replaceAll("[\\p{Cntrl}\\s]+", " "));
+        if (sanitized.isEmpty()) {
+            return null;
+        }
         return sanitized.split("\\s+").length > MAX_ACKNOWLEDGMENT_WORDS ? null : sanitized;
     }
 

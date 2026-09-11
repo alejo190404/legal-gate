@@ -111,6 +111,21 @@ class EmailTemplateRendererTests {
     }
 
     @Test
+    void theAcknowledgmentCarriesOneLeadInEvenWhenTheModelEchoesIt() {
+        // The model is asked to complete the sentence and sometimes returns the whole of it.
+        assertThat(renderer.renderDiagnosticsQuestion(
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje sobre que la acusan de plagio", "¿Fecha?"))
+                .contains("Recibimos su mensaje sobre que la acusan de plagio.\n\n");
+        assertThat(renderer.renderDiagnosticsQuestion(
+                "Maria Perez", "Firma Ejemplo", "recibimos su mensaje sobre: su despido", "¿Fecha?"))
+                .contains("Recibimos su mensaje sobre su despido.\n\n");
+        // Nothing left once the echo goes: the bare receipt, not a sentence ending in "sobre".
+        assertThat(renderer.renderDiagnosticsQuestion(
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje.", "¿Fecha?"))
+                .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
+    }
+
+    @Test
     void diagnosticsQuestionNeverSignsWithALawyer() {
         String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?");
 
