@@ -15,7 +15,9 @@ The obvious place to remove it is where the reply body is already being chosen, 
 
 An `EmailBoilerplateStripper` in mail-ingress removes boilerplate from the plain-text body during `InboundEmailIngestionService.ingest`, so every provider and both LLM paths are covered by one call.
 
-Detection is a hardcoded list of fixed gateway phrases. A marker matches only at the start of a trimmed line, case-folded and accent-folded — Spanish gateways vary on tildes, and one in the wild deliberately omits them. From the earliest match, everything below is cut: gateway trailers are always last, and `reply_plain` has already lifted the client's text above them.
+Detection is a hardcoded list of fixed gateway phrases. A marker matches only at the start of a trimmed line, case-folded and accent-folded — Spanish gateways vary on tildes, and one in the wild deliberately omits them. From the earliest match, everything below is cut: gateway trailers are always last, and the client's text has already been lifted above them.
+
+> Amended 2026-09-10 (ADR-0002). "Lifted above them" was CloudMailin's `reply_plain` doing the work, and that field is provider-specific — Resend has no equivalent. `QuotedReplyStripper` now does the lifting for every provider, and runs immediately before this stripper.
 
 Two guards make a mis-detection a no-op instead of data loss. If the strip leaves a blank body, the original is kept. If the earliest marker sits at the very top with nothing above it, the original is kept — that shape is a forwarded disclaimer-laden thread with the answer below, not a trailer.
 

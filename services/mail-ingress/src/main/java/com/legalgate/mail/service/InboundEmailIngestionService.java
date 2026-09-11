@@ -1,5 +1,6 @@
 package com.legalgate.mail.service;
 
+import com.legalgate.mail.config.MailIngressProperties;
 import com.legalgate.mail.model.InboundEmailReceived;
 import com.legalgate.mail.model.InboundEmailIngestionResult;
 import com.legalgate.mail.model.NormalizedInboundEmail;
@@ -17,15 +18,21 @@ public class InboundEmailIngestionService {
     private final TenantLookupService tenantLookupService;
     private final InboundEmailClient inboundEmailClient;
     private final EmailBoilerplateStripper emailBoilerplateStripper;
+    private final QuotedReplyStripper quotedReplyStripper;
+    private final boolean stripQuotedReply;
 
     public InboundEmailIngestionService(
             TenantLookupService tenantLookupService,
             InboundEmailClient inboundEmailClient,
-            EmailBoilerplateStripper emailBoilerplateStripper
+            EmailBoilerplateStripper emailBoilerplateStripper,
+            QuotedReplyStripper quotedReplyStripper,
+            MailIngressProperties properties
     ) {
         this.tenantLookupService = tenantLookupService;
         this.inboundEmailClient = inboundEmailClient;
         this.emailBoilerplateStripper = emailBoilerplateStripper;
+        this.quotedReplyStripper = quotedReplyStripper;
+        this.stripQuotedReply = properties.stripQuotedReply();
     }
 
     public InboundEmailIngestionResult ingest(NormalizedInboundEmail email) {
@@ -55,7 +62,7 @@ public class InboundEmailIngestionService {
                 // Every provider funnels through here, so boilerplate dies once for all of them.
                 // ponytail: the HTML body is left alone — line-anchored markers are unreliable
                 // against tag soup, and intake only falls back to HTML when plain is empty.
-                emailBoilerplateStripper.strip(email.plain()),
+                cleaned(email.plain()),
                 email.html(),
                 Instant.now(),
                 email.autoResponder()
@@ -72,6 +79,17 @@ public class InboundEmailIngestionService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "intake_orchestrator_unavailable", ex);
         }
 
+    }
+
+    /**
+     * Boilerplate first, then quoted history. Both cut from a marker to the end of the body, so
+     * either order handles either stacking — except that a gateway appends its notice below
+     * everything, including below a quote, and an unquoted notice under a ">" run is what stops
+     * that run reaching the end of the body. Taking the notice out first leaves the run intact.
+     */
+    private String cleaned(String plain) {
+        String withoutBoilerplate = emailBoilerplateStripper.strip(plain);
+        return stripQuotedReply ? quotedReplyStripper.strip(withoutBoilerplate) : withoutBoilerplate;
     }
 
     static String withoutPlusTag(String address) {

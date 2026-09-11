@@ -7,8 +7,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record MailIngressProperties(
         BasicAuth basicAuth,
         MailerSend mailersend,
-        IntakeOrchestrator intakeOrchestrator
+        IntakeOrchestrator intakeOrchestrator,
+        // ponytail: scaffolding for the CloudMailin -> Resend migration window, so a false
+        // positive in production is an env flip rather than a redeploy. Delete it with the
+        // CloudMailin cleanup, once the stripper has run on real mail for a while.
+        Boolean stripQuotedReply
 ) {
+    public MailIngressProperties {
+        stripQuotedReply = stripQuotedReply == null || stripQuotedReply;
+    }
+
     public record BasicAuth(String username, String password) {
     }
 

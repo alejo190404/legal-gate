@@ -24,6 +24,7 @@ management:
 
 legalgate:
   mail-ingress:
+    strip-quoted-reply: ${LEGALGATE_STRIP_QUOTED_REPLY:true}
     basic-auth:
       username: ${LEGALGATE_CLOUDMAILIN_USERNAME:cloudmailin-local}
       password: ${LEGALGATE_CLOUDMAILIN_PASSWORD:cloudmailin-local-password}
