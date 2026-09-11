@@ -32,13 +32,22 @@ public class ResendIngestionService {
         return inboundEmailIngestionService.ingest(new NormalizedInboundEmail(
                 recipients(email),
                 email.from(),
-                email.from(),
+                headerFrom(email),
                 email.subject(),
                 email.messageId(),
                 email.text(),
                 email.html(),
                 autoResponderDetector.isAutoResponder(email.headers())
         ));
+    }
+
+    /**
+     * Resend's top-level {@code from} is the bare address, so the display name only survives in the
+     * raw From header. Without it every Resend consultation lands as "Unknown client".
+     */
+    private String headerFrom(ResendReceivedEmail email) {
+        String header = autoResponderDetector.headerValue(email.headers(), "from");
+        return header == null || header.isBlank() ? email.from() : header;
     }
 
     /**
