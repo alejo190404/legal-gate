@@ -17,3 +17,5 @@ skills-lock.json
 **/__pycache__/
 *.pyo
 *.pyd
+# Local ops scratch
+health_monitor.py
