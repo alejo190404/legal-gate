@@ -15,7 +15,7 @@ This is the same problem Email Boilerplate posed, at the same boundary, with the
 
 ## Decision
 
-A `QuotedReplyStripper` in mail-ingress removes Quoted History from the plain-text body during `InboundEmailIngestionService.ingest`, before `EmailBoilerplateStripper` runs. Both cut from a marker to the end of the body, so taking the quote out first leaves the gateway trailer reachable whichever order the sender's client stacked the two in.
+A `QuotedReplyStripper` in mail-ingress removes Quoted History from the plain-text body during `InboundEmailIngestionService.ingest`, after `EmailBoilerplateStripper` runs. Both cut from a marker to the end of the body, so either order copes with either stacking — with one exception that decides it. A gateway appends its notice below everything the sender's client produced, quote included, and an unquoted notice sitting under a `>` run is exactly what stops that run reaching the end of the body. Removing the notice first leaves the run intact.
 
 Detection follows ADR-0001 exactly, for the reasons ADR-0001 gives. A fixed marker list, not a heuristic. Markers match at the start of a trimmed line, case-folded and accent-folded. Spanish shapes first, because the clients are Colombian. Both guards apply unchanged: a strip that leaves a blank body keeps the original, and a marker at the very top with nothing above it keeps the original — that shape is a forwarded thread whose content is below the attribution, not a trailer hanging off a reply.
 

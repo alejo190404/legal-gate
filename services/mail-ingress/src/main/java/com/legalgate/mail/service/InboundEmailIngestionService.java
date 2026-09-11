@@ -82,13 +82,14 @@ public class InboundEmailIngestionService {
     }
 
     /**
-     * Quoted history first, then boilerplate. Both cut from a marker to the end of the body, so
-     * taking the quote out first leaves the gateway trailer reachable whichever order the sender's
-     * client stacked them in.
+     * Boilerplate first, then quoted history. Both cut from a marker to the end of the body, so
+     * either order handles either stacking — except that a gateway appends its notice below
+     * everything, including below a quote, and an unquoted notice under a ">" run is what stops
+     * that run reaching the end of the body. Taking the notice out first leaves the run intact.
      */
     private String cleaned(String plain) {
-        String withoutQuote = stripQuotedReply ? quotedReplyStripper.strip(plain) : plain;
-        return emailBoilerplateStripper.strip(withoutQuote);
+        String withoutBoilerplate = emailBoilerplateStripper.strip(plain);
+        return stripQuotedReply ? quotedReplyStripper.strip(withoutBoilerplate) : withoutBoilerplate;
     }
 
     static String withoutPlusTag(String address) {

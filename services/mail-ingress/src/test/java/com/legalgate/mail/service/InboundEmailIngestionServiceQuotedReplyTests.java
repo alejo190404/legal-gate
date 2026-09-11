@@ -41,6 +41,25 @@ class InboundEmailIngestionServiceQuotedReplyTests {
             AVISO LEGAL: este mensaje es confidencial y de uso exclusivo del destinatario.
             """;
 
+    /** The same, angle-quoted: the gateway's notice lands below the quote, unquoted. */
+    private static final String ANGLE_QUOTED_AND_BOILERPLATE = REPLY + """
+
+
+            > ¿Qué tipo de contrato es?
+            > Quedamos atentos.
+
+            AVISO LEGAL: este mensaje es confidencial y de uso exclusivo del destinatario.
+            """;
+
+    /** The other stacking: the gateway's notice sits between the reply and the quote. */
+    private static final String BOILERPLATE_ABOVE_QUOTE = REPLY + """
+
+
+            AVISO LEGAL: este mensaje es confidencial y de uso exclusivo del destinatario.
+
+            > ¿Qué tipo de contrato es?
+            """;
+
     private final TenantLookupService tenantLookupService = mock(TenantLookupService.class);
     private final InboundEmailClient inboundEmailClient = mock(InboundEmailClient.class);
 
@@ -80,6 +99,18 @@ class InboundEmailIngestionServiceQuotedReplyTests {
     @Test
     void quotedHistoryAndBoilerplateBothGo() {
         assertThat(ingestedPlain(serviceWithStrippingEnabled(true), QUOTED_AND_BOILERPLATE))
+                .isEqualTo(REPLY);
+    }
+
+    @Test
+    void anAngleQuoteFollowedByAGatewayNoticeStillGoes() {
+        assertThat(ingestedPlain(serviceWithStrippingEnabled(true), ANGLE_QUOTED_AND_BOILERPLATE))
+                .isEqualTo(REPLY);
+    }
+
+    @Test
+    void eitherStackingOfNoticeAndQuoteLeavesOnlyTheReply() {
+        assertThat(ingestedPlain(serviceWithStrippingEnabled(true), BOILERPLATE_ABOVE_QUOTE))
                 .isEqualTo(REPLY);
     }
 
