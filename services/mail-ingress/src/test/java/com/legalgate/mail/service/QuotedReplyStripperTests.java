@@ -109,6 +109,26 @@ class QuotedReplyStripperTests {
     }
 
     /**
+     * Quoted history is a trailer: it runs to the end of the body. A client who pastes a clause
+     * and keeps answering below it has written text under the quote, so the quote is theirs and
+     * cutting from it would delete the rest of their matter.
+     */
+    @Test
+    void aClauseQuotedMidReplyWithAnswersBelowItIsNotQuotedHistory() {
+        String reply = """
+                Sí, es un contrato de arrendamiento.
+
+                La cláusula que me preocupa dice:
+
+                > El arrendatario renuncia a cualquier indemnización por mejoras.
+
+                ¿Es válida esa renuncia? Llevo dos años en el local.
+                """;
+
+        assertThat(stripper.strip(reply)).isEqualTo(reply);
+    }
+
+    /**
      * "De:" opens the Outlook block, but it is also ordinary Spanish. Without the
      * "Enviado el:"/"Para:" line under it, the client is just writing.
      */

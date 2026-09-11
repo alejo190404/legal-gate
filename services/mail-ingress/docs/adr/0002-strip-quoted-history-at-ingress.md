@@ -19,9 +19,11 @@ A `QuotedReplyStripper` in mail-ingress removes Quoted History from the plain-te
 
 Detection follows ADR-0001 exactly, for the reasons ADR-0001 gives. A fixed marker list, not a heuristic. Markers match at the start of a trimmed line, case-folded and accent-folded. Spanish shapes first, because the clients are Colombian. Both guards apply unchanged: a strip that leaves a blank body keeps the original, and a marker at the very top with nothing above it keeps the original — that shape is a forwarded thread whose content is below the attribution, not a trailer hanging off a reply.
 
-Two markers need more than a prefix test:
+Three markers need more than a prefix test:
 
 **The attribution line** wraps a date that is not fixed text, so it is matched by what brackets it: a line opening with `El ` and closing with `escribió:`, or opening with `On ` and closing with `wrote:`.
+
+**The angle-quote run** counts only when every non-blank line below it is quoted too. Quoted history is a trailer, so it reaches the end of the body; a client who pastes a contract clause and keeps answering underneath has written text below the quote, and cutting from it would delete the rest of their matter.
 
 **The Outlook header block** opens with `De:` or `From:`, which is also ordinary writing — "De: mi arrendador recibí una carta" is a client describing their matter. The block counts only when one of its sibling headers (`Enviado el:`, `Para:`, `Sent:`, `To:`) follows within the next three lines.
 
@@ -37,7 +39,7 @@ Inbound is no longer dependent on a provider-specific field. When the MX record 
 
 A false positive costs more here than it does for boilerplate. Boilerplate sits at the bottom of a message and a wrong cut there loses a signature; an attribution line can sit anywhere the client chose to reply inline, and a wrong cut loses the rest of the matter. The guards catch the destructive shapes, the marker list stays short, and no raw body is retained to compare against — the kill switch exists because of that asymmetry.
 
-Interleaved replies are not handled. A client who answers between the quoted lines rather than above them loses everything from the first marker down, which is their own text. No mail client produces that shape by default; the ones that do are `>`-quoting clients, where the client's text is above the first `>` run. Accepted, and the first observed case is what reopens this.
+Interleaved replies are handled for `>` quoting and not for the other markers. A client answering under a quoted clause keeps their text, because the run-to-the-end rule declines to treat that clause as a trailer. A client answering underneath an attribution line or an Outlook header block still loses everything below it. No mail client produces that second shape by default — it takes someone deliberately typing under the quote — and the first observed case is what reopens this.
 
 A wrapped attribution line is not detected. Gmail wraps it when the display name and address are long enough, and the wrapped form matches no marker. The header-block and `>` markers usually catch the same mail. Left alone until one is observed slipping through.
 

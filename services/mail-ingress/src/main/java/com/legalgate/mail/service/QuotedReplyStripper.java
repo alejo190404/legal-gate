@@ -64,7 +64,7 @@ public class QuotedReplyStripper {
         return isAttribution(line)
                 || line.startsWith("-----mensaje original-----")
                 || line.startsWith("-----original message-----")
-                || line.startsWith(">")
+                || opensAngleQuoteRun(lines, index, line)
                 || opensHeaderBlock(lines, index, line);
     }
 
@@ -80,6 +80,25 @@ public class QuotedReplyStripper {
     private static boolean isAttribution(String line) {
         return (line.startsWith("el ") && line.endsWith("escribio:"))
                 || (line.startsWith("on ") && line.endsWith("wrote:"));
+    }
+
+    /**
+     * Quoted history is a trailer — it runs to the end of the body. So a {@code >} line opens one
+     * only when every non-blank line below it is quoted too. A client who pastes a clause and
+     * keeps answering underneath has written text below the quote, and cutting from it would
+     * delete the rest of their matter.
+     */
+    private static boolean opensAngleQuoteRun(String[] lines, int index, String line) {
+        if (!line.startsWith(">")) {
+            return false;
+        }
+        for (int i = index + 1; i < lines.length; i++) {
+            String below = lines[i].strip();
+            if (!below.isEmpty() && !below.startsWith(">")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
