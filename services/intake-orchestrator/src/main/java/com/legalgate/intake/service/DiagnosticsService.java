@@ -254,11 +254,14 @@ public class DiagnosticsService {
             return;
         }
         Instant now = Instant.now();
+        // The transcript line is the notification's own body, not the model's raw question: what
+        // the console shows and what the next round reads back must be the letter that was sent.
+        NotificationOutboxItem notification = questionNotification(consultation, session, verdict);
         intakeRepository.saveDiagnosticsSession(
                 session.tenantId(),
                 session.awaitingReply(now, verdict.reason(), verdict.summary()),
-                List.of(DiagnosticsMessage.fromLegalGate(verdict.question())),
-                List.of(questionNotification(consultation, session, verdict)));
+                List.of(DiagnosticsMessage.fromLegalGate(notification.body())),
+                List.of(notification));
     }
 
     private void accept(DiagnosticsSession session, ConsultationResponse consultation,

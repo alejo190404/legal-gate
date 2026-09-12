@@ -233,16 +233,19 @@ class DiagnosticsTests {
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-7@example.com>"));
         classifier.verdicts.add(verdict("ask", "Fecha?", "Falta la fecha.", "Sin fecha."));
         diagnostics.processDueDiagnostics();
+        String sent = repository.claimPendingNotifications(10).get(0).body();
 
         ConsultationResponse afterReply = diagnostics.receiveInboundEmail(
                 reply(pending, "El 3 de marzo.", "<m-7-reply@example.com>"));
 
         assertThat(afterReply.id()).isEqualTo(pending.id());
         assertThat(repository.consultationsForTenant(TENANT).consultations()).hasSize(1);
+        // The transcript keeps the letter that went out, not the model's bare question.
+        assertThat(sent).contains("Fecha?").contains("Cordialmente,");
         assertThat(transcript(pending))
                 .extracting(DiagnosticsMessage::role, DiagnosticsMessage::body)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("LEGALGATE", "Fecha?"),
+                        org.assertj.core.groups.Tuple.tuple("LEGALGATE", sent),
                         org.assertj.core.groups.Tuple.tuple("CLIENT", "El 3 de marzo."));
 
         classifier.verdicts.add(verdict("accept", null, "Completo.", "Despido el 3 de marzo."));
