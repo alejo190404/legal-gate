@@ -178,7 +178,24 @@ class InMemoryIntakeRepository implements IntakeRepository {
 
     @Override
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
-        return new ConsultationListResponse(tenantSlug, List.copyOf(consultationsByTenant.getOrDefault(tenantSlug, List.of())));
+        return new ConsultationListResponse(tenantSlug, consultationsByTenant.getOrDefault(tenantSlug, List.of())
+                .stream().map(this::withDiagnosticsSummary).toList());
+    }
+
+    /** The JDBC repository joins this in; here the session map stands in for the join. */
+    private ConsultationResponse withDiagnosticsSummary(ConsultationResponse consultation) {
+        return diagnosticsSessions.values().stream()
+                .filter(session -> consultation.id().equals(session.consultationId()))
+                .findFirst()
+                .map(session -> new ConsultationResponse(
+                        consultation.id(), consultation.tenantId(), consultation.clientName(),
+                        consultation.clientEmail(), consultation.summary(), consultation.preferredWindow(),
+                        consultation.status(), consultation.urgency(), consultation.consultationType(),
+                        consultation.assignedLawyerEmail(), consultation.classification(),
+                        consultation.notifications(), consultation.sourceEventId(), consultation.sourceMessageId(),
+                        consultation.createdAt(), consultation.eventId(), consultation.event(),
+                        session.extractedSummary()))
+                .orElse(consultation);
     }
 
     @Override
@@ -188,7 +205,8 @@ class InMemoryIntakeRepository implements IntakeRepository {
         }
         return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
                 .filter(consultation -> consultationId.equals(consultation.id()))
-                .findFirst();
+                .findFirst()
+                .map(this::withDiagnosticsSummary);
     }
 
     @Override

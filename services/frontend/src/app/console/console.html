@@ -724,7 +724,7 @@
                         <span style="min-width: 0; display: block">
                           <span class="who" style="display: block">{{ c.clientName }}</span>
                           <span class="meta" style="display: block">{{ c.clientEmail }} · {{ c.id.slice(0, 8) }}</span>
-                          <span class="snip" style="display: block">{{ c.summary }}</span>
+                          <span class="snip" style="display: block">{{ c.diagnosticsSummary || c.summary }}</span>
                           <span class="row">
                             @if (c.classification.label) {
                               <span class="tag">{{ c.classification.label }}</span>

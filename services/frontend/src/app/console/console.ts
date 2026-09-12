@@ -68,6 +68,7 @@ interface Consultation {
   createdAt: string;
   eventId: string | null;
   event: EventDetails | null;
+  diagnosticsSummary: string | null;
 }
 
 interface ConsultationListResponse {

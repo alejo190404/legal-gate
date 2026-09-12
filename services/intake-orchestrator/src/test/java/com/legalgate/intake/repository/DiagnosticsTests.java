@@ -256,6 +256,19 @@ class DiagnosticsTests {
     }
 
     @Test
+    void theConsoleListCarriesTheExtractedSummaryWhileDiagnosticsIsStillRunning() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        diagnostics.receiveInboundEmail(inboundEmail("<m-summary@example.com>"));
+        classifier.verdicts.add(verdict("ask", "Fecha?", "Falta la fecha.", "Despido sin fecha."));
+        diagnostics.processDueDiagnostics();
+
+        assertThat(repository.consultationsForTenant(TENANT).consultations())
+                .singleElement()
+                .extracting(ConsultationResponse::diagnosticsSummary)
+                .isEqualTo("Despido sin fecha.");
+    }
+
+    @Test
     void severalRepliesInOneRoundDoNotTriggerAnExtraDiagnoseCall() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-8@example.com>"));

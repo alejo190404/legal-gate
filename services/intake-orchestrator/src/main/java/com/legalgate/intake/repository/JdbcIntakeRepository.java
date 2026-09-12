@@ -821,11 +821,13 @@ class JdbcIntakeRepository implements IntakeRepository {
                        e.id as event_id_read, e.lawyer_id, l.display_name as lawyer_display_name, l.email as lawyer_email,
                        e.route_name, e.urgency_name, e.sla_days, e.sla_deadline, e.priority_score,
                        e.scheduled_start, e.scheduled_end, e.meeting_url, e.scheduled_within_sla,
-                       e.status as event_status, e.source as event_source
+                       e.status as event_status, e.source as event_source,
+                       d.extracted_summary as diagnostics_summary
                 from consultations c
                 join tenants t on t.id = c.tenant_id
                 left join events e on e.id = c.event_id
                 left join lawyers l on l.id = e.lawyer_id
+                left join diagnostics_sessions d on d.consultation_id = c.id
                 """;
     }
 
@@ -864,7 +866,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("source_message_id"),
                 rs.getTimestamp("created_at").toInstant(),
                 eventId,
-                event
+                event,
+                rs.getString("diagnostics_summary")
         );
     }
 
