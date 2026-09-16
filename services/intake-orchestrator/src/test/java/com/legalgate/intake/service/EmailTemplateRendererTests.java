@@ -51,6 +51,14 @@ class EmailTemplateRendererTests {
     }
 
     @Test
+    void clientReceiptSaysItIsAutomaticAndInvitesNoReply() {
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+
+        assertThat(html).contains("Este correo es autom&aacute;tico");
+        assertThat(html).doesNotContain("Responde a este mensaje");
+    }
+
+    @Test
     void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
         String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
 

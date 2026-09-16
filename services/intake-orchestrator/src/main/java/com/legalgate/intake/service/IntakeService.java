@@ -565,6 +565,9 @@ public class IntakeService {
                 %s
                 Resumen:
                 %s
+
+                Este correo es automatico: no podemos leer lo que respondas aqui. Si necesitas
+                algo, escribenos al correo de siempre y con gusto te ayudamos.
                 """.formatted(
                 firmName,
                 event.scheduledStart(),
