@@ -87,7 +87,14 @@ class DiagnosticsTests {
         ConsultationResponse accepted = reload(pending);
         assertThat(accepted.status()).isEqualTo("RECEIVED");
         assertThat(accepted.eventId()).isNotNull();
-        assertThat(accepted.summary()).contains("Despido el 3 de marzo.");
+        // The stored summary is the receipt a potential client reads back: the classifier's
+        // sentence, never the raw body they wrote and never the Diagnostics verdict, which is
+        // internal and carries the LegalGate name.
+        assertThat(accepted.summary())
+                .isEqualTo("Resumen")
+                .doesNotContain("Me despidieron.")
+                .doesNotContain("Despido el 3 de marzo.")
+                .doesNotContain("LegalGate");
         assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.ACCEPTED);
         assertThat(queuedTypes()).contains("CONSULTATION_SCHEDULED");
     }

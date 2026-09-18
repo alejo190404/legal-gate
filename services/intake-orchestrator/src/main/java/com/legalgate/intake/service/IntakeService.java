@@ -259,9 +259,15 @@ public class IntakeService {
         SchedulingResult scheduled = scheduleEvent(tenantId, settings, route, urgency, acceptedAt, "LEGALGATE");
         EventResponse scheduledEvent = scheduled.event();
         String preferredWindow = firstConfiguredWindow(route.consultationWindows());
+        // The stored summary is what the potential client reads back in the scheduling receipt, so
+        // it is the classifier's sentence about the matter — never the raw email body, which on a
+        // Diagnostics reply carries the quoted history, and never the Diagnostics verdict, which is
+        // internal and names LegalGate (ADR 0004). The console reads that verdict from the session's
+        // own diagnosticsSummary field instead. The body stays as the last fallback: when the
+        // classifier is unavailable the receipt showing too much beats it showing nothing.
         ConsultationResponse accepted = new ConsultationResponse(
                 pending.id(), tenantId, pending.clientName(), pending.clientEmail(),
-                summaryWithDiagnostics(pending.summary(), diagnosticsSummary),
+                firstNonBlank(classified ? classifierResponse.summary() : null, diagnosticsSummary, pending.summary()),
                 preferredWindow, "RECEIVED", urgency, route.name(), scheduledEvent.lawyerEmail(),
                 classification,
                 new NotificationStatus(true, true, destinationEmailFor(settings, route), preferredWindow),
@@ -297,6 +303,7 @@ public class IntakeService {
         );
     }
 
+    /** Routing input only: the label names LegalGate, so this must never reach a stored summary. */
     private String summaryWithDiagnostics(String summary, String diagnosticsSummary) {
         if (diagnosticsSummary == null || diagnosticsSummary.isBlank()) {
             return summary;
