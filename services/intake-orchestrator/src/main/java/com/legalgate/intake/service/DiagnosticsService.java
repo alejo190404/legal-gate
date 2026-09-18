@@ -447,9 +447,9 @@ public class DiagnosticsService {
     }
 
     /**
-     * The address a Diagnostics message is sent from: a plus-addressed variant of the tenant's
-     * intake address carrying the Reply Token. The token travels in From rather than only
-     * Reply-To because a significant share of mail clients reply to From.
+     * The address a Diagnostics reply comes back to: a plus-addressed variant of the tenant's
+     * intake address carrying the Reply Token. It is stored on the outbox row as the sender and
+     * the envelope puts it in Reply-To, because a per-message From earns no sender reputation.
      */
     String replyAddressFor(DiagnosticsSession session) {
         String intakeEmail = intakeService.settingsForTenant(session.tenantId()).intakeEmail();

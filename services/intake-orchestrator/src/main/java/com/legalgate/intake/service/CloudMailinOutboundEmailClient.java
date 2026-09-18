@@ -91,7 +91,7 @@ class CloudMailinOutboundEmailClient implements OutboundEmailClient {
             // silently replaces it, which is why it lives here and not in the envelope.
             headers.put("Message-ID", envelope.angleBracketed(notification.id() + "@" + envelope.senderDomain(notification)));
         }
-        headers.putAll(envelope.threadHeaders(notification, threadAnchor));
+        headers.putAll(envelope.clientHeaders(notification, threadAnchor));
         return headers;
     }
 

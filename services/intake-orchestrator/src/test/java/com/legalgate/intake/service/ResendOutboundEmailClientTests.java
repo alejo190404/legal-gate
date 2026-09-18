@@ -1,5 +1,6 @@
 package com.legalgate.intake.service;
 
+import static com.legalgate.intake.service.OutboundMailEnvelopeTests.TAGGED_ADDRESS;
 import static com.legalgate.intake.service.OutboundMailEnvelopeTests.envelope;
 import static com.legalgate.intake.service.OutboundMailEnvelopeTests.notification;
 import static com.legalgate.intake.service.OutboundMailEnvelopeTests.properties;
@@ -35,6 +36,15 @@ class ResendOutboundEmailClientTests {
                 .doesNotContainKey("Message-ID")
                 .containsEntry("In-Reply-To", "<CAF=original@mail.gmail.com>")
                 .containsEntry("References", "<CAF=original@mail.gmail.com>");
+    }
+
+    @Test
+    void theReplyTokenRidesInReplyToSoEveryMessageSendsFromTheSameAddress() {
+        Map<String, Object> payload = client(properties(false, "re_key"))
+                .payload(notification("CLIENT", TAGGED_ADDRESS), null);
+
+        assertThat(payload).containsEntry("from", "\"Vargas & Asociados\" <firma-demo@intake.legal-gate.co>");
+        assertThat(headers(payload)).containsEntry("Reply-To", TAGGED_ADDRESS);
     }
 
     @Test

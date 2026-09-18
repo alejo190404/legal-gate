@@ -1,6 +1,7 @@
 package com.legalgate.intake.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -14,12 +15,36 @@ import org.junit.jupiter.api.Test;
 /** The ADR 0004 guarantees that hold whichever provider carries the message. */
 class OutboundMailEnvelopeTests {
 
+    /** The plus-addressed sender a Diagnostics message is queued with; the Reply Token is its tag. */
+    static final String TAGGED_ADDRESS = "firma-demo+d0f1e2d3c4b5a69788796a5b4c3d2e1f0@intake.legal-gate.co";
+
     @Test
     void clientFacingMailSendsUnderTheFirmName() {
-        String from = envelope("Vargas & Asociados")
-                .fromHeader(notification("CLIENT", "diag+tok3n@intake.legal-gate.co"));
+        String from = envelope("Vargas & Asociados").fromHeader(notification("CLIENT", TAGGED_ADDRESS));
 
-        assertThat(from).isEqualTo("\"Vargas & Asociados\" <diag+tok3n@intake.legal-gate.co>");
+        assertThat(from).isEqualTo("\"Vargas & Asociados\" <firma-demo@intake.legal-gate.co>");
+    }
+
+    @Test
+    void theReplyTokenTravelsInReplyToSoFromStaysTheFirmsStableAddress() {
+        OutboundMailEnvelope envelope = envelope("Vargas & Asociados");
+        NotificationOutboxItem notification = notification("CLIENT", TAGGED_ADDRESS);
+
+        assertThat(envelope.fromEmail(notification)).isEqualTo("firma-demo@intake.legal-gate.co");
+        assertThat(envelope.clientHeaders(notification, "<CAF=original@mail.gmail.com>"))
+                .containsEntry("Reply-To", TAGGED_ADDRESS);
+    }
+
+    @Test
+    void aConsultationWithNoAnchorStillSaysWhereTheReplyGoes() {
+        assertThat(envelope("Vargas & Asociados").clientHeaders(notification("CLIENT", TAGGED_ADDRESS), null))
+                .containsExactly(entry("Reply-To", TAGGED_ADDRESS));
+    }
+
+    @Test
+    void staffMailGetsNoReplyTo() {
+        assertThat(envelope("Vargas & Asociados").clientHeaders(notification("LAWYER", TAGGED_ADDRESS), null))
+                .isEmpty();
     }
 
     @Test
@@ -40,7 +65,7 @@ class OutboundMailEnvelopeTests {
     @Test
     void mailAboutAConsultationThreadsUnderThePotentialClientsOriginalMessage() {
         assertThat(envelope("Vargas & Asociados")
-                .threadHeaders(notification("CLIENT", null), "<CAF=original@mail.gmail.com>"))
+                .clientHeaders(notification("CLIENT", null), "<CAF=original@mail.gmail.com>"))
                 .containsEntry("In-Reply-To", "<CAF=original@mail.gmail.com>")
                 .containsEntry("References", "<CAF=original@mail.gmail.com>");
     }
@@ -48,7 +73,7 @@ class OutboundMailEnvelopeTests {
     @Test
     void wrapsAStoredAnchorThatArrivedWithoutAngleBrackets() {
         assertThat(envelope("Vargas & Asociados")
-                .threadHeaders(notification("CLIENT", null), "CAF=original@mail.gmail.com"))
+                .clientHeaders(notification("CLIENT", null), "CAF=original@mail.gmail.com"))
                 .containsEntry("In-Reply-To", "<CAF=original@mail.gmail.com>")
                 .containsEntry("References", "<CAF=original@mail.gmail.com>");
     }
@@ -56,19 +81,19 @@ class OutboundMailEnvelopeTests {
     @Test
     void staffMailStaysOutOfTheConsultationThread() {
         assertThat(envelope("Vargas & Asociados")
-                .threadHeaders(notification("LAWYER", null), "<CAF=original@mail.gmail.com>"))
+                .clientHeaders(notification("LAWYER", null), "<CAF=original@mail.gmail.com>"))
                 .isEmpty();
     }
 
     @Test
     void aConsultationWithNoAnchorSendsWithNoThreadingHeaders() {
-        assertThat(envelope("Vargas & Asociados").threadHeaders(notification("CLIENT", null), null)).isEmpty();
+        assertThat(envelope("Vargas & Asociados").clientHeaders(notification("CLIENT", null), null)).isEmpty();
     }
 
     @Test
     void stripsAnAnchorThatWouldForgeAnExtraHeader() {
         assertThat(envelope("Vargas & Asociados")
-                .threadHeaders(notification("CLIENT", null), "<original@mail.gmail.com>\r\nBcc: leak@example.com"))
+                .clientHeaders(notification("CLIENT", null), "<original@mail.gmail.com>\r\nBcc: leak@example.com"))
                 .containsEntry("In-Reply-To", "<original@mail.gmail.comBcc:leak@example.com>");
     }
 
@@ -76,7 +101,7 @@ class OutboundMailEnvelopeTests {
     void theSendingDomainComesFromTheAddressTheMessageIsSentFrom() {
         OutboundMailEnvelope envelope = envelope("Vargas & Asociados");
 
-        assertThat(envelope.senderDomain(notification("CLIENT", "diag+tok3n@intake.legal-gate.co")))
+        assertThat(envelope.senderDomain(notification("CLIENT", TAGGED_ADDRESS)))
                 .isEqualTo("intake.legal-gate.co");
         assertThat(envelope.senderDomain(notification("LAWYER", null))).isEqualTo("legal-gate.co");
     }

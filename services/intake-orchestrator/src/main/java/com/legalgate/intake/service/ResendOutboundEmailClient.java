@@ -86,7 +86,7 @@ class ResendOutboundEmailClient implements OutboundEmailClient {
         }
         // No Message-ID: Resend takes the header at HTTP 200 and silently substitutes an SES id,
         // so sending one would leave the code asserting an identity the wire discarded. ADR 0004.
-        Map<String, String> headers = envelope.threadHeaders(notification, threadAnchor);
+        Map<String, String> headers = envelope.clientHeaders(notification, threadAnchor);
         if (!headers.isEmpty()) {
             payload.put("headers", headers);
         }

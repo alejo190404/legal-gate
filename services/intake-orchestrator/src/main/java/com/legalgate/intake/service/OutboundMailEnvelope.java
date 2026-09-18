@@ -19,8 +19,6 @@ class OutboundMailEnvelope {
     }
 
     String fromHeader(NotificationOutboxItem notification) {
-        // Diagnostics messages carry a token-bearing From address so the client's reply lands
-        // back on the right consultation; everything else sends from the shared agenda address.
         String fromEmail = fromEmail(notification);
         // A potential client wrote to a firm and hears back from that firm. Lawyers and firm staff
         // are the LegalGate customer, so their mail keeps LegalGate branding unchanged.
@@ -30,10 +28,15 @@ class OutboundMailEnvelope {
         return quoted(firmNameResolver.firmNameFor(notification.tenantId())) + " <" + fromEmail + ">";
     }
 
+    /**
+     * A From address earns its sender reputation by staying the same, and a unique high-entropy
+     * local part per message is the shape of snowshoe spam, so the Reply Token tag is stripped
+     * here and travels in Reply-To instead.
+     */
     String fromEmail(NotificationOutboxItem notification) {
         return isBlank(notification.fromEmail())
                 ? intakeProperties.notificationsFromEmail()
-                : notification.fromEmail().trim();
+                : untagged(notification.fromEmail().trim());
     }
 
     String senderDomain(NotificationOutboxItem notification) {
@@ -51,20 +54,36 @@ class OutboundMailEnvelope {
         return "<" + bare + ">";
     }
 
-    /** The Consultation Thread is anchored flat at the potential client's first email; see ADR 0004. */
-    Map<String, String> threadHeaders(NotificationOutboxItem notification, String threadAnchor) {
-        // The thread is the conversation with the potential client; staff mail is not part of it.
-        if (!"CLIENT".equals(notification.recipientRole()) || isBlank(threadAnchor)) {
-            return Map.of();
-        }
-        String anchor = angleBracketed(threadAnchor);
-        if ("<>".equals(anchor)) {
+    /**
+     * The headers that belong to the conversation with the potential client: where a reply goes,
+     * and the Consultation Thread anchored flat at the client's first email. See ADR 0004.
+     */
+    Map<String, String> clientHeaders(NotificationOutboxItem notification, String threadAnchor) {
+        // Staff mail is not part of the client's conversation, and carries no Reply Token.
+        if (!"CLIENT".equals(notification.recipientRole())) {
             return Map.of();
         }
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("In-Reply-To", anchor);
-        headers.put("References", anchor);
+        // Reply routing is not optional the way threading is, so it does not wait on an anchor.
+        String tagged = isBlank(notification.fromEmail()) ? null : notification.fromEmail().trim();
+        if (tagged != null && !tagged.equals(fromEmail(notification))) {
+            headers.put("Reply-To", tagged);
+        }
+        if (!isBlank(threadAnchor)) {
+            String anchor = angleBracketed(threadAnchor);
+            if (!"<>".equals(anchor)) {
+                headers.put("In-Reply-To", anchor);
+                headers.put("References", anchor);
+            }
+        }
         return headers;
+    }
+
+    /** Strips the Reply Token tag. It is appended last, so a tenant address with its own `+` keeps it. */
+    private static String untagged(String address) {
+        int at = address.lastIndexOf('@');
+        int plus = address.lastIndexOf('+');
+        return plus < 0 || plus > at ? address : address.substring(0, plus) + address.substring(at);
     }
 
     /** Firm names are tenant-supplied, so they are quoted and stripped of anything that could forge a header. */
