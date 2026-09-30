@@ -4,16 +4,16 @@ LegalGate automates legal consultation intake, classification, scheduling, and n
 
 ## Services
 
-- `services/frontend`: Angular SPA with WorkOS AuthKit Hosted UI.
-- `services/gateway`: WorkOS JWT resource server and public API boundary.
+- `services/frontend`: Angular SPA with the Clerk Account Portal.
+- `services/gateway`: session-token resource server and public API boundary.
 - `services/intake-orchestrator`: tenant-isolated business logic, onboarding, and PostgreSQL RLS.
 - `services/mail-ingress`: verified inbound-mail adapter.
 - `services/consultation-classifier`: FastAPI/Gemini classification sidecar.
 
 ## Authentication and APIs
 
-Each LegalGate tenant maps to one WorkOS organization. Browser business requests require an access
-token with `org_id` and role `firm_admin`. Public business contracts are:
+Each LegalGate tenant maps to one Clerk organization. Browser business requests require a session
+token with `org_id` and `org_role: org:admin`. Public business contracts are:
 
 - `POST /api/onboarding/organization`
 - `GET /api/session`
@@ -26,8 +26,8 @@ Tenant slugs and local passwords are not accepted from browsers.
 
 ## Development
 
-Copy `.env.example` to `.env`, supply a WorkOS test Client ID/API key and a random shared service
-token, then run:
+Copy `.env.example` to `.env`, supply a Clerk test publishable/secret key and a random shared
+service token, then run:
 
 ```bash
 docker compose up --build
@@ -43,7 +43,7 @@ cd ../consultation-classifier && pytest
 
 ## Production
 
-Follow [WorkOS AuthKit production setup](docs/deployment/workos-authkit.md) before deploying. The
-V11 Flyway migration is intentionally destructive and requires a verified Neon backup. Follow
+Follow [Clerk production setup](docs/deployment/clerk-auth.md) before deploying. The V17 Flyway
+migration is intentionally destructive and requires a verified Neon backup. Follow
 [Mercado Pago tenant billing setup](docs/deployment/mercadopago-billing.md) before enabling billing
 enforcement.
