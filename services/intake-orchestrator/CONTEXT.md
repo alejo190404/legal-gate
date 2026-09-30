@@ -72,3 +72,4 @@ A reserved block of a lawyer's time for a Consultation, held tentatively until c
 ## Tenant
 
 One subscribing firm. Every Consultation, Routing Rule, lawyer and Event belongs to exactly one Tenant.
+_Avoid_: Firm, Organization, account, workspace
