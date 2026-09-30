@@ -27,7 +27,7 @@ import com.legalgate.intake.billing.BillingModels.Status;
 import com.legalgate.intake.billing.BillingModels.Subscription;
 import com.legalgate.intake.billing.BillingModels.WebhookEvent;
 import com.legalgate.intake.config.IntakeProperties;
-import com.legalgate.intake.service.WorkosClient;
+import com.legalgate.intake.service.ClerkClient;
 
 @Service
 public class BillingService {
@@ -38,7 +38,7 @@ public class BillingService {
     private final BillingRepository repository;
     private final BillingAccessService accessService;
     private final SubscriptionProviderClient provider;
-    private final WorkosClient workos;
+    private final ClerkClient clerk;
     private final ObjectMapper objectMapper;
 
     public BillingService(
@@ -46,7 +46,7 @@ public class BillingService {
             BillingRepository repository,
             BillingAccessService accessService,
             SubscriptionProviderClient provider,
-            WorkosClient workos,
+            ClerkClient clerk,
             ObjectMapper objectMapper,
             IntakeProperties intakeProperties
     ) {
@@ -54,7 +54,7 @@ public class BillingService {
         this.repository = repository;
         this.accessService = accessService;
         this.provider = provider;
-        this.workos = workos;
+        this.clerk = clerk;
         this.objectMapper = objectMapper;
         if (properties.enabled() && !"jdbc".equalsIgnoreCase(intakeProperties.persistence())) {
             throw new IllegalStateException(
@@ -110,7 +110,7 @@ public class BillingService {
         }
 
         Quote quote = quote(planCode, couponCode);
-        String payerEmail = workos.userEmail(userId)
+        String payerEmail = clerk.userEmail(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, "payer_email_unavailable"));
         Coupon coupon = quote.couponCode() == null ? null
                 : repository.validCoupon(quote.couponCode(), Instant.now())

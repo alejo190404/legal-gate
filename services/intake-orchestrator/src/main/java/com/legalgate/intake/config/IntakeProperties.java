@@ -22,8 +22,8 @@ public record IntakeProperties(
         String notificationsFromName,
         boolean outboundTestMode,
         String internalServiceToken,
-        String workosApiKey,
-        String workosApiBaseUrl,
+        String clerkSecretKey,
+        String clerkApiBaseUrl,
         String emailProvider,
         String resendApiKey
 ) {
@@ -94,11 +94,11 @@ public record IntakeProperties(
         if (internalServiceToken == null || internalServiceToken.isBlank()) {
             throw new IllegalStateException("LEGALGATE_INTERNAL_SERVICE_TOKEN must be configured.");
         }
-        if (workosApiKey == null || workosApiKey.isBlank()) {
-            throw new IllegalStateException("WORKOS_API_KEY must be configured.");
+        if (clerkSecretKey == null || clerkSecretKey.isBlank()) {
+            throw new IllegalStateException("CLERK_SECRET_KEY must be configured.");
         }
-        if (workosApiBaseUrl == null || workosApiBaseUrl.isBlank()) {
-            workosApiBaseUrl = "https://api.workos.com";
+        if (clerkApiBaseUrl == null || clerkApiBaseUrl.isBlank()) {
+            clerkApiBaseUrl = "https://api.clerk.com/v1";
         }
         emailProvider = emailProvider == null || emailProvider.isBlank()
                 ? "cloudmailin"

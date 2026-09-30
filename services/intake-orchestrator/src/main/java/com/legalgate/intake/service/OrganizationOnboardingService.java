@@ -18,16 +18,16 @@ public class OrganizationOnboardingService {
     private static final Pattern MARKS = Pattern.compile("\\p{M}+");
     private static final Pattern NON_SLUG = Pattern.compile("[^a-z0-9]+");
     private final IntakeRepository repository;
-    private final WorkosClient workosClient;
+    private final ClerkClient clerkClient;
     private final IntakeProperties properties;
 
     public OrganizationOnboardingService(
             IntakeRepository repository,
-            WorkosClient workosClient,
+            ClerkClient clerkClient,
             IntakeProperties properties
     ) {
         this.repository = repository;
-        this.workosClient = workosClient;
+        this.clerkClient = clerkClient;
         this.properties = properties;
     }
 
@@ -42,29 +42,28 @@ public class OrganizationOnboardingService {
         }
 
         TenantProvisioning local = repository.tenantForProvisioningOwner(userId).orElse(null);
-        if (local == null && workosClient.hasOrganizationMembership(userId)) {
+        if (local != null && "ACTIVE".equals(local.status())) {
+            return OrganizationOnboardingResponse.from(local);
+        }
+
+        // One round trip serves both rules: a user with no local tenant must not already belong to
+        // an organization, and a retry after a half-finished attempt must adopt the organization
+        // that attempt already created instead of making a second one for the same firm.
+        List<String> memberships = clerkClient.organizationMembershipIds(userId);
+        if (memberships.size() > 1 || (local == null && !memberships.isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "user_already_has_organization");
         }
+
         if (local == null) {
             String slug = uniqueSlug(firmName);
             local = repository.startTenantProvisioning(
                     userId, firmName.trim(), slug, properties.canonicalIntakeEmail(slug));
         }
-        if ("ACTIVE".equals(local.status())) {
-            return OrganizationOnboardingResponse.from(local);
-        }
 
         try {
-            String organizationId = workosClient.organizationByExternalId(local.id()).orElse(null);
-            if (organizationId == null) {
-                organizationId = workosClient.createOrganization(local.displayName(), local.id());
-            }
-            List<String> membershipOrganizations = workosClient.organizationMembershipIds(userId);
-            if (membershipOrganizations.isEmpty()) {
-                workosClient.createFirmAdminMembership(userId, organizationId);
-            } else if (!membershipOrganizations.contains(organizationId)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "user_already_has_organization");
-            }
+            String organizationId = memberships.isEmpty()
+                    ? clerkClient.createOrganization(local.displayName(), userId)
+                    : memberships.get(0);
             TenantProvisioning active = repository.activateTenantProvisioning(
                     local.id(), local.slug(), organizationId);
             return OrganizationOnboardingResponse.from(active);
@@ -73,7 +72,7 @@ public class OrganizationOnboardingService {
             throw exception;
         } catch (RuntimeException exception) {
             repository.failTenantProvisioning(local.id(), local.slug(), exception.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "workos_provisioning_failed", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "auth_provisioning_failed", exception);
         }
     }
 

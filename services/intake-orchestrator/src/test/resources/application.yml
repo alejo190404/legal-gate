@@ -3,4 +3,4 @@ legalgate:
     persistence: memory
     email-domain: intake.legal-gate.co
     internal-service-token: test-service-token
-    workos-api-key: sk_test_placeholder
+    clerk-secret-key: sk_test_placeholder

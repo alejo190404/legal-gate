@@ -15,7 +15,7 @@ import com.legalgate.intake.billing.BillingModels.Coupon;
 import com.legalgate.intake.billing.BillingModels.Plan;
 import com.legalgate.intake.billing.BillingModels.Subscription;
 import com.legalgate.intake.config.IntakeProperties;
-import com.legalgate.intake.service.WorkosClient;
+import com.legalgate.intake.service.ClerkClient;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,7 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
 class BillingServiceTests {
     private final BillingRepository repository = mock(BillingRepository.class);
     private final SubscriptionProviderClient provider = mock(SubscriptionProviderClient.class);
-    private final WorkosClient workos = mock(WorkosClient.class);
+    private final ClerkClient clerk = mock(ClerkClient.class);
     private BillingService service;
     private Plan monthly;
 
@@ -45,7 +45,7 @@ class BillingServiceTests {
         when(intake.persistence()).thenReturn("jdbc");
         service = new BillingService(
                 properties, repository, mock(BillingAccessService.class),
-                provider, workos,
+                provider, clerk,
                 new ObjectMapper(), intake);
         monthly = new Plan(
                 UUID.randomUUID(), "monthly", 1, "Monthly", null,
@@ -105,7 +105,7 @@ class BillingServiceTests {
                 Duration.ofHours(24), Duration.ofDays(7));
         assertThatThrownBy(() -> new BillingService(
                 properties, repository, mock(BillingAccessService.class),
-                mock(SubscriptionProviderClient.class), mock(WorkosClient.class),
+                mock(SubscriptionProviderClient.class), mock(ClerkClient.class),
                 new ObjectMapper(), intake))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("LEGALGATE_INTAKE_PERSISTENCE=jdbc");
@@ -119,7 +119,7 @@ class BillingServiceTests {
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("FLASH"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(coupon), Optional.empty());
-        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        when(clerk.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
 
         assertThatThrownBy(() -> service.checkout(
                 "tenant", "user-1", "monthly", "FLASH", "attempt-1"))
@@ -135,7 +135,7 @@ class BillingServiceTests {
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("FLASH"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(coupon));
-        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        when(clerk.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
         when(repository.createPending(
                 org.mockito.ArgumentMatchers.eq("tenant"),
                 org.mockito.ArgumentMatchers.eq(monthly),
@@ -160,7 +160,7 @@ class BillingServiceTests {
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("FREE100"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(free));
-        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        when(clerk.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
         Subscription comped = compedSubscription(free, null);
         when(repository.createComped(
                 ArgumentMatchers.eq("tenant"), ArgumentMatchers.eq(monthly), ArgumentMatchers.eq(free),
@@ -184,7 +184,7 @@ class BillingServiceTests {
         when(repository.validCoupon(
                 org.mockito.ArgumentMatchers.eq("FREE3"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(free));
-        when(workos.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
+        when(clerk.userEmail("user-1")).thenReturn(Optional.of("payer@example.com"));
         Instant paidThrough = Instant.now().plus(Duration.ofDays(90));
         Subscription comped = compedSubscription(free, paidThrough);
         when(repository.createComped(

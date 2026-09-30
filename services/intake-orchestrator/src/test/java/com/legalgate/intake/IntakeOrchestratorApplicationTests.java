@@ -9,8 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.repository.IntakeRepository;
-import com.legalgate.intake.service.WorkosClient;
-import java.util.Optional;
+import com.legalgate.intake.service.ClerkClient;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,14 +28,13 @@ class IntakeOrchestratorApplicationTests {
     private static final String SERVICE_TOKEN = "test-service-token";
     @Autowired MockMvc mockMvc;
     @Autowired IntakeRepository repository;
-    @MockBean WorkosClient workosClient;
+    @MockBean ClerkClient clerkClient;
 
     @BeforeEach
-    void workosDefaults() {
-        when(workosClient.hasOrganizationMembership(anyString())).thenReturn(false);
-        when(workosClient.organizationMembershipIds(anyString())).thenReturn(List.of());
-        when(workosClient.organizationByExternalId(anyString())).thenReturn(Optional.empty());
-        when(workosClient.createOrganization(anyString(), anyString())).thenReturn("org_created");
+    void clerkDefaults() {
+        when(clerkClient.hasOrganizationMembership(anyString())).thenReturn(false);
+        when(clerkClient.organizationMembershipIds(anyString())).thenReturn(List.of());
+        when(clerkClient.createOrganization(anyString(), anyString())).thenReturn("org_created");
     }
 
     @Test
@@ -81,7 +79,7 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
-    void onboardingIsIdempotentAndActivatesTheWorkosMapping() throws Exception {
+    void onboardingIsIdempotentAndActivatesTheOrganizationMapping() throws Exception {
         String body = "{\"firmName\":\"Firma Nueva\"}";
         mockMvc.perform(post("/api/onboarding/organization")
                         .header("X-LegalGate-Service-Token", SERVICE_TOKEN)

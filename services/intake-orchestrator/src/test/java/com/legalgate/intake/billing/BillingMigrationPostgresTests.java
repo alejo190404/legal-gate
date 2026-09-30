@@ -288,4 +288,21 @@ class BillingMigrationPostgresTests {
                 new JdbcTemplate(dataSource),
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
     }
+
+    @Test
+    void v17RenamesTheOrganizationMappingToAProviderNeutralColumn() throws Exception {
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("update tenants set auth_organization_id = 'org_clerk_a' where slug = 'tenant-a'");
+            try (ResultSet rows = sql.executeQuery(
+                    "select slug, auth_organization_id from app_find_tenant_by_auth_organization('org_clerk_a')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("slug")).isEqualTo("tenant-a");
+                assertThat(rows.getString("auth_organization_id")).isEqualTo("org_clerk_a");
+            }
+            // The vendor-named column is gone, not merely shadowed.
+            assertThatThrownBy(() -> sql.execute("select workos_organization_id from tenants"))
+                    .isInstanceOf(SQLException.class);
+        }
+    }
+
 }

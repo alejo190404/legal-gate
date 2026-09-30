@@ -117,7 +117,7 @@ class OutboundMailEnvelopeTests {
         return new IntakeProperties(
                 "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
                 false, null, null, null, null, outboundTestMode, "test-service-token", "sk_test",
-                "https://api.workos.com", null, resendApiKey);
+                "https://api.clerk.com/v1", null, resendApiKey);
     }
 
     static NotificationOutboxItem notification(String recipientRole, String fromEmail) {

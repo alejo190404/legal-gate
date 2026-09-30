@@ -45,7 +45,7 @@ class IntakePropertiesTests {
     void rejectsAnUnknownEmailProvider() {
         assertThatThrownBy(() -> new IntakeProperties(
                 "memory", false, "intake.legal-gate.co", null, null, null, null, null, null,
-                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.workos.com",
+                false, null, null, null, null, false, "test-service-token", "sk_test", "https://api.clerk.com/v1",
                 "mailgun", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cloudmailin or resend");
@@ -60,7 +60,7 @@ class IntakePropertiesTests {
     private IntakeProperties properties(String emailDomain, String internalServiceToken) {
         return new IntakeProperties(
                 "memory", false, emailDomain, null, null, null, null, null, null,
-                false, null, null, null, null, false, internalServiceToken, "sk_test", "https://api.workos.com",
+                false, null, null, null, null, false, internalServiceToken, "sk_test", "https://api.clerk.com/v1",
                 null, null);
     }
 }

@@ -54,7 +54,7 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     @Override
     public Optional<TenantProvisioning> tenantForOrganization(String organizationId) {
-        return queryTenant("select * from app_find_tenant_by_workos_organization(?)", organizationId);
+        return queryTenant("select * from app_find_tenant_by_auth_organization(?)", organizationId);
     }
 
     @Override
@@ -109,7 +109,7 @@ class JdbcIntakeRepository implements IntakeRepository {
             setTenantContext(slug);
             jdbcTemplate.update("""
                     update tenants
-                    set workos_organization_id = ?, provisioning_status = 'ACTIVE', provisioning_error = null
+                    set auth_organization_id = ?, provisioning_status = 'ACTIVE', provisioning_error = null
                     where id = ?
                     """, organizationId, UUID.fromString(tenantId));
             return tenantForOrganization(organizationId).orElseThrow();
@@ -955,7 +955,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                         rs.getObject("id", UUID.class).toString(),
                         rs.getString("slug"),
                         rs.getString("display_name"),
-                        rs.getString("workos_organization_id"),
+                        rs.getString("auth_organization_id"),
                         rs.getString("provisioning_status"),
                         rs.getString("provisioning_owner_id")
                 ), value).stream().findFirst());
