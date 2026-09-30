@@ -20,7 +20,7 @@ public class GatewayProperties {
 
     private final Backend backend = new Backend();
     private final Cors cors = new Cors();
-    private final Workos workos = new Workos();
+    private final Auth auth = new Auth();
 
     public String getForwardedToken() {
         return forwardedToken;
@@ -54,8 +54,8 @@ public class GatewayProperties {
         return cors;
     }
 
-    public Workos getWorkos() {
-        return workos;
+    public Auth getAuth() {
+        return auth;
     }
 
     public boolean hasForwardedToken() {
@@ -112,17 +112,17 @@ public class GatewayProperties {
         }
     }
 
-    public static class Workos {
-        private String clientId;
+    public static class Auth {
+        private String authorizedParty;
         private String issuer;
         private String jwksUrl;
 
-        public String getClientId() {
-            return clientId;
+        public String getAuthorizedParty() {
+            return authorizedParty;
         }
 
-        public void setClientId(String clientId) {
-            this.clientId = clientId;
+        public void setAuthorizedParty(String authorizedParty) {
+            this.authorizedParty = authorizedParty;
         }
 
         public String getIssuer() {

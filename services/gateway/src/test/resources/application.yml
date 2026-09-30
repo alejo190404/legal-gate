@@ -1,7 +1,7 @@
 legalgate:
   gateway:
     forwarded-token: test-service-token
-    workos:
-      client-id: client_test
-      issuer: https://api.workos.com
-      jwks-url: https://api.workos.com/sso/jwks/client_test
+    auth:
+      authorized-party: https://console.test.legal-gate.co
+      issuer: https://clerk.test.legal-gate.co
+      jwks-url: https://clerk.test.legal-gate.co/.well-known/jwks.json

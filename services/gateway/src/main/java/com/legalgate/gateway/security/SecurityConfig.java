@@ -41,6 +41,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfig {
 
+    /**
+     * Clerk's built-in organization administrator role. Deliberately not a custom role slug:
+     * custom organization roles require the B2B Authentication add-on in production.
+     */
+    private static final String ORG_ADMIN_ROLE = "org:admin";
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -77,28 +83,28 @@ public class SecurityConfig {
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         .authenticationEntryPoint((request, response, exception) ->
                                 writeError(objectMapper, response, 401, "unauthorized",
-                                        "A valid WorkOS access token is required.")))
+                                        "A valid session token is required.")))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->
                                 writeError(objectMapper, response, 401, "unauthorized",
-                                        "A valid WorkOS access token is required."))
+                                        "A valid session token is required."))
                         .accessDeniedHandler((request, response, exception) ->
                                 writeError(objectMapper, response, 403, "forbidden",
-                                        "An organization-scoped firm_admin session is required.")))
+                                        "An organization-scoped firm administrator session is required.")))
                 .build();
     }
 
     @Bean
     JwtDecoder jwtDecoder(GatewayProperties properties) {
-        require(properties.getWorkos().getClientId(), "WORKOS_CLIENT_ID");
-        require(properties.getWorkos().getIssuer(), "WORKOS_ISSUER");
-        require(properties.getWorkos().getJwksUrl(), "WORKOS_JWKS_URL");
+        require(properties.getAuth().getAuthorizedParty(), "LEGALGATE_AUTH_AUTHORIZED_PARTY");
+        require(properties.getAuth().getIssuer(), "LEGALGATE_AUTH_ISSUER");
+        require(properties.getAuth().getJwksUrl(), "LEGALGATE_AUTH_JWKS_URL");
         require(properties.getForwardedToken(), "LEGALGATE_INTERNAL_SERVICE_TOKEN");
 
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.getWorkos().getJwksUrl()).build();
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.getAuth().getJwksUrl()).build();
         JwtTimestampValidator timestamps = new JwtTimestampValidator(Duration.ofSeconds(60));
         OAuth2TokenValidator<Jwt> requiredClaims = jwt -> {
-            boolean valid = properties.getWorkos().getClientId().equals(jwt.getClaimAsString("client_id"))
+            boolean valid = properties.getAuth().getAuthorizedParty().equals(jwt.getClaimAsString("azp"))
                     && hasText(jwt.getSubject())
                     && hasText(jwt.getClaimAsString("sid"))
                     && jwt.getIssuedAt() != null
@@ -106,10 +112,10 @@ public class SecurityConfig {
             return valid
                     ? OAuth2TokenValidatorResult.success()
                     : OAuth2TokenValidatorResult.failure(new OAuth2Error(
-                            "invalid_token", "Required WorkOS token claims are missing or invalid.", null));
+                            "invalid_token", "Required session token claims are missing or invalid.", null));
         };
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(properties.getWorkos().getIssuer()),
+                JwtValidators.createDefaultWithIssuer(properties.getAuth().getIssuer()),
                 timestamps,
                 requiredClaims));
         return decoder;
@@ -118,16 +124,8 @@ public class SecurityConfig {
     private Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
         return jwt -> {
             Collection<GrantedAuthority> authorities = new ArrayList<>();
-            List<String> roles = jwt.getClaimAsStringList("roles");
-            if (roles != null) {
-                roles.stream().filter(SecurityConfig::hasText)
-                        .map(SecurityConfig::roleAuthority)
-                        .map(SimpleGrantedAuthority::new)
-                        .forEach(authorities::add);
-            }
-            String role = jwt.getClaimAsString("role");
-            if (hasText(role)) {
-                authorities.add(new SimpleGrantedAuthority(roleAuthority(role)));
+            if (ORG_ADMIN_ROLE.equals(jwt.getClaimAsString("org_role"))) {
+                authorities.add(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"));
             }
             return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
         };
@@ -147,10 +145,6 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
-    }
-
-    private static String roleAuthority(String role) {
-        return "ROLE_" + role.trim().toUpperCase().replace('-', '_');
     }
 
     private static boolean hasText(String value) {

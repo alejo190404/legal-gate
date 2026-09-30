@@ -29,10 +29,10 @@ legalgate:
       allowed-origin-patterns: ${LEGALGATE_CORS_ALLOWED_ORIGIN_PATTERNS:https://*.vercel.app,https://www.legal-gate.co}
     backend:
       base-url: ${LEGALGATE_BACKEND_URL:}
-    workos:
-      client-id: ${WORKOS_CLIENT_ID:}
-      issuer: ${WORKOS_ISSUER:https://api.workos.com}
-      jwks-url: ${WORKOS_JWKS_URL:}
+    auth:
+      authorized-party: ${LEGALGATE_AUTH_AUTHORIZED_PARTY:}
+      issuer: ${LEGALGATE_AUTH_ISSUER:}
+      jwks-url: ${LEGALGATE_AUTH_JWKS_URL:}
 
 logging:
   level:

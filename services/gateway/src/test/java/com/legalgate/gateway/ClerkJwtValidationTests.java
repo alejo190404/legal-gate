@@ -15,7 +15,6 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
-import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,14 +26,16 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = "legalgate.gateway.backend.base-url=")
 @AutoConfigureMockMvc
-class WorkosJwtValidationTests {
+class ClerkJwtValidationTests {
+    private static final String ISSUER = "https://clerk.test.legal-gate.co";
+    private static final String AUTHORIZED_PARTY = "https://console.test.legal-gate.co";
     private static final RSAKey signingKey;
     private static final HttpServer jwksServer;
     @Autowired MockMvc mockMvc;
 
     static {
         try {
-            signingKey = new RSAKeyGenerator(2048).keyID("workos-test-key").generate();
+            signingKey = new RSAKeyGenerator(2048).keyID("clerk-test-key").generate();
             jwksServer = HttpServer.create(new InetSocketAddress(0), 0);
             jwksServer.createContext("/jwks", exchange -> {
                 byte[] body = ("{\"keys\":[" + signingKey.toPublicJWK().toJSONString() + "]}")
@@ -57,24 +58,35 @@ class WorkosJwtValidationTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("legalgate.gateway.workos.jwks-url",
+        registry.add("legalgate.gateway.auth.jwks-url",
                 () -> "http://localhost:" + jwksServer.getAddress().getPort() + "/jwks");
     }
 
     @Test
-    void acceptsAValidWorkosToken() throws Exception {
+    void acceptsAValidSessionToken() throws Exception {
         mockMvc.perform(get("/api/session").header("Authorization", "Bearer " + token(
-                        signingKey, "https://api.workos.com", "client_test", Instant.now().plusSeconds(300))))
+                        signingKey, ISSUER, AUTHORIZED_PARTY, "org:admin", Instant.now().plusSeconds(300))))
                 .andExpect(status().isServiceUnavailable());
     }
 
     @Test
-    void rejectsWrongIssuerClientExpiredAndBadSignature() throws Exception {
-        assertUnauthorized(token(signingKey, "https://wrong.example", "client_test", Instant.now().plusSeconds(300)));
-        assertUnauthorized(token(signingKey, "https://api.workos.com", "client_wrong", Instant.now().plusSeconds(300)));
-        assertUnauthorized(token(signingKey, "https://api.workos.com", "client_test", Instant.now().minusSeconds(1)));
-        RSAKey attacker = new RSAKeyGenerator(2048).keyID("workos-test-key").generate();
-        assertUnauthorized(token(attacker, "https://api.workos.com", "client_test", Instant.now().plusSeconds(300)));
+    void rejectsWrongIssuerAuthorizedPartyExpiredAndBadSignature() throws Exception {
+        assertUnauthorized(token(signingKey, "https://wrong.example", AUTHORIZED_PARTY, "org:admin",
+                Instant.now().plusSeconds(300)));
+        assertUnauthorized(token(signingKey, ISSUER, "https://attacker.example", "org:admin",
+                Instant.now().plusSeconds(300)));
+        assertUnauthorized(token(signingKey, ISSUER, AUTHORIZED_PARTY, "org:admin",
+                Instant.now().minusSeconds(1)));
+        RSAKey attacker = new RSAKeyGenerator(2048).keyID("clerk-test-key").generate();
+        assertUnauthorized(token(attacker, ISSUER, AUTHORIZED_PARTY, "org:admin",
+                Instant.now().plusSeconds(300)));
+    }
+
+    @Test
+    void forbidsAnOrganizationMemberOnBusinessRoutes() throws Exception {
+        mockMvc.perform(get("/api/session").header("Authorization", "Bearer " + token(
+                        signingKey, ISSUER, AUTHORIZED_PARTY, "org:member", Instant.now().plusSeconds(300))))
+                .andExpect(status().isForbidden());
     }
 
     private void assertUnauthorized(String token) throws Exception {
@@ -82,16 +94,21 @@ class WorkosJwtValidationTests {
                 .andExpect(status().isUnauthorized());
     }
 
-    private static String token(RSAKey key, String issuer, String clientId, Instant expiresAt) throws Exception {
+    private static String token(
+            RSAKey key,
+            String issuer,
+            String authorizedParty,
+            String organizationRole,
+            Instant expiresAt
+    ) throws Exception {
         Instant now = Instant.now();
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(issuer)
                 .subject("user_1")
-                .claim("client_id", clientId)
+                .claim("azp", authorizedParty)
                 .claim("sid", "session_1")
                 .claim("org_id", "org_1")
-                .claim("role", "firm_admin")
-                .claim("roles", List.of("firm_admin"))
+                .claim("org_role", organizationRole)
                 .issueTime(Date.from(now))
                 .expirationTime(Date.from(expiresAt))
                 .build();
