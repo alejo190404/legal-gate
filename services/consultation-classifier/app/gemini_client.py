@@ -6,20 +6,26 @@ import os
 import random
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any, TypeVar
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
+from typesafe_sdk import TypeSafeClient
 
+from . import jev_client
 from .models import (
     ConsultationClassificationRequest,
     ConsultationClassificationResponse,
     ConsultationDiagnosticsRequest,
+    ClassificationText,
     ConsultationDiagnosticsResponse,
+    DiagnosticsText,
 )
 
 T = TypeVar("T", bound=BaseModel)
+R = TypeVar("R")
 
 logger = logging.getLogger("legalgate.consultation_classifier")
 
@@ -28,7 +34,7 @@ logger = logging.getLogger("legalgate.consultation_classifier")
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
-class GeminiClassifierError(RuntimeError):
+class ClassifierError(RuntimeError):
     def __init__(self, error: str, message: str, raw: Any | None = None) -> None:
         super().__init__(message)
         self.error = error
@@ -46,6 +52,8 @@ class GeminiConsultationClassifier:
         self.log_payloads = os.getenv("CLASSIFIER_LOG_PAYLOADS", "false").lower() == "true"
         self.log_preview_chars = self._int_from_env("CLASSIFIER_LOG_PREVIEW_CHARS", 500)
         self.client = genai.Client(api_key=self.api_key) if self.api_key else None
+        jev_api_key = os.getenv("TYPESAFE_API_KEY")
+        self.jev = TypeSafeClient(api_key=jev_api_key) if jev_api_key else None
 
     def classify(
         self,
@@ -53,31 +61,40 @@ class GeminiConsultationClassifier:
     ) -> ConsultationClassificationResponse:
         classification_request_id = str(uuid.uuid4())
         self._log_request_start(classification_request_id, request)
+        route_index, urgency, confidence = self._jev(
+            classification_request_id, lambda client: jev_client.route(client, request)
+        )
+        logger.info(
+            "Jev classification request_id=%s routeIndex=%s urgency=%s confidence=%.2f",
+            classification_request_id,
+            route_index,
+            urgency,
+            confidence,
+        )
         if self.client is None:
             logger.warning(
                 "Gemini classification skipped request_id=%s reason=missing_api_key",
                 classification_request_id,
             )
-            raise GeminiClassifierError(
+            raise ClassifierError(
                 "gemini_unavailable",
                 "GEMINI_API_KEY is not configured for consultation-classifier.",
             )
 
-        response = self._complete(
+        text = self._complete(
             classification_request_id,
-            self._prompt_for(request),
-            ConsultationClassificationResponse,
+            self._prompt_for(request, route_index, urgency),
+            ClassificationText,
         )
         logger.info(
-            "Gemini classification succeeded request_id=%s model=%s routeIndex=%s urgency=%s confidence=%s concept=%s",
+            "Gemini classification succeeded request_id=%s model=%s concept=%s",
             classification_request_id,
             self.model,
-            response.routeIndex,
-            response.urgency,
-            response.confidence,
-            response.concept,
+            text.concept,
         )
-        return response
+        return ConsultationClassificationResponse(
+            routeIndex=route_index, urgency=urgency, confidence=confidence, **text.model_dump()
+        )
 
     def diagnose(
         self,
@@ -85,7 +102,7 @@ class GeminiConsultationClassifier:
     ) -> ConsultationDiagnosticsResponse:
         diagnostics_request_id = str(uuid.uuid4())
         logger.info(
-            "Gemini diagnostics call starting request_id=%s model=%s promptVersion=%s messageId=%s "
+            "Diagnostics call starting request_id=%s model=%s promptVersion=%s messageId=%s "
             "sender=%s exchangeMessages=%s",
             diagnostics_request_id,
             self.model,
@@ -94,21 +111,44 @@ class GeminiConsultationClassifier:
             request.email.sender,
             len(request.exchange),
         )
+        verdict, confidence = self._jev(diagnostics_request_id, lambda client: jev_client.verdict(client, request))
+        logger.info("Jev verdict request_id=%s verdict=%s confidence=%.2f", diagnostics_request_id, verdict, confidence)
+        if verdict == "reject":
+            # No one outside the firm reads a rejection's prose, so it costs no Gemini call.
+            return ConsultationDiagnosticsResponse(
+                verdict="reject",
+                reason=f"No corresponde a las materias que atiende la firma (confianza {confidence:.2f}).",
+                summary=self._subject_or_body(request),
+            )
         if self.client is None:
             logger.warning(
                 "Gemini diagnostics skipped request_id=%s reason=missing_api_key",
                 diagnostics_request_id,
             )
-            raise GeminiClassifierError(
+            raise ClassifierError(
                 "gemini_unavailable",
                 "GEMINI_API_KEY is not configured for consultation-classifier.",
             )
 
-        response = self._complete(
+        text = self._complete(
             diagnostics_request_id,
-            self._diagnostics_prompt_for(request),
-            ConsultationDiagnosticsResponse,
+            self._diagnostics_prompt_for(request, verdict),
+            DiagnosticsText,
         )
+        try:
+            response = ConsultationDiagnosticsResponse(
+                verdict=verdict,
+                question=text.question if verdict == "ask" else None,
+                acknowledgment=text.acknowledgment,
+                reason=text.reason,
+                summary=text.summary,
+            )
+        except ValidationError as exc:
+            raise ClassifierError(
+                "gemini_invalid_response",
+                "Gemini text did not fit the verdict.",
+                text.model_dump(),
+            ) from exc
         logger.info(
             "Gemini diagnostics succeeded request_id=%s model=%s verdict=%s",
             diagnostics_request_id,
@@ -132,7 +172,7 @@ class GeminiConsultationClassifier:
                 request_id,
                 self.model,
             )
-            raise GeminiClassifierError("gemini_unavailable", "Gemini request failed.") from exc
+            raise ClassifierError("gemini_unavailable", "Gemini request failed.") from exc
 
         raw = self._extract_text(result)
         if self.log_payloads:
@@ -150,7 +190,7 @@ class GeminiConsultationClassifier:
                 self.model,
                 self._truncate(raw),
             )
-            raise GeminiClassifierError(
+            raise ClassifierError(
                 "gemini_invalid_response",
                 "Gemini returned non-JSON output.",
                 raw,
@@ -165,17 +205,37 @@ class GeminiConsultationClassifier:
                 self.model,
                 self._truncate(json.dumps(payload, ensure_ascii=False)),
             )
-            raise GeminiClassifierError(
+            raise ClassifierError(
                 "gemini_invalid_response",
                 "Gemini JSON did not match the expected schema.",
                 payload,
             ) from exc
 
-    def _diagnostics_prompt_for(self, request: ConsultationDiagnosticsRequest) -> str:
+    def _jev(self, request_id: str, call: Callable[[Any], R]) -> R:
+        # No Gemini fallback: a Jev outage takes the same retry path a Gemini outage does (ADR-0006).
+        if self.jev is None:
+            raise ClassifierError(
+                "jev_unavailable",
+                "TYPESAFE_API_KEY is not configured for consultation-classifier.",
+            )
+        try:
+            return call(self.jev)
+        except Exception as exc:
+            logger.exception("Jev call failed request_id=%s", request_id)
+            raise ClassifierError("jev_unavailable", "Jev request failed.") from exc
+
+    def _subject_or_body(self, request: ConsultationDiagnosticsRequest) -> str:
+        email = request.email
+        return (email.subject or "").strip() or (email.plain or "").strip()[:200] or "Consulta sin asunto."
+
+    def _diagnostics_prompt_for(self, request: ConsultationDiagnosticsRequest, verdict: str) -> str:
         return "\n\n".join(
             [
                 request.systemPrompt,
                 "Return only valid JSON matching the provided schema.",
+                f"The verdict is already decided and is final: {verdict}. Write the text for it; "
+                "do not reconsider the decision."
+                + (" Write the question for the potential client." if verdict == "ask" else " Leave question empty."),
                 "The firm describes the matters it takes and the information it needs before "
                 "assessing one as follows:",
                 request.diagnosticsPrompt,
@@ -189,11 +249,14 @@ class GeminiConsultationClassifier:
             ]
         )
 
-    def _prompt_for(self, request: ConsultationClassificationRequest) -> str:
+    def _prompt_for(self, request: ConsultationClassificationRequest, route_index: int, urgency: str) -> str:
+        route_name = next(route.name for route in request.routes if route.routeIndex == route_index)
         return "\n\n".join(
             [
                 request.systemPrompt,
                 "Return only valid JSON matching the provided schema.",
+                f"Routing is already decided and is final: route {route_index} ({route_name}), urgency {urgency}. "
+                "Write the text for that route; do not reconsider it.",
                 "Tenant routes. Each route defines its own urgencyLevels array ordered low to high and may include a short description:",
                 json.dumps(
                     [route.model_dump() for route in request.routes],
@@ -329,7 +392,7 @@ class GeminiConsultationClassifier:
             for route in request.routes
         ]
         logger.info(
-            "Gemini classification call starting request_id=%s model=%s temperature=%s promptVersion=%s "
+            "Classification call starting request_id=%s model=%s temperature=%s promptVersion=%s "
             "messageId=%s sender=%s recipients=%s subject=%s plainChars=%s htmlChars=%s routes=%s",
             request_id,
             self.model,

@@ -83,6 +83,18 @@ class ConsultationClassificationResponse(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+class ClassificationText(BaseModel):
+    """What Gemini writes about a consultation. Routing and Urgency are never taken from here."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    consultationType: str = Field(min_length=1)
+    concept: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    clientName: str = Field(min_length=1)
+    explanation: str = Field(min_length=1)
+
+
 class DiagnosticsMessage(BaseModel):
     role: Literal["CLIENT", "LEGALGATE"]
     body: str = Field(min_length=1)
@@ -123,6 +135,17 @@ class ConsultationDiagnosticsResponse(BaseModel):
         if self.verdict != "ask" and asked:
             raise ValueError("question is only allowed when the verdict is ask")
         return self
+
+
+class DiagnosticsText(BaseModel):
+    """What Gemini writes once Jev has decided the verdict. The verdict itself is never taken from here."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    question: str | None = None
+    acknowledgment: str | None = None
+    reason: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
 
 
 class ErrorDetail(BaseModel):

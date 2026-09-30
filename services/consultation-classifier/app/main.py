@@ -8,7 +8,7 @@ from typing import TypeVar
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from .gemini_client import GeminiClassifierError, GeminiConsultationClassifier
+from .gemini_client import ClassifierError, GeminiConsultationClassifier
 from .models import (
     ConsultationClassificationRequest,
     ConsultationClassificationResponse,
@@ -66,7 +66,7 @@ def _served(endpoint: str, request: BaseModel, call: Callable[[], T]) -> T:
     started = time.monotonic()
     try:
         response = call()
-    except GeminiClassifierError as exc:
+    except ClassifierError as exc:
         logger.warning(
             "%s failed elapsed=%.2fs error=%s message=%s",
             endpoint,
@@ -84,8 +84,8 @@ def _served(endpoint: str, request: BaseModel, call: Callable[[], T]) -> T:
     return response
 
 
-def _http_error(exc: GeminiClassifierError) -> HTTPException:
-    status_code = 503 if exc.error == "gemini_unavailable" else 502
+def _http_error(exc: ClassifierError) -> HTTPException:
+    status_code = 503 if exc.error.endswith("_unavailable") else 502
     return HTTPException(
         status_code=status_code,
         detail={"error": exc.error, "message": exc.message, "raw": exc.raw},

@@ -4,9 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.gemini_client import GeminiClassifierError, GeminiConsultationClassifier
+from app.gemini_client import ClassifierError, GeminiConsultationClassifier
 from app.main import app
 from app.models import ConsultationDiagnosticsRequest, ConsultationDiagnosticsResponse
+from jev_fake import FakeJev, jev_verdict
 
 # Golden example pinning the intake-orchestrator <-> classifier diagnose contract.
 # The same literal is asserted as serialized output in the intake service tests
@@ -41,8 +42,10 @@ GOLDEN_DIAGNOSE_RESPONSE = {
 class FakeModels:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.prompts: list[str] = []
 
-    def generate_content(self, **_: object) -> object:
+    def generate_content(self, **kwargs: object) -> object:
+        self.prompts.append(str(kwargs["contents"]))
         return type("GeminiResult", (), {"text": self.text})()
 
 
@@ -51,10 +54,28 @@ class FakeClient:
         self.models = FakeModels(text)
 
 
-def classifier_returning(payload: object) -> GeminiConsultationClassifier:
+def classifier_returning(payload: object, verdict: str = "ask", confidence: float = 0.9) -> GeminiConsultationClassifier:
+    """Jev decides `verdict`; Gemini, when called, writes `payload`."""
     classifier = GeminiConsultationClassifier()
     classifier.client = FakeClient(payload if isinstance(payload, str) else json.dumps(payload))
+    classifier.jev = jev_verdict(verdict, confidence)
     return classifier
+
+
+def gemini_prompts(classifier: GeminiConsultationClassifier) -> list[str]:
+    return classifier.client.models.prompts
+
+
+def test_reject_is_decided_by_jev_without_calling_gemini() -> None:
+    classifier = classifier_returning(GOLDEN_DIAGNOSE_RESPONSE, verdict="reject", confidence=0.91)
+
+    response = classifier.diagnose(ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST))
+
+    assert response.verdict == "reject"
+    assert response.question is None
+    assert "0.91" in response.reason
+    assert response.summary == "Consulta laboral"
+    assert gemini_prompts(classifier) == []
 
 
 def test_accepts_the_golden_request_payload() -> None:
@@ -87,25 +108,35 @@ def test_diagnose_carries_a_missing_acknowledgment_as_none_rather_than_failing()
     assert response.verdict == "ask"
 
 
-@pytest.mark.parametrize("verdict", ["accept", "reject"])
-def test_diagnose_returns_terminal_verdicts_without_a_question(verdict: str) -> None:
-    payload = {
-        "verdict": verdict,
-        "question": None,
-        "reason": "Razon del veredicto.",
-        "summary": "Resumen del asunto.",
-    }
-
-    response = classifier_returning(payload).diagnose(
-        ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST)
+def test_accept_takes_the_verdict_from_jev_and_the_text_from_gemini() -> None:
+    # Gemini writes a question and names a different verdict; neither may reach the response.
+    classifier = classifier_returning(
+        {"verdict": "reject", "question": "por que?", "reason": "Tiene lo necesario.", "summary": "Despido."},
+        verdict="accept",
     )
 
-    assert response.verdict == verdict
+    response = classifier.diagnose(ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST))
+
+    assert response.verdict == "accept"
     assert response.question is None
+    assert response.reason == "Tiene lo necesario."
+    assert response.summary == "Despido."
+    [prompt] = gemini_prompts(classifier)
+    assert "already decided and is final: accept" in prompt
+
+
+def test_ask_tells_gemini_the_verdict_it_is_writing_for() -> None:
+    classifier = classifier_returning(GOLDEN_DIAGNOSE_RESPONSE, verdict="ask")
+
+    response = classifier.diagnose(ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST))
+
+    assert (response.verdict, response.question) == ("ask", "Que tipo de contrato tenia?")
+    [prompt] = gemini_prompts(classifier)
+    assert "already decided and is final: ask" in prompt
 
 
 def test_diagnose_surfaces_non_json_model_output_as_a_service_failure() -> None:
-    with pytest.raises(GeminiClassifierError) as error:
+    with pytest.raises(ClassifierError) as error:
         classifier_returning("no soy json").diagnose(
             ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST)
         )
@@ -116,29 +147,52 @@ def test_diagnose_surfaces_non_json_model_output_as_a_service_failure() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        {"verdict": "maybe", "reason": "r", "summary": "s"},
-        {"verdict": "ask", "reason": "r", "summary": "s"},
-        {"verdict": "accept", "question": "por que?", "reason": "r", "summary": "s"},
-        {"verdict": "accept", "reason": "r", "summary": "s", "extra": "no permitido"},
+        {"reason": "r", "summary": "s"},
+        {"question": "Que contrato?", "reason": "", "summary": "s"},
+        {"question": "Que contrato?", "reason": "r"},
     ],
 )
-def test_diagnose_rejects_responses_that_fail_validation(payload: dict) -> None:
-    with pytest.raises(GeminiClassifierError) as error:
-        classifier_returning(payload).diagnose(
+def test_diagnose_rejects_text_that_does_not_fit_an_ask(payload: dict) -> None:
+    with pytest.raises(ClassifierError) as error:
+        classifier_returning(payload, verdict="ask").diagnose(
             ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST)
         )
 
     assert error.value.error == "gemini_invalid_response"
 
 
-def test_diagnose_without_an_api_key_is_reported_as_unavailable() -> None:
-    classifier = GeminiConsultationClassifier()
+def test_diagnose_without_a_gemini_key_is_reported_as_unavailable() -> None:
+    classifier = classifier_returning(GOLDEN_DIAGNOSE_RESPONSE, verdict="ask")
     classifier.client = None
 
-    with pytest.raises(GeminiClassifierError) as error:
+    with pytest.raises(ClassifierError) as error:
         classifier.diagnose(ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST))
 
     assert error.value.error == "gemini_unavailable"
+
+
+def test_diagnose_without_a_jev_key_is_reported_as_unavailable() -> None:
+    classifier = classifier_returning(GOLDEN_DIAGNOSE_RESPONSE)
+    classifier.jev = None
+
+    with pytest.raises(ClassifierError) as error:
+        classifier.diagnose(ConsultationDiagnosticsRequest.model_validate(GOLDEN_DIAGNOSE_REQUEST))
+
+    assert error.value.error == "jev_unavailable"
+
+
+def test_endpoint_maps_a_jev_outage_to_service_unavailable_without_falling_back_to_gemini(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    classifier = classifier_returning(GOLDEN_DIAGNOSE_RESPONSE)
+    classifier.jev = FakeJev(RuntimeError("typesafe down"))
+    monkeypatch.setattr("app.main.classifier", classifier)
+
+    response = TestClient(app).post("/diagnose-consultation", json=GOLDEN_DIAGNOSE_REQUEST)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "jev_unavailable"
+    assert gemini_prompts(classifier) == []
 
 
 def test_response_model_rejects_blank_reason() -> None:
