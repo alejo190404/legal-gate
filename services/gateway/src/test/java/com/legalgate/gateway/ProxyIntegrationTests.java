@@ -11,6 +11,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
@@ -70,8 +71,7 @@ class ProxyIntegrationTests {
                         .with(jwt().jwt(token -> token
                                 .subject("user_real")
                                 .claim("sid", "session_real")
-                                .claim("org_id", "org_real")
-                                .claim("org_role", "org:admin"))
+                                .claim("o", Map.of("id", "org_real", "rol", "admin")))
                                 .authorities(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user").value("user_real"))

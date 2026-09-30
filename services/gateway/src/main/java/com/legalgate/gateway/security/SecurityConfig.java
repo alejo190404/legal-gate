@@ -41,12 +41,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfig {
 
-    /**
-     * Clerk's built-in organization administrator role. Deliberately not a custom role slug:
-     * custom organization roles require the B2B Authentication add-on in production.
-     */
-    private static final String ORG_ADMIN_ROLE = "org:admin";
-
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -67,7 +61,7 @@ public class SecurityConfig {
                             if (!(authentication.get() instanceof JwtAuthenticationToken token)) {
                                 return new AuthorizationDecision(false);
                             }
-                            boolean hasOrganization = hasText(token.getToken().getClaimAsString("org_id"));
+                            boolean hasOrganization = hasText(SessionClaims.organizationId(token.getToken()));
                             boolean isFirmAdmin = token.getAuthorities().stream()
                                     .anyMatch(authority -> "ROLE_FIRM_ADMIN".equals(authority.getAuthority()));
                             return new AuthorizationDecision(hasOrganization && isFirmAdmin);
@@ -124,7 +118,7 @@ public class SecurityConfig {
     private Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
         return jwt -> {
             Collection<GrantedAuthority> authorities = new ArrayList<>();
-            if (ORG_ADMIN_ROLE.equals(jwt.getClaimAsString("org_role"))) {
+            if (SessionClaims.isFirmAdmin(jwt)) {
                 authorities.add(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"));
             }
             return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());

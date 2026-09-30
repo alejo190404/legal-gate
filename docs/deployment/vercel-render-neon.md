@@ -16,7 +16,8 @@ Production topology:
 3. Gateway validates the Clerk signature and claims and calls private Intake with trusted identity
    headers and the shared internal service token.
 4. Mail Ingress calls private Intake with the same internal service token.
-5. Intake resolves `org_id` to a tenant before setting PostgreSQL tenant RLS context.
+5. Intake resolves the forwarded organization id to a tenant before setting PostgreSQL tenant
+   RLS context.
 6. Mercado Pago sends signed notifications to the public Gateway
    `/api/webhooks/mercadopago`; the Gateway forwards the restricted webhook envelope to Intake,
    where it is durably recorded before asynchronous processing.

@@ -6,7 +6,8 @@ identity plus `X-LegalGate-Service-Token` to Intake.
 
 Public routes are limited to `GET /api/status`, health probes, CORS preflight, and framework error
 handling. `POST /api/onboarding/organization` requires any valid session. The following
-routes additionally require `org_id` and `org_role: org:admin`:
+routes additionally require an organization and the firm administrator role, both read from the
+session token's compact `o` claim (`o.id`, `o.rol`):
 
 - `GET /api/session`
 - `GET|PUT /api/tenant/settings`

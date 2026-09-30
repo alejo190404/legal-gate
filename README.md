@@ -13,7 +13,8 @@ LegalGate automates legal consultation intake, classification, scheduling, and n
 ## Authentication and APIs
 
 Each LegalGate tenant maps to one Clerk organization. Browser business requests require a session
-token with `org_id` and `org_role: org:admin`. Public business contracts are:
+token whose `o` claim carries the organization id and the role `admin`. Public business
+contracts are:
 
 - `POST /api/onboarding/organization`
 - `GET /api/session`

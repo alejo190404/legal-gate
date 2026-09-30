@@ -14,6 +14,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Date;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -65,27 +66,27 @@ class ClerkJwtValidationTests {
     @Test
     void acceptsAValidSessionToken() throws Exception {
         mockMvc.perform(get("/api/session").header("Authorization", "Bearer " + token(
-                        signingKey, ISSUER, AUTHORIZED_PARTY, "org:admin", Instant.now().plusSeconds(300))))
+                        signingKey, ISSUER, AUTHORIZED_PARTY, "admin", Instant.now().plusSeconds(300))))
                 .andExpect(status().isServiceUnavailable());
     }
 
     @Test
     void rejectsWrongIssuerAuthorizedPartyExpiredAndBadSignature() throws Exception {
-        assertUnauthorized(token(signingKey, "https://wrong.example", AUTHORIZED_PARTY, "org:admin",
+        assertUnauthorized(token(signingKey, "https://wrong.example", AUTHORIZED_PARTY, "admin",
                 Instant.now().plusSeconds(300)));
-        assertUnauthorized(token(signingKey, ISSUER, "https://attacker.example", "org:admin",
+        assertUnauthorized(token(signingKey, ISSUER, "https://attacker.example", "admin",
                 Instant.now().plusSeconds(300)));
-        assertUnauthorized(token(signingKey, ISSUER, AUTHORIZED_PARTY, "org:admin",
+        assertUnauthorized(token(signingKey, ISSUER, AUTHORIZED_PARTY, "admin",
                 Instant.now().minusSeconds(1)));
         RSAKey attacker = new RSAKeyGenerator(2048).keyID("clerk-test-key").generate();
-        assertUnauthorized(token(attacker, ISSUER, AUTHORIZED_PARTY, "org:admin",
+        assertUnauthorized(token(attacker, ISSUER, AUTHORIZED_PARTY, "admin",
                 Instant.now().plusSeconds(300)));
     }
 
     @Test
     void forbidsAnOrganizationMemberOnBusinessRoutes() throws Exception {
         mockMvc.perform(get("/api/session").header("Authorization", "Bearer " + token(
-                        signingKey, ISSUER, AUTHORIZED_PARTY, "org:member", Instant.now().plusSeconds(300))))
+                        signingKey, ISSUER, AUTHORIZED_PARTY, "member", Instant.now().plusSeconds(300))))
                 .andExpect(status().isForbidden());
     }
 
@@ -107,8 +108,7 @@ class ClerkJwtValidationTests {
                 .subject("user_1")
                 .claim("azp", authorizedParty)
                 .claim("sid", "session_1")
-                .claim("org_id", "org_1")
-                .claim("org_role", organizationRole)
+                .claim("o", Map.of("id", "org_1", "rol", organizationRole))
                 .issueTime(Date.from(now))
                 .expirationTime(Date.from(expiresAt))
                 .build();

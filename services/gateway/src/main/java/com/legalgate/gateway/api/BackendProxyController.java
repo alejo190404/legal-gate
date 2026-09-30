@@ -1,6 +1,7 @@
 package com.legalgate.gateway.api;
 
 import com.legalgate.gateway.config.GatewayProperties;
+import com.legalgate.gateway.security.SessionClaims;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.time.Duration;
@@ -119,7 +120,7 @@ public class BackendProxyController {
         headers.set("X-LegalGate-User-Id", authentication.getToken().getSubject());
         headers.set("X-LegalGate-Session-Id", authentication.getToken().getClaimAsString("sid"));
         setIfPresent(headers, "X-LegalGate-Organization-Id",
-                authentication.getToken().getClaimAsString("org_id"));
+                SessionClaims.organizationId(authentication.getToken()));
         setIfPresent(headers, "X-LegalGate-Role", firmAdminRole(authentication));
         headers.set("X-Forwarded-Host", request.getServerName());
         headers.set("X-Forwarded-Proto", request.getScheme());

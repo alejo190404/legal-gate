@@ -21,9 +21,16 @@ Use separate Clerk development and production instances. In each:
    Letting Clerk create the organization first would mean a firm exists before its inbound
    address does, and would require a webhook to reconcile. Leave Personal Accounts on.
 4. **Roles**: use the built-in `org:admin` and `org:member` only. Do not create a custom role —
-   custom organization roles require the B2B Authentication add-on in production, and the
-   Gateway maps `org:admin` to `ROLE_FIRM_ADMIN` precisely to avoid that cost. Clerk grants
-   `org:admin` automatically to the `created_by` user when Intake creates the organization.
+   custom organization roles require the B2B Authentication add-on in production, and the Gateway
+   maps the administrator role to `ROLE_FIRM_ADMIN` precisely to avoid that cost. Clerk grants it
+   automatically to the `created_by` user when Intake creates the organization.
+
+   The dashboard names these roles with the `org:` prefix, but the session token abbreviates.
+   Organization data arrives in one compact `o` claim, `{"id": "org_...", "rol": "admin"}`, with no
+   prefix on the role; the Gateway reads it through `SessionClaims`. The flat `org_id` and
+   `org_role` claims belong to session token v1, deprecated in April 2025 — no instance created
+   since then emits them.
+
 5. **Paths**: set the after-sign-in and after-sign-up URLs to `<origin>/dashboard`, and the
    after-sign-out URL to the origin root — sign-out returns to `/`, the public landing. Register
    each deployed origin exactly; avoid wildcards in production.
@@ -111,9 +118,10 @@ survives. Before applying it:
 4. Deploy Mail Ingress, then Gateway, then the frontend.
 5. Sign up through `accounts.legal-gate.co` and verify the email. Confirm the verification email
    arrives **from `legal-gate.co`**, not a Clerk-owned domain.
-6. Land on `/dashboard` with no `org_id` and confirm the firm-name form renders.
+6. Land on `/dashboard` with no organization on the session and confirm the firm-name form renders.
 7. Enter a firm name. Confirm the tenant goes `PENDING` -> `ACTIVE`, a Clerk organization exists,
-   and the refreshed token carries `org_id`, `sid`, `azp`, and `org_role: org:admin`.
+   and the refreshed token carries `sid`, `azp`, and an `o` claim of
+   `{"id": "org_...", "rol": "admin"}`.
 8. Confirm the generated canonical intake address is correct for the new slug.
 9. In DevTools, confirm `localStorage` holds no session or refresh token, and that the Clerk
    session cookie on `legal-gate.co` is httpOnly. This is the reason for the migration.

@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import java.util.Map;
 
 @SpringBootTest(properties = "legalgate.gateway.backend.base-url=")
 @AutoConfigureMockMvc
@@ -58,12 +59,11 @@ class GatewayApplicationTests {
     @Test
     void organizationAndFirmAdminAreRequired() throws Exception {
         mockMvc.perform(get("/api/session").with(jwt().jwt(token -> token
-                        .subject("user_1").claim("sid", "session_1").claim("role", "firm_admin"))
+                        .subject("user_1").claim("sid", "session_1"))
                         .authorities(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"))))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/session").with(jwt().jwt(token -> token
-                        .subject("user_1").claim("sid", "session_1").claim("org_id", "org_1")
-                        .claim("role", "member"))
+                        .subject("user_1").claim("sid", "session_1").claim("o", Map.of("id", "org_1", "rol", "member")))
                         .authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
                 .andExpect(status().isForbidden());
     }
