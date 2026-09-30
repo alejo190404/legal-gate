@@ -120,10 +120,21 @@ public class BackendProxyController {
         headers.set("X-LegalGate-Session-Id", authentication.getToken().getClaimAsString("sid"));
         setIfPresent(headers, "X-LegalGate-Organization-Id",
                 authentication.getToken().getClaimAsString("org_id"));
-        setIfPresent(headers, "X-LegalGate-Role",
-                authentication.getToken().getClaimAsString("role"));
+        setIfPresent(headers, "X-LegalGate-Role", firmAdminRole(authentication));
         headers.set("X-Forwarded-Host", request.getServerName());
         headers.set("X-Forwarded-Proto", request.getScheme());
+    }
+
+    /**
+     * The internal name for the role, never the auth provider's own slug. SecurityConfig maps the
+     * provider's organization administrator role to ROLE_FIRM_ADMIN; downstream services match on
+     * firm_admin, so the provider's vocabulary stops at this boundary.
+     */
+    private String firmAdminRole(JwtAuthenticationToken authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_FIRM_ADMIN".equals(authority.getAuthority()))
+                ? "firm_admin"
+                : null;
     }
 
     private boolean isHopByHopHeader(String headerName) {
@@ -144,8 +155,13 @@ public class BackendProxyController {
         }
     }
 
+    /**
+     * Routes that wait on a third-party API rather than just on Intake and the database. Onboarding
+     * calls the auth provider twice before it can answer, which does not fit the default budget.
+     */
     private Duration timeout(String requestUri) {
         if ("/api/billing".equals(requestUri)
+                || "/api/onboarding/organization".equals(requestUri)
                 || (requestUri != null && requestUri.startsWith("/api/billing/"))) {
             return properties.getBillingRequestTimeout() == null
                     ? Duration.ofSeconds(10) : properties.getBillingRequestTimeout();

@@ -71,7 +71,7 @@ class ProxyIntegrationTests {
                                 .subject("user_real")
                                 .claim("sid", "session_real")
                                 .claim("org_id", "org_real")
-                                .claim("role", "firm_admin"))
+                                .claim("org_role", "org:admin"))
                                 .authorities(new SimpleGrantedAuthority("ROLE_FIRM_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user").value("user_real"))
