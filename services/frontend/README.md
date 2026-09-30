@@ -1,17 +1,17 @@
 # LegalGate frontend
 
 Angular SPA containing the public landing page and authenticated firm console. Authentication is
-provided by WorkOS AuthKit Hosted UI; the browser never stores access or refresh tokens manually.
+provided by the Clerk Account Portal; the browser never stores access or refresh tokens manually.
 
 Required build variables:
 
-- `LEGALGATE_WORKOS_CLIENT_ID`
+- `LEGALGATE_CLERK_PUBLISHABLE_KEY`
 - `LEGALGATE_API_BASE_URL` (empty only when the host reverse-proxies `/api` to Gateway)
 
 Local development:
 
 ```bash
-export LEGALGATE_WORKOS_CLIENT_ID=client_test_...
+export LEGALGATE_CLERK_PUBLISHABLE_KEY=pk_test_...
 npm install
 npm start
 ```
@@ -24,4 +24,4 @@ npm run build
 npm audit --omit=dev
 ```
 
-See [WorkOS production setup](../../docs/deployment/workos-authkit.md).
+See [Clerk production setup](../../docs/deployment/clerk-auth.md).

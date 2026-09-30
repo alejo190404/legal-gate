@@ -4,25 +4,25 @@ import { catchError, firstValueFrom, of } from 'rxjs';
 
 interface RuntimeConfig {
   apiBaseUrl?: string;
-  workosClientId?: string;
+  clerkPublishableKey?: string;
 }
 
 @Injectable({ providedIn: 'root' })
 export class ApiConfigService {
   private readonly http = inject(HttpClient);
   private apiBaseUrl = '';
-  private workosClientId = '';
+  private clerkPublishableKey = '';
 
   load(): Promise<void> {
     return firstValueFrom(
       this.http.get<RuntimeConfig>('/assets/legalgate-config.json').pipe(
-        catchError(() => of<RuntimeConfig>({ apiBaseUrl: '', workosClientId: '' })),
+        catchError(() => of<RuntimeConfig>({ apiBaseUrl: '', clerkPublishableKey: '' })),
       ),
     ).then((config) => {
       this.setApiBaseUrl(config.apiBaseUrl ?? '');
-      this.workosClientId = (config.workosClientId ?? '').trim();
-      if (!this.workosClientId) {
-        throw new Error('LEGALGATE_WORKOS_CLIENT_ID is missing from runtime configuration.');
+      this.clerkPublishableKey = (config.clerkPublishableKey ?? '').trim();
+      if (!this.clerkPublishableKey) {
+        throw new Error('LEGALGATE_CLERK_PUBLISHABLE_KEY is missing from runtime configuration.');
       }
     });
   }
@@ -36,8 +36,8 @@ export class ApiConfigService {
     return `${this.apiBaseUrl}${normalizedPath}`;
   }
 
-  getWorkosClientId(): string {
-    return this.workosClientId;
+  getClerkPublishableKey(): string {
+    return this.clerkPublishableKey;
   }
 
   isGatewayUrl(url: string): boolean {

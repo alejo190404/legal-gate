@@ -29,7 +29,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
       if (error instanceof HttpErrorResponse) {
         return throwError(() => error);
       }
-      // getAccessToken threw: the WorkOS session refresh was rejected, so the
+      // getAccessToken threw: the session refresh was rejected, so the
       // session is gone. Re-authenticate instead of surfacing a request error
       // the caller would misreport as a server failure.
       auth.sessionExpired();
