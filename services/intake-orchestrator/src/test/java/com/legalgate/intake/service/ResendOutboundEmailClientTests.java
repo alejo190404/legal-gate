@@ -44,7 +44,8 @@ class ResendOutboundEmailClientTests {
                 .payload(notification("CLIENT", TAGGED_ADDRESS), null);
 
         assertThat(payload).containsEntry("from", "\"Vargas & Asociados\" <firma-demo@intake.legal-gate.co>");
-        assertThat(headers(payload)).containsEntry("Reply-To", TAGGED_ADDRESS);
+        assertThat(payload).containsEntry("reply_to", TAGGED_ADDRESS);
+        assertThat(payload).doesNotContainKey("headers");
     }
 
     @Test
