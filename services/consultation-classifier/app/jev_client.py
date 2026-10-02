@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 from typing import Any, Literal
 
 from typesafe_sdk import Choice, Score
 
 from .models import ConsultationClassificationRequest, ConsultationDiagnosticsRequest
+
+logger = logging.getLogger("legalgate.consultation_classifier")
 
 # Jev decides; it writes no text. ADR-0006 (intake) records why the decision and the prose are split.
 VERDICT_CRITERIA = {
@@ -14,8 +19,26 @@ VERDICT_CRITERIA = {
 }
 
 
+def _jsonable(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return getattr(value, "__dict__", str(value))
+
+
+def _system_one(client: Any, state: Any, questions: dict[str, Any]) -> Any:
+    # Same flag that gates the Gemini prompt logs; the state carries the client's email.
+    if os.getenv("CLASSIFIER_LOG_PAYLOADS", "false").lower() == "true":
+        logger.info(
+            "Jev request state=%s questions=%s",
+            json.dumps(state, ensure_ascii=False, default=str),
+            json.dumps(questions, ensure_ascii=False, default=_jsonable),
+        )
+    return client.system_one(state=state, questions=questions)
+
+
 def verdict(client: Any, request: ConsultationDiagnosticsRequest) -> tuple[Literal["accept", "ask", "reject"], float]:
-    response = client.system_one(
+    response = _system_one(
+        client,
         state={
             "firmCriteria": request.diagnosticsPrompt,
             "email": request.email.model_dump(),
@@ -49,7 +72,7 @@ def route(client: Any, request: ConsultationClassificationRequest) -> tuple[int,
             instructions=f"How urgent this consultation is for the route {r.name}, from lowest to highest.",
             criteria=list(r.urgencyLevels),
         )
-    response = client.system_one(state=request.email.model_dump(), questions=questions)
+    response = _system_one(client, request.email.model_dump(), questions)
     chosen = response.answers["route"]
     route_index = int(chosen.choice)
     levels = next(r.urgencyLevels for r in request.routes if r.routeIndex == route_index)
