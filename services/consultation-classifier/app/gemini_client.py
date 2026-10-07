@@ -16,6 +16,8 @@ from typesafe_sdk import TypeSafeClient
 
 from . import jev_client
 from .models import (
+    ClientMailIntentRequest,
+    ClientMailIntentResponse,
     ConsultationClassificationRequest,
     ConsultationClassificationResponse,
     ConsultationDiagnosticsRequest,
@@ -154,6 +156,24 @@ class GeminiConsultationClassifier:
             diagnostics_request_id,
             self.model,
             response.verdict,
+        )
+        return response
+
+    def client_mail_intent(self, request: ClientMailIntentRequest) -> ClientMailIntentResponse:
+        """Jev's answer is final, with no confidence gate and no Gemini call (ADR-0006, ADR-0007)."""
+        request_id = str(uuid.uuid4())
+        answer = self._jev(request_id, lambda client: jev_client.client_mail_intent(client, request))
+        try:
+            if answer is None:
+                raise ValueError("no intent answer")
+            response = ClientMailIntentResponse(intent=answer[0], confidence=answer[1])
+        except (ValidationError, ValueError) as exc:
+            raise ClassifierError("jev_invalid_response", "Jev gave no usable intent.", str(answer)) from exc
+        logger.info(
+            "Jev client mail intent request_id=%s intent=%s confidence=%.2f",
+            request_id,
+            response.intent,
+            response.confidence,
         )
         return response
 

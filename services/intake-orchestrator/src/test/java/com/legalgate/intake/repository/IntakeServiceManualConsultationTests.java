@@ -100,5 +100,11 @@ class IntakeServiceManualConsultationTests {
                 com.legalgate.intake.classifier.ConsultationDiagnosticsRequest request) {
             throw new UnsupportedOperationException("manual consultations never run Diagnostics");
         }
+
+        @Override
+        public com.legalgate.intake.classifier.ClientMailIntentResponse classifyClientMail(
+                com.legalgate.intake.classifier.ClientMailIntentRequest request) {
+            throw new UnsupportedOperationException("manual consultations are never Client mail");
+        }
     }
 }

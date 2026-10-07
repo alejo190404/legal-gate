@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from typesafe_sdk import Choice, Score
 
-from .models import ConsultationClassificationRequest, ConsultationDiagnosticsRequest
+from .models import ClientMailIntentRequest, ConsultationClassificationRequest, ConsultationDiagnosticsRequest
 
 logger = logging.getLogger("legalgate.consultation_classifier")
 
@@ -16,6 +16,15 @@ VERDICT_CRITERIA = {
     "accept": "The matter is one the firm takes, and the firm has the information it requires to assess it.",
     "ask": "The matter is one the firm takes, but information the firm requires is still missing.",
     "reject": "The matter is not one the firm takes.",
+}
+
+
+# The only Client email LegalGate may answer on its own is a Status Inquiry (ADR-0007, intake).
+CLIENT_MAIL_CRITERIA = {
+    "status_inquiry": "The client only asks how their work with the firm is going, how long it has taken, "
+    "or when it will be ready, and needs nothing else.",
+    "needs_lawyer": "Anything else: new information, documents, instructions, a new matter, a complaint, "
+    "or a question a lawyer must answer.",
 }
 
 
@@ -79,3 +88,19 @@ def route(client: Any, request: ConsultationClassificationRequest) -> tuple[int,
     # The score is a probability-weighted average of the levels, so it can land between two of them.
     level = min(max(int(response.answers[f"urgency_{route_index}"].score + 0.5), 0), len(levels) - 1)
     return route_index, levels[level], chosen.confidence
+
+
+def client_mail_intent(client: Any, request: ClientMailIntentRequest) -> tuple[str, float] | None:
+    """Jev's single choice, or None when it gave no answer. The caller validates the choice."""
+    response = _system_one(
+        client,
+        state=request.model_dump(),
+        questions={
+            "intent": Choice(
+                instructions="Decide what this email from one of the firm's clients is.",
+                criteria=CLIENT_MAIL_CRITERIA,
+            )
+        },
+    )
+    answer = response.answers.get("intent")
+    return None if answer is None else (answer.choice, answer.confidence)

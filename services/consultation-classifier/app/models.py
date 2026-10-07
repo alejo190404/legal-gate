@@ -148,6 +148,20 @@ class DiagnosticsText(BaseModel):
     summary: str = Field(min_length=1)
 
 
+class ClientMailIntentRequest(BaseModel):
+    """A Client's email, already stripped of Email Boilerplate and Quoted History by mail-ingress."""
+
+    subject: str | None = None
+    body: str | None = None
+
+
+class ClientMailIntentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["status_inquiry", "needs_lawyer"]
+    confidence: float = Field(ge=0, le=1)
+
+
 class ErrorDetail(BaseModel):
     error: str
     message: str

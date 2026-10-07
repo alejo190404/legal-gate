@@ -698,5 +698,11 @@ class DiagnosticsTests {
             return Optional.ofNullable(verdicts.poll())
                     .orElseThrow(() -> new IllegalStateException("no stubbed verdict left"));
         }
+
+        @Override
+        public com.legalgate.intake.classifier.ClientMailIntentResponse classifyClientMail(
+                com.legalgate.intake.classifier.ClientMailIntentRequest request) {
+            throw new UnsupportedOperationException("Diagnostics never classifies Client mail");
+        }
     }
 }

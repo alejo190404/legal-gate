@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from .gemini_client import ClassifierError, GeminiConsultationClassifier
 from .models import (
+    ClientMailIntentRequest,
+    ClientMailIntentResponse,
     ConsultationClassificationRequest,
     ConsultationClassificationResponse,
     ConsultationDiagnosticsRequest,
@@ -57,6 +59,15 @@ def diagnose_consultation(
     request: ConsultationDiagnosticsRequest,
 ) -> ConsultationDiagnosticsResponse:
     return _served("diagnose-consultation", request, lambda: classifier.diagnose(request))
+
+
+@app.post(
+    "/classify-client-mail",
+    response_model=ClientMailIntentResponse,
+    responses={502: {"model": ErrorDetail}, 503: {"model": ErrorDetail}},
+)
+def classify_client_mail(request: ClientMailIntentRequest) -> ClientMailIntentResponse:
+    return _served("classify-client-mail", request, lambda: classifier.client_mail_intent(request))
 
 
 def _served(endpoint: str, request: BaseModel, call: Callable[[], T]) -> T:
