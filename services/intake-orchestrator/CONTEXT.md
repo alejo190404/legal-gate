@@ -10,7 +10,7 @@ A potential client's legal matter as it enters a firm. Created from an inbound e
 
 The exchange that happens **before** a Consultation is worth scheduling: LegalGate replies to the potential client, asks for what the firm needs to assess the matter, and decides whether the matter is one the firm takes.
 
-Diagnostics runs only on Consultations that arrived by inbound email. A Consultation under Diagnostics has no Event and no lawyer time reserved.
+Diagnostics runs only on Consultations that arrived by inbound email, and never on mail from a Client (see the Clients context): a Client is already the firm's, and qualifying them again risks sending a Non-Engagement Notice to someone the firm represents. A Consultation under Diagnostics has no Event and no lawyer time reserved.
 
 Not to be confused with the Render keepalive script `health_monitor.py`, which is unrelated to this context.
 
@@ -68,6 +68,10 @@ A named priority level on a Routing Rule, carrying an SLA in business days and a
 ## Event
 
 A reserved block of a lawyer's time for a Consultation, held tentatively until confirmed. Created only once a Consultation is cleared to be scheduled.
+
+## Business Day
+
+A weekday that is not a Colombian public holiday. Every promise LegalGate counts in days — an Urgency's SLA, an Activity's Turnaround — counts these.
 
 ## Tenant
 
