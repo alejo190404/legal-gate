@@ -1,0 +1,73 @@
+<div class="config-frame">
+  <div class="config-frame-header">
+    <div>
+      <p class="eyebrow">Clientes</p>
+      <h3>Tipos de actividad</h3>
+    </div>
+    <span class="config-count">{{ types().length }}</span>
+  </div>
+  <p class="lg-small">
+    El trabajo que la firma hace para sus clientes, con el nombre que ve el cliente. Los valores iniciales son
+    sugerencias: revísalos. Cambiar un plazo solo afecta las actividades nuevas.
+  </p>
+
+  @for (type of types(); track type.id) {
+    <div class="detail-row">
+      <span>
+        <strong>{{ type.name }}</strong>
+        <span class="lg-small" style="display: block">{{ kindLabel(type.kind) }} · {{ defaultLabel(type) }}</span>
+      </span>
+      @if (type.retiredAt) {
+        <span class="tag">Retirado</span>
+      } @else {
+        <span style="display: flex; gap: 8px">
+          <button class="link-button" type="button" (click)="startEdit(type)">Editar</button>
+          <button class="link-button" type="button" (click)="retire(type)">Retirar</button>
+        </span>
+      }
+    </div>
+  }
+
+  @if (form; as f) {
+    <form class="settings-form" (submit)="save(); $event.preventDefault()">
+      <div class="form-field">
+        <label for="activityTypeName">Nombre</label>
+        <input id="activityTypeName" name="activityTypeName" [(ngModel)]="f.name" />
+      </div>
+      <div class="form-field">
+        <label for="activityTypeKind">Tipo</label>
+        <select id="activityTypeKind" name="activityTypeKind" [(ngModel)]="f.kind">
+          <option value="TURNAROUND">Con plazo de la firma</option>
+          <option value="DATED">Con fecha (reunión, audiencia)</option>
+          <option value="EXTERNAL">Externa (depende de un juez o entidad)</option>
+        </select>
+      </div>
+      @if (f.kind === 'TURNAROUND') {
+        <div class="form-field">
+          <label for="activityTypeTurnaround">Plazo por defecto (días hábiles)</label>
+          <input id="activityTypeTurnaround" name="activityTypeTurnaround" type="number" min="1" max="365"
+            [(ngModel)]="f.defaultTurnaroundDays" />
+        </div>
+      }
+      @if (f.kind === 'EXTERNAL') {
+        <div class="form-field">
+          <label for="activityTypeTerm">Término legal por defecto (días hábiles, opcional)</label>
+          <input id="activityTypeTerm" name="activityTypeTerm" type="number" min="1" max="365"
+            [(ngModel)]="f.defaultTermDays" />
+        </div>
+      }
+      @if (errorMessage()) {
+        <div class="panel-error"><strong>{{ errorMessage() }}</strong></div>
+      }
+      <div style="display: flex; gap: 8px">
+        <button class="btn primary" type="submit" [disabled]="isSubmitting()">Guardar tipo</button>
+        <button class="btn" type="button" (click)="cancel()">Cancelar</button>
+      </div>
+    </form>
+  } @else {
+    @if (errorMessage()) {
+      <div class="panel-error"><strong>{{ errorMessage() }}</strong></div>
+    }
+    <button class="btn" type="button" (click)="startCreate()">+ Nuevo tipo de actividad</button>
+  }
+</div>

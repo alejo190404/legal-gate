@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
+import { ActivityTypesComponent } from '../activity-types/activity-types';
 import { ClientsComponent } from '../clients/clients';
 import { PixelIconComponent } from './pixel-icon';
 
@@ -286,7 +287,7 @@ interface CalendarBlock {
 
 @Component({
   selector: 'app-console',
-  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent, ClientsComponent],
+  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent, ClientsComponent, ActivityTypesComponent],
   templateUrl: './console.html',
   styleUrl: './console.scss',
 })

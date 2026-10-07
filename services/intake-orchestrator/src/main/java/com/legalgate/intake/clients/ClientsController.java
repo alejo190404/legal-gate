@@ -1,5 +1,7 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityType;
+import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
@@ -71,6 +73,36 @@ public class ClientsController {
     @GetMapping("/api/clients/{clientId}/history")
     public List<HistoryEntry> history(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
         return clients.history(tenant(organizationId), clientId);
+    }
+
+    @GetMapping("/api/activity-types")
+    public List<ActivityType> activityTypes(@RequestHeader(ORGANIZATION) String organizationId) {
+        return clients.activityTypes(tenant(organizationId));
+    }
+
+    @PostMapping("/api/activity-types")
+    public ActivityType createActivityType(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestBody ActivityTypeRequest request
+    ) {
+        return clients.createActivityType(tenant(organizationId), request);
+    }
+
+    @PutMapping("/api/activity-types/{activityTypeId}")
+    public ActivityType updateActivityType(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @PathVariable String activityTypeId,
+            @RequestBody ActivityTypeRequest request
+    ) {
+        return clients.updateActivityType(tenant(organizationId), activityTypeId, request);
+    }
+
+    @PostMapping("/api/activity-types/{activityTypeId}/retire")
+    public ActivityType retireActivityType(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @PathVariable String activityTypeId
+    ) {
+        return clients.retireActivityType(tenant(organizationId), activityTypeId);
     }
 
     /** The form needs to say which Client already holds the address, not just that one does. */

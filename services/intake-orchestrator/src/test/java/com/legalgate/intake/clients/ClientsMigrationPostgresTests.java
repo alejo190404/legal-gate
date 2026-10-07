@@ -2,6 +2,7 @@ package com.legalgate.intake.clients;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import java.sql.Connection;
@@ -124,6 +125,28 @@ class ClientsMigrationPostgresTests {
             connection.rollback();
         }
         assertThat(repository.clients("tenant-b")).extracting(Client::name).containsExactly("Beta");
+    }
+
+    @Test
+    void theStarterCatalogIsSeededOncePerTenantAndStaysInsideIt() throws Exception {
+        JdbcClientsRepository repository = repository();
+
+        repository.seedActivityTypesOnce("tenant-a", ClientsService.STARTER_CATALOG);
+        repository.seedActivityTypesOnce("tenant-a", ClientsService.STARTER_CATALOG);
+        ActivityType first = repository.activityTypes("tenant-a").get(0);
+        repository.saveActivityType("tenant-a", new ActivityType(first.id(), first.name(), first.kind(),
+                first.defaultTurnaroundDays(), first.defaultTermDays(), java.time.Instant.now()));
+
+        assertThat(repository.activityTypes("tenant-a")).hasSize(12);
+        assertThat(repository.activityType("tenant-a", first.id()).orElseThrow().retiredAt()).isNotNull();
+        assertThat(repository.activityTypes("tenant-b")).isEmpty();
+        try (Connection connection = appConnection()) {
+            connection.setAutoCommit(false);
+            assertThat(countFor(connection, "tenant-b", "activity_types")).isZero();
+            assertThat(countFor(connection, "tenant-b", "activity_type_catalogs")).isZero();
+            assertThat(countFor(connection, "tenant-a", "activity_type_catalogs")).isEqualTo(1);
+            connection.rollback();
+        }
     }
 
     static int countFor(Connection connection, String tenant, String table) throws SQLException {

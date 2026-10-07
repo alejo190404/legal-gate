@@ -1,5 +1,6 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import java.time.Instant;
@@ -20,6 +21,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
 
     private final Map<String, Map<String, Client>> clientsByTenant = new ConcurrentHashMap<>();
     private final Map<String, List<HistoryEntry>> historyByTenant = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, ActivityType>> activityTypesByTenant = new ConcurrentHashMap<>();
 
     @Override
     public List<Client> clients(String tenantSlug) {
@@ -63,6 +65,42 @@ public class InMemoryClientsRepository implements ClientsRepository {
     @Override
     public List<HistoryEntry> history(String tenantSlug, String clientId) {
         return tenantHistory(tenantSlug).stream().filter(entry -> clientId.equals(entry.clientId())).toList();
+    }
+
+    @Override
+    public List<ActivityType> activityTypes(String tenantSlug) {
+        return activityTypesByTenant.getOrDefault(tenantSlug, Map.of()).values().stream()
+                .sorted(Comparator.comparing(ActivityType::kind).thenComparing(ActivityType::name))
+                .toList();
+    }
+
+    @Override
+    public Optional<ActivityType> activityType(String tenantSlug, String activityTypeId) {
+        return Optional.ofNullable(activityTypesByTenant.getOrDefault(tenantSlug, Map.of()).get(activityTypeId));
+    }
+
+    @Override
+    public void seedActivityTypesOnce(String tenantSlug, List<ActivityType> starterSet) {
+        activityTypesByTenant.computeIfAbsent(tenantSlug, ignored -> {
+            Map<String, ActivityType> seeded = new ConcurrentHashMap<>();
+            starterSet.forEach(type -> {
+                String id = UUID.randomUUID().toString();
+                seeded.put(id, withId(type, id));
+            });
+            return seeded;
+        });
+    }
+
+    @Override
+    public ActivityType saveActivityType(String tenantSlug, ActivityType activityType) {
+        String id = activityType.id() == null ? UUID.randomUUID().toString() : activityType.id();
+        ActivityType saved = withId(activityType, id);
+        activityTypesByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>()).put(id, saved);
+        return saved;
+    }
+
+    private static ActivityType withId(ActivityType type, String id) {
+        return new ActivityType(id, type.name(), type.kind(), type.defaultTurnaroundDays(), type.defaultTermDays(), type.retiredAt());
     }
 
     private void appendHistory(String tenantSlug, String clientId, List<HistoryEntry> history) {

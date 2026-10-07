@@ -1,10 +1,13 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityType;
+import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.repository.IntakeRepository;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,6 +30,23 @@ public class ClientsService {
     static final String FIELD_CONTACT_ADDRESS = "contactAddress";
 
     private static final Pattern EMAIL = Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
+
+    /** Suggestions for the firm to review, seeded the first time its catalog is read. */
+    static final List<ActivityType> STARTER_CATALOG = List.of(
+            new ActivityType(null, "Redacción de contrato", ClientsModels.TURNAROUND, 5, null, null),
+            new ActivityType(null, "Revisión de contrato", ClientsModels.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Concepto jurídico", ClientsModels.TURNAROUND, 5, null, null),
+            new ActivityType(null, "Redacción de demanda", ClientsModels.TURNAROUND, 10, null, null),
+            new ActivityType(null, "Redacción de tutela", ClientsModels.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Derecho de petición", ClientsModels.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Reunión con el abogado", ClientsModels.DATED, null, null, null),
+            new ActivityType(null, "Audiencia", ClientsModels.DATED, null, null, null),
+            new ActivityType(null, "Firma en notaría", ClientsModels.DATED, null, null, null),
+            new ActivityType(null, "Fallo de tutela", ClientsModels.EXTERNAL, null, 10, null),
+            new ActivityType(null, "Respuesta a derecho de petición", ClientsModels.EXTERNAL, null, 15, null),
+            new ActivityType(null, "Registro de marca", ClientsModels.EXTERNAL, null, null, null));
+
+    private static final int MAX_DAYS = 365;
 
     private final ClientsRepository clients;
     private final IntakeRepository intake;
@@ -85,6 +105,69 @@ public class ClientsService {
     public List<HistoryEntry> history(String tenant, String clientId) {
         client(tenant, clientId);
         return clients.history(tenant, clientId);
+    }
+
+    public List<ActivityType> activityTypes(String tenant) {
+        clients.seedActivityTypesOnce(tenant, STARTER_CATALOG);
+        return clients.activityTypes(tenant);
+    }
+
+    /** What a new Activity may use: the catalog without its retired types. */
+    public List<ActivityType> offeredActivityTypes(String tenant) {
+        return activityTypes(tenant).stream().filter(type -> type.retiredAt() == null).toList();
+    }
+
+    public ActivityType createActivityType(String tenant, ActivityTypeRequest request) {
+        clients.seedActivityTypesOnce(tenant, STARTER_CATALOG);
+        return clients.saveActivityType(tenant, validatedType(null, null, request));
+    }
+
+    /** Changes the catalog only: Activities already open keep the defaults they were created with. */
+    public ActivityType updateActivityType(String tenant, String activityTypeId, ActivityTypeRequest request) {
+        ActivityType existing = activityType(tenant, activityTypeId);
+        return clients.saveActivityType(tenant, validatedType(existing.id(), existing.retiredAt(), request));
+    }
+
+    public ActivityType retireActivityType(String tenant, String activityTypeId) {
+        ActivityType existing = activityType(tenant, activityTypeId);
+        if (existing.retiredAt() != null) {
+            return existing;
+        }
+        return clients.saveActivityType(tenant, new ActivityType(existing.id(), existing.name(), existing.kind(),
+                existing.defaultTurnaroundDays(), existing.defaultTermDays(), Instant.now()));
+    }
+
+    ActivityType activityType(String tenant, String activityTypeId) {
+        return clients.activityType(tenant, activityTypeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "activity_type_not_found"));
+    }
+
+    private ActivityType validatedType(String id, Instant retiredAt, ActivityTypeRequest request) {
+        if (request == null || trimmed(request.name()) == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_type_name_required");
+        }
+        String kind = request.kind() == null ? "" : request.kind().trim().toUpperCase(Locale.ROOT);
+        return switch (kind) {
+            case ClientsModels.TURNAROUND -> {
+                if (request.defaultTurnaroundDays() == null || request.defaultTurnaroundDays() < 1
+                        || request.defaultTurnaroundDays() > MAX_DAYS) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "turnaround_days_required");
+                }
+                yield new ActivityType(id, request.name().trim(), kind, request.defaultTurnaroundDays(), null, retiredAt);
+            }
+            case ClientsModels.EXTERNAL -> new ActivityType(id, request.name().trim(), kind, null,
+                    termDays(request.defaultTermDays()), retiredAt);
+            case ClientsModels.DATED -> new ActivityType(id, request.name().trim(), kind, null, null, retiredAt);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_activity_kind");
+        };
+    }
+
+    /** A statutory term is optional; when given it is a positive number of Business Days. */
+    static Integer termDays(Integer days) {
+        if (days != null && (days < 1 || days > MAX_DAYS)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_term_days");
+        }
+        return days;
     }
 
     /** The active lawyer with that id, or a 400: Responsible and Assigned Lawyers are always active. */

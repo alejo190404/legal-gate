@@ -9,6 +9,10 @@ public final class ClientsModels {
     public static final String PERSON = "PERSON";
     public static final String ORGANIZATION = "ORGANIZATION";
 
+    public static final String TURNAROUND = "TURNAROUND";
+    public static final String DATED = "DATED";
+    public static final String EXTERNAL = "EXTERNAL";
+
     private ClientsModels() {
     }
 
@@ -54,5 +58,19 @@ public final class ClientsModels {
                 String newValue, String actorUserId) {
             return new HistoryEntry(null, clientId, activityId, field, oldValue, newValue, actorUserId, null);
         }
+    }
+
+    /** A kind of work in the firm's own catalog. Retired, never removed, once work of the type exists. */
+    public record ActivityType(
+            String id,
+            String name,
+            String kind,
+            Integer defaultTurnaroundDays,
+            Integer defaultTermDays,
+            Instant retiredAt
+    ) {
+    }
+
+    public record ActivityTypeRequest(String name, String kind, Integer defaultTurnaroundDays, Integer defaultTermDays) {
     }
 }

@@ -1,5 +1,6 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import java.sql.ResultSet;
@@ -119,6 +120,70 @@ class JdbcClientsRepository implements ClientsRepository {
                 rs.getString("activity_id"), rs.getString("field"), rs.getString("old_value"),
                 rs.getString("new_value"), rs.getString("actor_user_id"), instant(rs, "created_at")),
                 tenantSlug, UUID.fromString(clientId)));
+    }
+
+    @Override
+    public List<ActivityType> activityTypes(String tenantSlug) {
+        return inTenant(tenantSlug, () -> jdbc.query(activityTypeSelect() + " where t.slug = ? order by a.kind, a.name",
+                this::mapActivityType, tenantSlug));
+    }
+
+    @Override
+    public Optional<ActivityType> activityType(String tenantSlug, String activityTypeId) {
+        UUID id = uuid(activityTypeId);
+        if (id == null) {
+            return Optional.empty();
+        }
+        return inTenant(tenantSlug, () -> jdbc.query(activityTypeSelect() + " where t.slug = ? and a.id = ?",
+                this::mapActivityType, tenantSlug, id).stream().findFirst());
+    }
+
+    @Override
+    public void seedActivityTypesOnce(String tenantSlug, List<ActivityType> starterSet) {
+        inTenant(tenantSlug, () -> {
+            UUID tenantId = tenantId(tenantSlug);
+            int claimed = jdbc.update("insert into activity_type_catalogs (tenant_id) values (?) on conflict do nothing", tenantId);
+            if (claimed == 1) {
+                starterSet.forEach(type -> insertActivityType(tenantId, UUID.randomUUID(), type));
+            }
+            return null;
+        });
+    }
+
+    @Override
+    public ActivityType saveActivityType(String tenantSlug, ActivityType activityType) {
+        UUID id = activityType.id() == null ? UUID.randomUUID() : UUID.fromString(activityType.id());
+        inTenant(tenantSlug, () -> {
+            insertActivityType(tenantId(tenantSlug), id, activityType);
+            return null;
+        });
+        return activityType(tenantSlug, id.toString()).orElseThrow();
+    }
+
+    private void insertActivityType(UUID tenantId, UUID id, ActivityType type) {
+        jdbc.update("""
+                insert into activity_types (id, tenant_id, name, kind, default_turnaround_days, default_term_days, retired_at)
+                values (?, ?, ?, ?, ?, ?, ?)
+                on conflict (id) do update set
+                  name = excluded.name, kind = excluded.kind,
+                  default_turnaround_days = excluded.default_turnaround_days,
+                  default_term_days = excluded.default_term_days,
+                  retired_at = excluded.retired_at, updated_at = now()
+                """, id, tenantId, type.name(), type.kind(), type.defaultTurnaroundDays(), type.defaultTermDays(),
+                type.retiredAt() == null ? null : java.sql.Timestamp.from(type.retiredAt()));
+    }
+
+    private String activityTypeSelect() {
+        return """
+                select a.id, a.name, a.kind, a.default_turnaround_days, a.default_term_days, a.retired_at
+                from activity_types a join tenants t on t.id = a.tenant_id
+                """;
+    }
+
+    private ActivityType mapActivityType(ResultSet rs, int row) throws SQLException {
+        return new ActivityType(rs.getString("id"), rs.getString("name"), rs.getString("kind"),
+                (Integer) rs.getObject("default_turnaround_days"), (Integer) rs.getObject("default_term_days"),
+                instant(rs, "retired_at"));
     }
 
     void insertHistory(UUID tenantId, UUID clientId, List<HistoryEntry> history) {
