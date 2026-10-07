@@ -3,7 +3,6 @@ package com.legalgate.intake.service;
 
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
-import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -54,7 +53,6 @@ public class IntakeService {
     /** Stands in for a client name we could not read off the inbound email; never shown to a client. */
     static final String UNKNOWN_CLIENT = "Unknown client";
 
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Bogota");
     private static final List<UrgencyDefinition> DEFAULT_URGENCY_DEFINITIONS = List.of(
             new UrgencyDefinition("NORMAL", 1, 5, true),
             new UrgencyDefinition("URGENTE", 2, 1, true)
@@ -341,7 +339,7 @@ public class IntakeService {
         LawyerProfile lawyer = lawyerFor(settings, route)
                 .map(this::lawyerWithDefaultAvailability)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "active_lawyer_required"));
-        Instant deadline = addBusinessDays(createdAt, urgency.slaDays());
+        Instant deadline = BusinessDays.add(createdAt, urgency.slaDays());
         int priorityScore = priorityScore(urgency, deadline, createdAt);
         SlotSearchResult slot = findSlot(lawyer, intakeRepository.eventsForLawyer(tenantId, lawyer.id()), createdAt, deadline, priorityScore);
         return new SchedulingResult(eventResponse(route, urgency, deadline, priorityScore, slot.start(), slot.end(), "TENTATIVE", source, lawyer), slot.movedEvents());
@@ -429,8 +427,8 @@ public class IntakeService {
     }
 
     private List<Slot> candidateSlots(LawyerProfile lawyer, Instant searchStart, Instant searchEnd, int durationMinutes) {
-        LocalDate date = searchStart.atZone(BUSINESS_ZONE).toLocalDate();
-        LocalDate endDate = searchEnd.atZone(BUSINESS_ZONE).toLocalDate();
+        LocalDate date = searchStart.atZone(BusinessDays.ZONE).toLocalDate();
+        LocalDate endDate = searchEnd.atZone(BusinessDays.ZONE).toLocalDate();
         List<Slot> slots = new ArrayList<>();
         while (!date.isAfter(endDate)) {
             final int weekday = date.getDayOfWeek().getValue();
@@ -627,19 +625,6 @@ public class IntakeService {
         long hoursToDeadline = Math.max(0, Duration.between(createdAt, deadline).toHours());
         int pressure = Math.max(0, 240 - (int) Math.min(240, hoursToDeadline));
         return urgency.rank() * 10_000 + pressure;
-    }
-
-    private Instant addBusinessDays(Instant start, int days) {
-        ZonedDateTime dateTime = start.atZone(BUSINESS_ZONE);
-        int remaining = Math.max(0, days);
-        while (remaining > 0) {
-            dateTime = dateTime.plusDays(1);
-            DayOfWeek day = dateTime.getDayOfWeek();
-            if (day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY) {
-                remaining--;
-            }
-        }
-        return dateTime.toInstant();
     }
 
     private ConsultationClassifierRequest classifierRequestFor(InboundEmailReceived event, List<TenantRoutingRule> routingRules) {

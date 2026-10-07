@@ -3,6 +3,7 @@ package com.legalgate.intake.repository;
 import static org.assertj.core.api.Assertions.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
@@ -29,6 +30,7 @@ import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
+import com.legalgate.intake.service.BusinessDays;
 import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.FirmNameResolver;
@@ -390,6 +392,10 @@ class DiagnosticsTests {
         // one anchored now, and the clock must not have been running while the client was asked.
         Instant deadline = reload(pending).event().slaDeadline();
         assertThat(deadline).isAfter(arrival.plusSeconds(4 * 24 * 3600));
+        // Counted in Business Days: festivos are skipped like weekends.
+        LocalDate deadlineDay = deadline.atZone(BusinessDays.ZONE).toLocalDate();
+        assertThat(BusinessDays.isBusinessDay(deadlineDay)).isTrue();
+        assertThat(BusinessDays.between(arrival.atZone(BusinessDays.ZONE).toLocalDate(), deadlineDay)).isEqualTo(5);
     }
 
     @Test
