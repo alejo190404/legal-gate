@@ -49,6 +49,7 @@ public class ClientMailService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMailService.class);
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
     private static final int BATCH_SIZE = 20;
+    private static final java.time.Duration CORRESPONDENCE_RETENTION = java.time.Duration.ofDays(365);
 
     private final ClientsRepository clients;
     private final IntakeRepository intake;
@@ -102,6 +103,19 @@ public class ClientMailService {
                 // The lease expires and the entry is picked up again; nothing is lost.
                 LOGGER.warn("Client mail id={} tenant={} failed", entry.id(), entry.tenantId(), ex);
             }
+        }
+    }
+
+    /**
+     * What a Client wrote is purged after a year; what LegalGate did and the exact words it sent
+     * on the firm's behalf are kept while the Client exists (ADR-0007, the split of ADR-0003).
+     */
+    @Scheduled(fixedDelayString = "${LEGALGATE_CLIENT_MAIL_PURGE_SWEEP_MS:86400000}",
+            initialDelayString = "${LEGALGATE_CLIENT_MAIL_PURGE_INITIAL_DELAY_MS:150000}")
+    public void purgeExpiredCorrespondence() {
+        int purged = clients.purgeCorrespondenceBodies(Instant.now().minus(CORRESPONDENCE_RETENTION));
+        if (purged > 0) {
+            LOGGER.info("Purged the text of {} Client emails past retention.", purged);
         }
     }
 

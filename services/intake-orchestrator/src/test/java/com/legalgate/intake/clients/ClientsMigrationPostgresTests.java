@@ -264,6 +264,55 @@ class ClientsMigrationPostgresTests {
         }
     }
 
+    @Test
+    void thePurgeKeepsWhatLegalGateDidAndDeletionCascadesThroughEverythingOfTheClient() throws Exception {
+        JdbcClientsRepository repository = repository();
+        Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"),
+                List.of(HistoryEntry.of(null, null, "client", null, "Acme SAS", "user_1")));
+        Correspondence old = repository.recordCorrespondence("tenant-a", new Correspondence(null, "tenant-a", acme.id(),
+                "gc@acme.co", "<old@acme.co>", "Hola", "Texto del cliente", Instant.now().minusSeconds(400L * 86400),
+                null, null, null, null, 0, null)).orElseThrow();
+        repository.saveCorrespondence("tenant-a", old.resolved("status_inquiry", ClientsModels.ANSWERED, "Respuesta enviada."),
+                List.of(NotificationOutboxItem.forCorrespondence(old.id(), "CLIENT_STATUS_ANSWER", "CLIENT", "gc@acme.co",
+                        "tenant-a@intake.legal-gate.co", null, "Re: Hola", "Respuesta enviada.")));
+        repository.recordCorrespondence("tenant-a", pending(acme, "<new@acme.co>"));
+        repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", acme, LAWYER_A), List.of());
+        String consultationId = java.util.UUID.randomUUID().toString();
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    insert into consultations (id, tenant_id, client_name, client_email, summary, status, urgency,
+                      classification, notifications, created_at, engaged_client_id)
+                    select '%s', id, 'Acme', 'gc@acme.co', 'Hola', 'RECEIVED', 'NORMAL', '{}', '{}', now(), '%s'
+                    from tenants where slug = 'tenant-a'
+                    """.formatted(consultationId, acme.id()));
+        }
+
+        assertThat(repository.purgeCorrespondenceBodies(Instant.now().minusSeconds(365L * 86400))).isEqualTo(1);
+        assertThat(repository.purgeCorrespondenceBodies(Instant.now().minusSeconds(365L * 86400))).isZero();
+        Correspondence purged = repository.correspondence("tenant-a", old.id()).orElseThrow();
+        assertThat(purged.body()).isNull();
+        assertThat(purged.purgedAt()).isNotNull();
+        assertThat(purged.outcome()).isEqualTo(ClientsModels.ANSWERED);
+        assertThat(purged.answerText()).isEqualTo("Respuesta enviada.");
+
+        repository.deleteClient("tenant-a", acme.id());
+
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            for (String table : List.of("clients", "client_contact_addresses", "activities", "activity_history",
+                    "client_correspondence")) {
+                try (ResultSet rows = sql.executeQuery("select count(*) from " + table)) {
+                    rows.next();
+                    assertThat(rows.getInt(1)).as(table).isZero();
+                }
+            }
+            try (ResultSet rows = sql.executeQuery("select engaged_client_id from consultations where id = '" + consultationId + "'")) {
+                rows.next();
+                assertThat(rows.getString(1)).isNull();
+            }
+        }
+        assertThat(repository.clientForContactAddress("tenant-a", "gc@acme.co")).isEmpty();
+    }
+
     static Activity turnaround(JdbcClientsRepository repository, String tenant, Client client, String lawyerId) {
         repository.seedActivityTypesOnce(tenant, ClientsService.STARTER_CATALOG);
         ActivityType type = repository.activityTypes(tenant).stream()

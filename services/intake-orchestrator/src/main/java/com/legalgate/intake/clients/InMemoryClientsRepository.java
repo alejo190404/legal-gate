@@ -240,6 +240,27 @@ public class InMemoryClientsRepository implements ClientsRepository {
         return true;
     }
 
+    @Override
+    public synchronized int purgeCorrespondenceBodies(Instant cutoff) {
+        List<Correspondence> due = correspondenceById.values().stream()
+                .filter(entry -> entry.purgedAt() == null && entry.receivedAt().isBefore(cutoff))
+                .toList();
+        Instant now = Instant.now();
+        due.forEach(entry -> correspondenceById.put(entry.id(), new Correspondence(entry.id(), entry.tenantId(),
+                entry.clientId(), entry.contactAddress(), entry.messageId(), entry.subject(), null, entry.receivedAt(),
+                entry.intent(), entry.outcome(), entry.answerText(), now, entry.attempts(), entry.nextAttemptAt())));
+        return due.size();
+    }
+
+    @Override
+    public synchronized void deleteClient(String tenantSlug, String clientId) {
+        tenantClients(tenantSlug).remove(clientId);
+        activitiesById.values().removeIf(activity -> activity.clientId().equals(clientId));
+        tenantHistory(tenantSlug).removeIf(entry -> entry.clientId().equals(clientId));
+        correspondenceById.values().removeIf(entry -> entry.clientId().equals(clientId));
+        engagedClientByConsultation.values().removeIf(clientId::equals);
+    }
+
     private Activity withTypeName(String tenantSlug, Activity activity) {
         String typeName = activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null);
         return new Activity(activity.id(), activity.tenantId(), activity.clientId(), activity.activityTypeId(), typeName,

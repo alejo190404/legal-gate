@@ -213,4 +213,22 @@ describe('ClientsComponent', () => {
     expect(http.expectOne('/api/clients/client-1/activities/a1/done').request.method).toBe('POST');
     confirmSpy.mockRestore();
   });
+
+  it('deletes a client only after a confirmation that names the diagnostics consequence', () => {
+    const { http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    component.deleteClient(client());
+    http.expectNone('/api/clients/client-1');
+    expect(confirmSpy.mock.calls[0][0]).toContain('pasará por diagnóstico');
+
+    confirmSpy.mockReturnValue(true);
+    component.deleteClient(client());
+    const request = http.expectOne('/api/clients/client-1');
+    expect(request.request.method).toBe('DELETE');
+    request.flush(null);
+    http.expectOne('/api/clients').flush([]);
+    confirmSpy.mockRestore();
+  });
 });

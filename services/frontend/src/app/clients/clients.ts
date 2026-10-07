@@ -466,6 +466,23 @@ export class ClientsComponent implements OnInit {
     });
   }
 
+  /** The confirmation names the consequence: the person is a stranger to LegalGate again. */
+  deleteClient(client: Client): void {
+    const message =
+      `¿Eliminar a ${client.name}? Se borrarán sus correos de contacto, actividades, historial y correspondencia. ` +
+      'Si vuelve a escribir, su correo pasará por diagnóstico como el de cualquier persona nueva.';
+    if (!confirm(message)) {
+      return;
+    }
+    this.http.delete(this.apiConfig.url(`/api/clients/${client.id}`)).subscribe({
+      next: () => {
+        this.close();
+        this.load();
+      },
+      error: () => this.errorMessage.set('No se pudo eliminar el cliente.'),
+    });
+  }
+
   lawyerName(lawyerId: string | null): string {
     return this.lawyers().find((lawyer) => lawyer.id === lawyerId)?.displayName ?? 'Sin asignar';
   }

@@ -86,5 +86,14 @@ public interface ClientsRepository {
     boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, LocalDate forDate,
             List<NotificationOutboxItem> notifications);
 
+    /** Nulls the body of every entry received before {@code cutoff}, keeping intent, outcome and answer. */
+    int purgeCorrespondenceBodies(java.time.Instant cutoff);
+
+    /**
+     * Hard-deletes the Client with its Contact Addresses, Activities, Activity History and Client
+     * Correspondence, and clears the link on any Consultation engaged into it.
+     */
+    void deleteClient(String tenantSlug, String clientId);
+
     enum NudgeTrigger { OVERDUE, TERM_PASSED }
 }

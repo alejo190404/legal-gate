@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -73,6 +74,12 @@ public class ClientsController {
             @RequestBody ClientRequest request
     ) {
         return clients.update(tenant(organizationId), userId, clientId, request);
+    }
+
+    @DeleteMapping("/api/clients/{clientId}")
+    public ResponseEntity<Void> delete(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+        clients.deleteClient(tenant(organizationId), clientId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/api/clients/{clientId}/history")

@@ -93,6 +93,15 @@ public class ClientsService {
         return clients.saveClient(tenant, after, history);
     }
 
+    /**
+     * Deletion is the only way out of being a Client: a mistake, or a request under Ley 1581. The
+     * person goes through Diagnostics if they write again.
+     */
+    public void deleteClient(String tenant, String clientId) {
+        client(tenant, clientId);
+        clients.deleteClient(tenant, clientId);
+    }
+
     public Client client(String tenant, String clientId) {
         return clients.client(tenant, clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "client_not_found"));

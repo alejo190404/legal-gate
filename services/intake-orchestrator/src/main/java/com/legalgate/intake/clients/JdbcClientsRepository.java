@@ -359,6 +359,21 @@ class JdbcClientsRepository implements ClientsRepository {
         });
     }
 
+    @Override
+    public int purgeCorrespondenceBodies(Instant cutoff) {
+        return inTenant(WORKER, () -> jdbc.update("""
+                update client_correspondence set body = null, purged_at = now()
+                where received_at < ? and purged_at is null
+                """, java.sql.Timestamp.from(cutoff)));
+    }
+
+    @Override
+    public void deleteClient(String tenantSlug, String clientId) {
+        // Everything else goes by foreign key: addresses, Activities, history and correspondence
+        // cascade, and an engaged Consultation's link is set null.
+        inTenant(tenantSlug, () -> jdbc.update("delete from clients where id = ?", UUID.fromString(clientId)));
+    }
+
     private String activitySelect() {
         return """
                 select a.id, a.tenant_slug, a.client_id, a.activity_type_id, t.name as type_name, a.kind, a.label,
