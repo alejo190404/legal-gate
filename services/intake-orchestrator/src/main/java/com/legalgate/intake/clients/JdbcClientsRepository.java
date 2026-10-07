@@ -255,6 +255,33 @@ class JdbcClientsRepository implements ClientsRepository {
         });
     }
 
+    @Override
+    public Optional<String> engagedClientId(String tenantSlug, String consultationId) {
+        UUID id = uuid(consultationId);
+        if (id == null) {
+            return Optional.empty();
+        }
+        return inTenant(tenantSlug, () -> jdbc.query("""
+                select c.engaged_client_id from consultations c join tenants t on t.id = c.tenant_id
+                where t.slug = ? and c.id = ? and c.engaged_client_id is not null
+                """, (rs, row) -> rs.getString("engaged_client_id"), tenantSlug, id).stream().findFirst());
+    }
+
+    @Override
+    public boolean engage(String tenantSlug, String consultationId, String clientId, List<HistoryEntry> history) {
+        return inTenant(tenantSlug, () -> {
+            int linked = jdbc.update("""
+                    update consultations set engaged_client_id = ?
+                    where id = ? and engaged_client_id is null
+                    """, UUID.fromString(clientId), UUID.fromString(consultationId));
+            if (linked == 0) {
+                return false;
+            }
+            insertHistory(tenantId(tenantSlug), UUID.fromString(clientId), history);
+            return true;
+        });
+    }
+
     private String correspondenceSelect() {
         return """
                 select c.id, c.tenant_slug, c.client_id, c.contact_address, c.message_id, c.subject, c.body,

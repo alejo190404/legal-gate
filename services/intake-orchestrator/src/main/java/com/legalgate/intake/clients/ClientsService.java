@@ -5,6 +5,10 @@ import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
+import com.legalgate.intake.clients.ClientsModels.Engagement;
+import com.legalgate.intake.clients.ClientsModels.EngagementRequest;
+import com.legalgate.intake.model.ConsultationResponse;
+import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.repository.IntakeRepository;
@@ -106,6 +110,76 @@ public class ClientsService {
     public List<HistoryEntry> history(String tenant, String clientId) {
         client(tenant, clientId);
         return clients.history(tenant, clientId);
+    }
+
+    /** Whom the Consultation became, or a Client draft prefilled from it. */
+    public Engagement engagement(String tenant, String consultationId) {
+        ConsultationResponse consultation = consultation(tenant, consultationId);
+        String engaged = clients.engagedClientId(tenant, consultationId).orElse(null);
+        return new Engagement(consultationId, engaged, engaged != null ? null : new ClientRequest(
+                consultation.clientName(), ClientsModels.PERSON, null, null, null,
+                prefilledLawyer(tenant, consultation), List.of(consultation.clientEmail())));
+    }
+
+    /**
+     * The firm takes the potential client on: a deliberate act, offered on any Consultation out of
+     * Diagnostics and at most once. Into an existing Client, the sender address is added to it.
+     */
+    public Client engage(String tenant, String actor, String consultationId, EngagementRequest request) {
+        ConsultationResponse consultation = consultation(tenant, consultationId);
+        if ("DIAGNOSTICS_PENDING".equals(consultation.status())) {
+            // "Accept now" stays the one way to end Diagnostics early.
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "consultation_in_diagnostics");
+        }
+        if (clients.engagedClientId(tenant, consultationId).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "consultation_already_engaged");
+        }
+        if (request == null || (request.clientId() == null && request.client() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "client_required");
+        }
+        Client client;
+        if (request.clientId() != null) {
+            Client existing = client(tenant, request.clientId());
+            List<String> addresses = new ArrayList<>(existing.contactAddresses());
+            String sender = normalizeAddress(consultation.clientEmail());
+            if (sender != null && !addresses.contains(sender)) {
+                addresses.add(sender);
+            }
+            client = update(tenant, actor, existing.id(), new ClientRequest(existing.name(), existing.kind(),
+                    existing.idNumber(), existing.phone(), existing.notes(), existing.responsibleLawyerId(), addresses));
+        } else {
+            client = create(tenant, actor, request.client());
+        }
+        // ponytail: create-then-link is two writes; two admins engaging the same Consultation at
+        // once can leave the loser's new Client unlinked. Rare, visible, and deletable.
+        if (!clients.engage(tenant, consultationId, client.id(),
+                List.of(HistoryEntry.of(client.id(), null, "engagement", null, consultationId, actor)))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "consultation_already_engaged");
+        }
+        return client;
+    }
+
+    private ConsultationResponse consultation(String tenant, String consultationId) {
+        return intake.consultationById(tenant, consultationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "consultation_not_found"));
+    }
+
+    /** The Routing Rule's lawyer, else the Event's, else the firm's first active lawyer. */
+    private String prefilledLawyer(String tenant, ConsultationResponse consultation) {
+        List<String> active = intake.lawyersForTenant(tenant).stream()
+                .filter(lawyer -> lawyer.active() == null || lawyer.active())
+                .map(LawyerProfile::id)
+                .toList();
+        var settings = intake.settingsFor(tenant, null);
+        List<TenantRoutingRule> rules = settings == null || settings.routingRules() == null ? List.of() : settings.routingRules();
+        List<String> candidates = new ArrayList<>();
+        rules.stream().filter(rule -> rule.name().equals(consultation.consultationType()))
+                .map(TenantRoutingRule::lawyerId).forEach(candidates::add);
+        if (consultation.event() != null) {
+            candidates.add(consultation.event().lawyerId());
+        }
+        return candidates.stream().filter(active::contains).findFirst()
+                .orElse(active.isEmpty() ? null : active.get(0));
     }
 
     /** Every email the Client sent and what LegalGate did with it, newest first. */

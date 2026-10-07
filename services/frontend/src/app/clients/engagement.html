@@ -1,0 +1,87 @@
+@if (engagement(); as e) {
+  <div class="section-h">Cliente</div>
+  @if (e.clientId) {
+    <button class="btn sec wide" type="button" (click)="openClient.emit(e.clientId)">Ver cliente vinculado</button>
+  } @else {
+    <button class="btn sec wide" type="button" (click)="start()">Vincular como cliente</button>
+  }
+}
+
+@if (isOpen()) {
+  <div class="modal-backdrop" role="presentation" (click)="close()"></div>
+  <section class="tutorial-modal pixel-card" role="dialog" aria-modal="true" aria-labelledby="engagement-title">
+    <header>
+      <div>
+        <p class="eyebrow">Vinculación</p>
+        <h2 id="engagement-title">Tomar como cliente</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="close()">×</button>
+    </header>
+    <form class="settings-form" (submit)="submit(); $event.preventDefault()">
+      <div class="form-field">
+        <label>
+          <input type="radio" name="engagementMode" value="new" [ngModel]="mode()" (ngModelChange)="mode.set($event)" />
+          Cliente nuevo
+        </label>
+        <label>
+          <input type="radio" name="engagementMode" value="existing" [ngModel]="mode()" (ngModelChange)="mode.set($event)" />
+          Cliente existente (agrega este correo a sus contactos)
+        </label>
+      </div>
+
+      @if (mode() === 'existing') {
+        <div class="form-field">
+          <label for="engagementClient">Cliente</label>
+          <select id="engagementClient" name="engagementClient" [ngModel]="existingClientId()"
+            (ngModelChange)="existingClientId.set($event)">
+            <option value="" disabled>Escoge un cliente</option>
+            @for (client of clients(); track client.id) {
+              <option [value]="client.id">{{ client.name }}</option>
+            }
+          </select>
+        </div>
+      } @else {
+        <div class="form-field">
+          <label for="engagementName">Nombre</label>
+          <input id="engagementName" name="engagementName" [(ngModel)]="form.name" />
+        </div>
+        <div class="form-field">
+          <label for="engagementKind">Tipo</label>
+          <select id="engagementKind" name="engagementKind" [(ngModel)]="form.kind">
+            <option value="PERSON">Persona</option>
+            <option value="ORGANIZATION">Organización</option>
+          </select>
+        </div>
+        <fieldset class="form-field">
+          <legend>Correos de contacto</legend>
+          @for (address of form.contactAddresses; track $index) {
+            <div class="address-row">
+              <input type="email" [attr.aria-label]="'Correo de contacto ' + ($index + 1)"
+                [name]="'engagementAddress' + $index" [(ngModel)]="form.contactAddresses[$index]" />
+            </div>
+          }
+          <button class="link-button" type="button" (click)="form.contactAddresses.push('')">+ Agregar correo</button>
+        </fieldset>
+        <div class="form-field">
+          <label for="engagementLawyer">Abogado responsable</label>
+          <select id="engagementLawyer" name="engagementLawyer" [(ngModel)]="form.responsibleLawyerId">
+            @for (lawyer of activeLawyers(); track lawyer.id) {
+              <option [value]="lawyer.id">{{ lawyer.displayName }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="engagementIdNumber">Cédula / NIT (opcional)</label>
+          <input id="engagementIdNumber" name="engagementIdNumber" [(ngModel)]="form.idNumber" />
+        </div>
+      }
+
+      @if (formError()) {
+        <div class="panel-error"><strong>{{ formError() }}</strong></div>
+      }
+      <button class="btn primary" type="submit" [disabled]="isSubmitting()">
+        {{ isSubmitting() ? 'Guardando…' : 'Confirmar vinculación' }}
+      </button>
+    </form>
+  </section>
+}

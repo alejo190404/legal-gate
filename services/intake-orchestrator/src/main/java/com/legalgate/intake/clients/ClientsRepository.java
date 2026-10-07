@@ -53,4 +53,12 @@ public interface ClientsRepository {
      * Saves the entry's new state and queues {@code notifications} in the same write, so an outcome is never recorded without the mail it caused, or the reverse.
      */
     void saveCorrespondence(String tenantSlug, Correspondence correspondence, List<NotificationOutboxItem> notifications);
+
+    Optional<String> engagedClientId(String tenantSlug, String consultationId);
+
+    /**
+     * Links the Consultation to the Client and appends {@code history}; false, changing nothing,
+     * when the Consultation was already engaged.
+     */
+    boolean engage(String tenantSlug, String consultationId, String clientId, List<HistoryEntry> history);
 }

@@ -5,6 +5,8 @@ import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
+import com.legalgate.intake.clients.ClientsModels.Engagement;
+import com.legalgate.intake.clients.ClientsModels.EngagementRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.service.TenantContextResolver;
 import java.net.URI;
@@ -79,6 +81,21 @@ public class ClientsController {
     @GetMapping("/api/clients/{clientId}/correspondence")
     public List<Correspondence> correspondence(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
         return clients.correspondence(tenant(organizationId), clientId);
+    }
+
+    @GetMapping("/api/consultations/{consultationId}/engagement")
+    public Engagement engagement(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String consultationId) {
+        return clients.engagement(tenant(organizationId), consultationId);
+    }
+
+    @PostMapping("/api/consultations/{consultationId}/engage")
+    public Client engage(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader(USER) String userId,
+            @PathVariable String consultationId,
+            @RequestBody EngagementRequest request
+    ) {
+        return clients.engage(tenant(organizationId), userId, consultationId, request);
     }
 
     @GetMapping("/api/activity-types")

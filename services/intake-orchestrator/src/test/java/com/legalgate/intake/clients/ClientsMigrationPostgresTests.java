@@ -189,6 +189,29 @@ class ClientsMigrationPostgresTests {
         }
     }
 
+    @Test
+    void aConsultationIsEngagedOnce() throws Exception {
+        JdbcClientsRepository repository = repository();
+        Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());
+        String consultationId = java.util.UUID.randomUUID().toString();
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    insert into consultations (id, tenant_id, client_name, client_email, summary, status, urgency,
+                      classification, notifications, created_at)
+                    select '%s', id, 'Maria', 'maria@example.com', 'Hola', 'RECEIVED', 'NORMAL', '{}', '{}', now()
+                    from tenants where slug = 'tenant-a'
+                    """.formatted(consultationId));
+        }
+
+        assertThat(repository.engage("tenant-a", consultationId, acme.id(),
+                List.of(HistoryEntry.of(acme.id(), null, "engagement", null, consultationId, "user_1")))).isTrue();
+        assertThat(repository.engage("tenant-a", consultationId, acme.id(), List.of())).isFalse();
+
+        assertThat(repository.engagedClientId("tenant-a", consultationId)).contains(acme.id());
+        assertThat(repository.engagedClientId("tenant-b", consultationId)).isEmpty();
+        assertThat(repository.history("tenant-a", acme.id())).extracting(HistoryEntry::field).containsExactly("engagement");
+    }
+
     static Correspondence pending(Client client, String messageId) {
         return new Correspondence(null, "tenant-a", client.id(), "gc@acme.co", messageId, "Hola", "Hola.",
                 Instant.now(), null, null, null, null, 0, Instant.now().minusSeconds(1));

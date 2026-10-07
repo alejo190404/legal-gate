@@ -6,6 +6,7 @@ import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 import { ActivityTypesComponent } from '../activity-types/activity-types';
 import { ClientsComponent } from '../clients/clients';
+import { EngagementComponent } from '../clients/engagement';
 import { PixelIconComponent } from './pixel-icon';
 
 type ViewName = 'loading' | 'register' | 'onboard-lawyers' | 'onboard-rules' | 'billing' | 'console';
@@ -287,7 +288,7 @@ interface CalendarBlock {
 
 @Component({
   selector: 'app-console',
-  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent, ClientsComponent, ActivityTypesComponent],
+  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent, ClientsComponent, ActivityTypesComponent, EngagementComponent],
   templateUrl: './console.html',
   styleUrl: './console.scss',
 })
@@ -403,6 +404,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   });
   readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
   readonly savedLawyers = computed(() => this.tenantSettings()?.lawyers ?? []);
+  readonly openClientId = signal<string | null>(null);
   // App-kit navigation: a Workspace group and a Configure group, mirroring the
   // "Firm Console" in Claude Design. `wip` screens render the design-system
   // Work-in-progress placeholder instead of a built feature.
@@ -879,6 +881,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       default:
         return null;
     }
+  }
+
+  openClient(clientId: string): void {
+    this.openClientId.set(clientId);
+    this.setView('clients');
   }
 
   selectConsultation(id: string): void {

@@ -111,4 +111,12 @@ public final class ClientsModels {
                     intent, outcome, answerText, purgedAt, attempts + 1, next);
         }
     }
+
+    /** Engage a Consultation into the existing Client {@code clientId}, or into a new one from {@code client}. */
+    public record EngagementRequest(String clientId, ClientRequest client) {
+    }
+
+    /** A Consultation's Engagement: the Client it became, or a draft prefilled from it when not yet engaged. */
+    public record Engagement(String consultationId, String clientId, ClientRequest draft) {
+    }
 }

@@ -813,6 +813,14 @@
                       }
                     </div>
 
+                    @if (c.status !== 'DIAGNOSTICS_PENDING') {
+                      <app-engagement
+                        [consultationId]="c.id"
+                        [lawyers]="savedLawyers()"
+                        (openClient)="openClient($event)"
+                      />
+                    }
+
                     @if (diagnostics(); as dx) {
                       <div class="section-h">Diagnóstico</div>
                       <div class="detail-row">
@@ -905,7 +913,7 @@
           }
 
           @case ('clients') {
-            <app-clients [lawyers]="savedLawyers()" />
+            <app-clients [lawyers]="savedLawyers()" [openClientId]="openClientId()" />
           }
 
           @case ('rules') {

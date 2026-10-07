@@ -26,6 +26,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
     private final Map<String, List<HistoryEntry>> historyByTenant = new ConcurrentHashMap<>();
     private final Map<String, Map<String, ActivityType>> activityTypesByTenant = new ConcurrentHashMap<>();
     private final Map<String, Correspondence> correspondenceById = new ConcurrentHashMap<>();
+    private final Map<String, String> engagedClientByConsultation = new ConcurrentHashMap<>();
     private final IntakeRepository intake;
 
     /** Queues mail through the in-memory intake repository, which owns the outbox. */
@@ -154,6 +155,20 @@ public class InMemoryClientsRepository implements ClientsRepository {
     public void saveCorrespondence(String tenantSlug, Correspondence correspondence, List<NotificationOutboxItem> notifications) {
         correspondenceById.put(correspondence.id(), correspondence);
         intake.queueNotifications(tenantSlug, notifications);
+    }
+
+    @Override
+    public Optional<String> engagedClientId(String tenantSlug, String consultationId) {
+        return Optional.ofNullable(engagedClientByConsultation.get(tenantSlug + ":" + consultationId));
+    }
+
+    @Override
+    public boolean engage(String tenantSlug, String consultationId, String clientId, List<HistoryEntry> history) {
+        if (engagedClientByConsultation.putIfAbsent(tenantSlug + ":" + consultationId, clientId) != null) {
+            return false;
+        }
+        appendHistory(tenantSlug, clientId, history);
+        return true;
     }
 
     private static Correspondence leased(Correspondence entry, Instant until) {

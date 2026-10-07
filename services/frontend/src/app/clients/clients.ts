@@ -133,6 +133,8 @@ export class ClientsComponent implements OnInit {
   private readonly apiConfig = inject(ApiConfigService);
 
   readonly lawyers = input<Lawyer[]>([]);
+  /** A Client to open on arrival, e.g. from a Consultation's Engagement. */
+  readonly openClientId = input<string | null>(null);
 
   readonly clients = signal<Client[]>([]);
   readonly query = signal('');
@@ -165,6 +167,11 @@ export class ClientsComponent implements OnInit {
       next: (clients) => {
         this.clients.set(clients);
         this.errorMessage.set('');
+        const wanted = this.openClientId();
+        const client = wanted && !this.selected() ? clients.find((candidate) => candidate.id === wanted) : null;
+        if (client) {
+          this.open(client);
+        }
       },
       error: () => this.errorMessage.set('No se pudieron cargar los clientes.'),
     });
