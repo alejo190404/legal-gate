@@ -337,6 +337,28 @@ class JdbcClientsRepository implements ClientsRepository {
                 this::mapActivity, tenantSlug));
     }
 
+    @Override
+    public List<Activity> openActivitiesAcrossTenants() {
+        // ponytail: reads every open Activity each sweep and lets Java decide which are due, because
+        // Business Days are computed in Java; push a date prefilter into SQL if this grows large.
+        return inTenant(WORKER, () -> jdbc.query(activitySelect() + " where not a.done", this::mapActivity));
+    }
+
+    @Override
+    public boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, java.time.LocalDate forDate,
+            List<NotificationOutboxItem> notifications) {
+        String column = trigger == NudgeTrigger.OVERDUE ? "overdue_nudged_for" : "term_nudged_for";
+        return inTenant(tenantSlug, () -> {
+            int claimed = jdbc.update("update activities set " + column + " = ? where id = ? and not done and "
+                    + column + " is distinct from ?", forDate, UUID.fromString(activityId), forDate);
+            if (claimed == 0) {
+                return false;
+            }
+            NotificationOutboxSql.insert(jdbc, tenantId(tenantSlug), tenantSlug, notifications);
+            return true;
+        });
+    }
+
     private String activitySelect() {
         return """
                 select a.id, a.tenant_slug, a.client_id, a.activity_type_id, t.name as type_name, a.kind, a.label,

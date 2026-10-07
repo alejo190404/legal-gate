@@ -475,6 +475,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       return;
     }
     this.sessionEmail.set(user.email);
+    // Reminder emails link here with ?client=<id>; the Client opens once the console is up.
+    const linkedClient = new URLSearchParams(window.location.search).get('client');
+    if (linkedClient) {
+      this.openClient(linkedClient);
+    }
     if (this.auth.hasOrganization()) {
       this.view.set('loading');
       this.loadSession();

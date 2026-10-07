@@ -214,6 +214,32 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .toList();
     }
 
+    @Override
+    public List<Activity> openActivitiesAcrossTenants() {
+        return activitiesById.values().stream()
+                .filter(activity -> !activity.done())
+                .map(activity -> withTypeName(activity.tenantId(), activity))
+                .toList();
+    }
+
+    @Override
+    public synchronized boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger,
+            java.time.LocalDate forDate, List<NotificationOutboxItem> notifications) {
+        Activity activity = activitiesById.get(activityId);
+        boolean overdue = trigger == NudgeTrigger.OVERDUE;
+        if (activity == null || forDate.equals(overdue ? activity.overdueNudgedFor() : activity.termNudgedFor())) {
+            return false;
+        }
+        activitiesById.put(activityId, new Activity(activity.id(), activity.tenantId(), activity.clientId(),
+                activity.activityTypeId(), activity.typeName(), activity.kind(), activity.label(), activity.startDate(),
+                activity.turnaroundDays(), activity.dueDate(), activity.scheduledDate(), activity.termDays(),
+                activity.assignedLawyerId(), activity.done(), activity.doneAt(),
+                overdue ? forDate : activity.overdueNudgedFor(), overdue ? activity.termNudgedFor() : forDate,
+                activity.createdAt()));
+        intake.queueNotifications(tenantSlug, notifications);
+        return true;
+    }
+
     private Activity withTypeName(String tenantSlug, Activity activity) {
         String typeName = activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null);
         return new Activity(activity.id(), activity.tenantId(), activity.clientId(), activity.activityTypeId(), typeName,

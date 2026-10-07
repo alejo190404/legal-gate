@@ -6,6 +6,7 @@ import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,4 +74,17 @@ public interface ClientsRepository {
 
     /** Every open Activity of the tenant. */
     List<Activity> openActivities(String tenantSlug);
+
+    /** Every open Activity of every tenant, for the reminder worker. */
+    List<Activity> openActivitiesAcrossTenants();
+
+    /**
+     * Records that the {@code trigger} reminder for {@code forDate} went out and queues it, in one
+     * write; false, queuing nothing, when that reminder was already sent. This is the claim that
+     * keeps a reminder to once per Activity per date even with two workers.
+     */
+    boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, LocalDate forDate,
+            List<NotificationOutboxItem> notifications);
+
+    enum NudgeTrigger { OVERDUE, TERM_PASSED }
 }

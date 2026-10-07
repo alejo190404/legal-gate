@@ -239,6 +239,40 @@ class ClientsMigrationPostgresTests {
         }
     }
 
+    @Test
+    void theReminderWorkerSeesEveryFirmsOpenWorkAndClaimsEachReminderOnce() throws Exception {
+        JdbcClientsRepository repository = repository();
+        Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());
+        Client beta = repository.saveClient("tenant-b", client(null, "Beta", LAWYER_B, "b@beta.co"), List.of());
+        Activity late = repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", acme, LAWYER_A), List.of());
+        repository.saveActivity("tenant-b", turnaround(repository, "tenant-b", beta, LAWYER_B), List.of());
+
+        assertThat(repository.openActivitiesAcrossTenants()).extracting(Activity::tenantId)
+                .containsExactlyInAnyOrder("tenant-a", "tenant-b");
+
+        java.time.LocalDate due = late.expectedDate();
+        List<NotificationOutboxItem> reminder = List.of(NotificationOutboxItem.forCorrespondence(null, "ACTIVITY_NUDGE",
+                "LAWYER", "ana@a.co", null, null, "Actividad vencida", "LegalGate"));
+        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due, reminder)).isTrue();
+        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due, reminder)).isFalse();
+        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due.plusDays(1), reminder)).isTrue();
+        assertThat(repository.activity("tenant-a", late.id()).orElseThrow().overdueNudgedFor()).isEqualTo(due.plusDays(1));
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+             ResultSet rows = sql.executeQuery("select count(*) from notification_outbox where notification_type = 'ACTIVITY_NUDGE'")) {
+            rows.next();
+            assertThat(rows.getInt(1)).isEqualTo(2);
+        }
+    }
+
+    static Activity turnaround(JdbcClientsRepository repository, String tenant, Client client, String lawyerId) {
+        repository.seedActivityTypesOnce(tenant, ClientsService.STARTER_CATALOG);
+        ActivityType type = repository.activityTypes(tenant).stream()
+                .filter(candidate -> candidate.kind().equals(ClientsModels.TURNAROUND)).findFirst().orElseThrow();
+        return new Activity(null, tenant, client.id(), type.id(), null, ClientsModels.TURNAROUND, null,
+                java.time.LocalDate.of(2026, 1, 5), type.defaultTurnaroundDays(), null, null, null, lawyerId,
+                false, null, null, null, null);
+    }
+
     static Correspondence pending(Client client, String messageId) {
         return new Correspondence(null, "tenant-a", client.id(), "gc@acme.co", messageId, "Hola", "Hola.",
                 Instant.now(), null, null, null, null, 0, Instant.now().minusSeconds(1));
