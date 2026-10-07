@@ -90,6 +90,94 @@
             </div>
           }
 
+          <div class="section-h">Actividades</div>
+          @if (activityError()) {
+            <div class="panel-error"><strong>{{ activityError() }}</strong></div>
+          }
+          @for (activity of activities(); track activity.id) {
+            <div class="history-row activity-row" [class.done]="activity.done">
+              <span>
+                <strong>{{ activity.displayName }}</strong>
+                @if (activity.label) {
+                  <span class="lg-small"> · {{ activity.typeName }}</span>
+                }
+              </span>
+              <span class="lg-small">{{ activityWhen(activity) }} · {{ lawyerName(activity.assignedLawyerId) }}</span>
+              <span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+                @if (activity.done) {
+                  <span class="tag">Terminada</span>
+                } @else {
+                  @if (activity.overdue) {
+                    <span class="tag kw">Vencida</span>
+                  }
+                  @if (activity.termPassed) {
+                    <span class="tag kw">Término vencido</span>
+                  }
+                  <button class="link-button" type="button" (click)="openActivityEdit(activity)">Editar</button>
+                  <button class="link-button" type="button" (click)="completeActivity(activity)">Terminar</button>
+                }
+              </span>
+            </div>
+          } @empty {
+            <div class="lg-small">Sin actividades registradas.</div>
+          }
+
+          @if (activityForm(); as f) {
+            <form class="settings-form" (submit)="saveActivity(); $event.preventDefault()">
+              @if (!f.id) {
+                <div class="form-field">
+                  <label for="activityType">Tipo de actividad</label>
+                  <select id="activityType" name="activityType" [ngModel]="f.activityTypeId"
+                    (ngModelChange)="changeActivityType($event)">
+                    @for (type of offeredTypes(); track type.id) {
+                      <option [value]="type.id">{{ type.name }}</option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="form-field">
+                <label for="activityLabel">Etiqueta para el cliente (opcional)</label>
+                <input id="activityLabel" name="activityLabel" [(ngModel)]="f.label" />
+              </div>
+              <div class="form-field">
+                <label for="activityStart">Inicio</label>
+                <input id="activityStart" name="activityStart" type="date" [(ngModel)]="f.startDate" />
+              </div>
+              @if (formKind() === 'TURNAROUND') {
+                <div class="form-field">
+                  <label for="activityDue">Fecha límite fijada desde afuera (opcional)</label>
+                  <input id="activityDue" name="activityDue" type="date" [(ngModel)]="f.dueDate" />
+                </div>
+              }
+              @if (formKind() === 'DATED') {
+                <div class="form-field">
+                  <label for="activityScheduled">Fecha</label>
+                  <input id="activityScheduled" name="activityScheduled" type="date" [(ngModel)]="f.scheduledDate" />
+                </div>
+              }
+              @if (formKind() === 'EXTERNAL' && !f.id) {
+                <div class="form-field">
+                  <label for="activityTerm">Término legal (días hábiles, vacío si no hay)</label>
+                  <input id="activityTerm" name="activityTerm" type="number" min="1" max="365" [(ngModel)]="f.termDays" />
+                </div>
+              }
+              <div class="form-field">
+                <label for="activityLawyer">Abogado asignado</label>
+                <select id="activityLawyer" name="activityLawyer" [(ngModel)]="f.assignedLawyerId">
+                  @for (lawyer of activeLawyers(); track lawyer.id) {
+                    <option [value]="lawyer.id">{{ lawyer.displayName }}</option>
+                  }
+                </select>
+              </div>
+              <div style="display: flex; gap: 8px">
+                <button class="btn primary" type="submit">Guardar actividad</button>
+                <button class="btn" type="button" (click)="cancelActivity()">Cancelar</button>
+              </div>
+            </form>
+          } @else {
+            <button class="btn sec wide" type="button" (click)="openActivityCreate()">+ Nueva actividad</button>
+          }
+
           <div class="section-h">Correspondencia</div>
           @for (entry of correspondence(); track entry.id) {
             <div class="history-row">

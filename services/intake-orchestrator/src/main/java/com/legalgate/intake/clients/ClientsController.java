@@ -1,5 +1,7 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
@@ -81,6 +83,41 @@ public class ClientsController {
     @GetMapping("/api/clients/{clientId}/correspondence")
     public List<Correspondence> correspondence(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
         return clients.correspondence(tenant(organizationId), clientId);
+    }
+
+    @GetMapping("/api/clients/{clientId}/activities")
+    public List<Activity> activities(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+        return clients.activities(tenant(organizationId), clientId);
+    }
+
+    @PostMapping("/api/clients/{clientId}/activities")
+    public Activity createActivity(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader(USER) String userId,
+            @PathVariable String clientId,
+            @RequestBody ActivityRequest request
+    ) {
+        return clients.createActivity(tenant(organizationId), userId, clientId, request);
+    }
+
+    // Activity routes sit under their Client so the gateway's /api/clients/** rule covers them.
+    @PutMapping("/api/clients/{clientId}/activities/{activityId}")
+    public Activity updateActivity(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader(USER) String userId,
+            @PathVariable String activityId,
+            @RequestBody ActivityRequest request
+    ) {
+        return clients.updateActivity(tenant(organizationId), userId, activityId, request);
+    }
+
+    @PostMapping("/api/clients/{clientId}/activities/{activityId}/done")
+    public Activity completeActivity(
+            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader(USER) String userId,
+            @PathVariable String activityId
+    ) {
+        return clients.completeActivity(tenant(organizationId), userId, activityId);
     }
 
     @GetMapping("/api/consultations/{consultationId}/engagement")

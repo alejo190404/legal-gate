@@ -1,12 +1,19 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { ApiConfigService } from '../config/api-config.service';
 import { Client, ClientsComponent } from './clients';
 
 const LAWYERS = [
   { id: 'lawyer-ana', displayName: 'Ana Abogada', email: 'ana@firm.co', active: true },
   { id: 'lawyer-rita', displayName: 'Rita Retirada', email: 'rita@firm.co', active: false },
+];
+
+const TYPES = [
+  { id: 'type-draft', name: 'Redacción de contrato', kind: 'TURNAROUND', defaultTurnaroundDays: 5, defaultTermDays: null, retiredAt: null },
+  { id: 'type-ruling', name: 'Fallo de tutela', kind: 'EXTERNAL', defaultTurnaroundDays: null, defaultTermDays: 10, retiredAt: null },
+  { id: 'type-old', name: 'Retirado', kind: 'DATED', defaultTurnaroundDays: null, defaultTermDays: null, retiredAt: '2026-01-01T00:00:00Z' },
 ];
 
 function client(overrides: Partial<Client> = {}): Client {
@@ -41,6 +48,7 @@ describe('ClientsComponent', () => {
     fixture.componentRef.setInput('lawyers', LAWYERS);
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
+    http.expectOne('/api/activity-types').flush(TYPES);
     return { fixture, http, component: fixture.componentInstance };
   }
 
@@ -90,6 +98,7 @@ describe('ClientsComponent', () => {
     });
     request.flush(client());
     http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
     http.expectOne('/api/clients/client-1/correspondence').flush([]);
 
@@ -120,6 +129,7 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients').flush([client()]);
 
     component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([
       { id: 'h1', clientId: 'client-1', activityId: null, field: 'contactAddress', oldValue: null,
         newValue: 'gc@acme.co', actorUserId: 'user_admin', createdAt: '2026-10-01T15:00:00Z' },
@@ -141,6 +151,7 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients').flush([client()]);
 
     component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
     http.expectOne('/api/clients/client-1/correspondence').flush([
       { id: 'c1', clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: '<m1>', subject: 'Estado',
@@ -158,5 +169,47 @@ describe('ClientsComponent', () => {
     expect(text).toContain('Su contrato...');
     expect(text).toContain('Reenviado al abogado');
     expect(text).toContain('El texto del cliente se borró al cumplir un año.');
+  });
+
+  it('opens an activity with only offered types and the type term, shows overdue work, and closes it after confirming', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([
+      { id: 'a1', clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
+        label: 'Contrato de arriendo', displayName: 'Contrato de arriendo', startDate: '2026-09-01', turnaroundDays: 5,
+        dueDate: null, scheduledDate: null, termDays: null, assignedLawyerId: 'lawyer-ana', done: false, doneAt: null,
+        expectedDate: '2026-09-08', overdue: true, termPassed: false },
+    ]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Contrato de arriendo');
+    expect(fixture.nativeElement.textContent).toContain('Vencida');
+
+    component.openActivityCreate();
+    fixture.detectChanges();
+    const offered = Array.from(fixture.nativeElement.querySelectorAll('#activityType option')).map((o: any) => o.textContent.trim());
+    expect(offered).toEqual(['Redacción de contrato', 'Fallo de tutela']);
+    component.changeActivityType('type-ruling');
+    expect(component.activityForm()!.termDays).toBe(10);
+    expect(component.activityForm()!.assignedLawyerId).toBe('lawyer-ana');
+    component.saveActivity();
+    const create = http.expectOne('/api/clients/client-1/activities');
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body.activityTypeId).toBe('type-ruling');
+    expect(create.request.body.termDays).toBe(10);
+    create.flush({});
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients').flush([client()]);
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    component.completeActivity({ id: 'a1', displayName: 'Contrato de arriendo' } as any);
+    http.expectNone('/api/clients/client-1/activities/a1/done');
+    confirmSpy.mockReturnValue(true);
+    component.completeActivity({ id: 'a1', displayName: 'Contrato de arriendo' } as any);
+    expect(http.expectOne('/api/clients/client-1/activities/a1/done').request.method).toBe('POST');
+    confirmSpy.mockRestore();
   });
 });

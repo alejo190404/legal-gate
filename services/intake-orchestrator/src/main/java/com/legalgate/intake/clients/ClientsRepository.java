@@ -1,5 +1,6 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -61,4 +62,12 @@ public interface ClientsRepository {
      * when the Consultation was already engaged.
      */
     boolean engage(String tenantSlug, String consultationId, String clientId, List<HistoryEntry> history);
+
+    /** Open first, then by start date. */
+    List<Activity> activities(String tenantSlug, String clientId);
+
+    Optional<Activity> activity(String tenantSlug, String activityId);
+
+    /** Inserts or updates by id and appends {@code history} in the same write. */
+    Activity saveActivity(String tenantSlug, Activity activity, List<HistoryEntry> history);
 }

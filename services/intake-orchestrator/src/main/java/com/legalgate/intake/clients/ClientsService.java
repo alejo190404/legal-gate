@@ -1,5 +1,7 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
@@ -12,6 +14,8 @@ import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.repository.IntakeRepository;
+import com.legalgate.intake.service.BusinessDays;
+import java.time.LocalDate;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -249,6 +253,91 @@ public class ClientsService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_term_days");
         }
         return days;
+    }
+
+    public List<Activity> activities(String tenant, String clientId) {
+        client(tenant, clientId);
+        return clients.activities(tenant, clientId);
+    }
+
+    /**
+     * Opens an Activity of an offered type. The type's kind and Turnaround are snapshotted here,
+     * the start defaults to today and may be backdated, and the Assigned Lawyer defaults to the
+     * Client's Responsible Lawyer.
+     */
+    public Activity createActivity(String tenant, String actor, String clientId, ActivityRequest request) {
+        Client client = client(tenant, clientId);
+        if (request == null || request.activityTypeId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_type_required");
+        }
+        ActivityType type = activityType(tenant, request.activityTypeId());
+        if (type.retiredAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_type_retired");
+        }
+        String lawyerId = request.assignedLawyerId() == null ? client.responsibleLawyerId() : request.assignedLawyerId();
+        Activity activity = new Activity(null, tenant, clientId, type.id(), type.name(), type.kind(),
+                trimmed(request.label()),
+                request.startDate() == null ? BusinessDays.today() : request.startDate(),
+                ClientsModels.TURNAROUND.equals(type.kind()) ? type.defaultTurnaroundDays() : null,
+                ClientsModels.TURNAROUND.equals(type.kind()) ? request.dueDate() : null,
+                ClientsModels.DATED.equals(type.kind()) ? request.scheduledDate() : null,
+                ClientsModels.EXTERNAL.equals(type.kind()) ? termDays(request.termDays()) : null,
+                activeLawyer(tenant, lawyerId, "assigned_lawyer_required").id(),
+                false, null, null, null, null);
+        requireDate(activity);
+        return clients.saveActivity(tenant, activity,
+                List.of(HistoryEntry.of(clientId, null, "activity", null, activity.displayName(), actor)));
+    }
+
+    /** Label, dates and Assigned Lawyer follow reality; a done Activity is never edited. */
+    public Activity updateActivity(String tenant, String actor, String activityId, ActivityRequest request) {
+        Activity before = openActivity(tenant, activityId);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_required");
+        }
+        String lawyerId = request.assignedLawyerId() == null ? before.assignedLawyerId()
+                : activeLawyer(tenant, request.assignedLawyerId(), "assigned_lawyer_required").id();
+        Activity after = before.with(trimmed(request.label()),
+                request.startDate() == null ? before.startDate() : request.startDate(),
+                ClientsModels.TURNAROUND.equals(before.kind()) ? request.dueDate() : null,
+                ClientsModels.DATED.equals(before.kind()) && request.scheduledDate() != null ? request.scheduledDate() : before.scheduledDate(),
+                lawyerId, false, null);
+        requireDate(after);
+        List<HistoryEntry> history = new ArrayList<>();
+        diff(history, before.clientId(), actor, "label", before.label(), after.label());
+        diff(history, before.clientId(), actor, "startDate", text(before.startDate()), text(after.startDate()));
+        diff(history, before.clientId(), actor, "dueDate", text(before.dueDate()), text(after.dueDate()));
+        diff(history, before.clientId(), actor, "scheduledDate", text(before.scheduledDate()), text(after.scheduledDate()));
+        diff(history, before.clientId(), actor, "assignedLawyerId", before.assignedLawyerId(), after.assignedLawyerId());
+        return clients.saveActivity(tenant, after, history);
+    }
+
+    /** Done is final: a closed piece of work never reappears in a Client's answer. */
+    public Activity completeActivity(String tenant, String actor, String activityId) {
+        Activity before = openActivity(tenant, activityId);
+        return clients.saveActivity(tenant,
+                before.with(before.label(), before.startDate(), before.dueDate(), before.scheduledDate(),
+                        before.assignedLawyerId(), true, Instant.now()),
+                List.of(HistoryEntry.of(before.clientId(), null, "status", "OPEN", "DONE", actor)));
+    }
+
+    private Activity openActivity(String tenant, String activityId) {
+        Activity activity = clients.activity(tenant, activityId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "activity_not_found"));
+        if (activity.done()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "activity_done");
+        }
+        return activity;
+    }
+
+    private static void requireDate(Activity activity) {
+        if (ClientsModels.DATED.equals(activity.kind()) && activity.scheduledDate() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "scheduled_date_required");
+        }
+    }
+
+    private static String text(LocalDate date) {
+        return date == null ? null : date.toString();
     }
 
     /** The active lawyer with that id, or a 400: Responsible and Assigned Lawyers are always active. */

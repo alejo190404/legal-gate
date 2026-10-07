@@ -1,5 +1,6 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -282,6 +283,73 @@ class JdbcClientsRepository implements ClientsRepository {
         });
     }
 
+    @Override
+    public List<Activity> activities(String tenantSlug, String clientId) {
+        return inTenant(tenantSlug, () -> jdbc.query(activitySelect()
+                        + " where a.tenant_slug = ? and a.client_id = ? order by a.done, a.start_date",
+                this::mapActivity, tenantSlug, UUID.fromString(clientId)));
+    }
+
+    @Override
+    public Optional<Activity> activity(String tenantSlug, String activityId) {
+        UUID id = uuid(activityId);
+        if (id == null) {
+            return Optional.empty();
+        }
+        return inTenant(tenantSlug, () -> jdbc.query(activitySelect() + " where a.tenant_slug = ? and a.id = ?",
+                this::mapActivity, tenantSlug, id).stream().findFirst());
+    }
+
+    @Override
+    public Activity saveActivity(String tenantSlug, Activity activity, List<HistoryEntry> history) {
+        UUID id = activity.id() == null ? UUID.randomUUID() : UUID.fromString(activity.id());
+        inTenant(tenantSlug, () -> {
+            UUID tenantId = tenantId(tenantSlug);
+            jdbc.update("""
+                    insert into activities (
+                      id, tenant_id, tenant_slug, client_id, activity_type_id, kind, label, start_date, turnaround_days,
+                      due_date, scheduled_date, term_days, assigned_lawyer_id, done, done_at,
+                      overdue_nudged_for, term_nudged_for
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict (id) do update set
+                      label = excluded.label, start_date = excluded.start_date, due_date = excluded.due_date,
+                      scheduled_date = excluded.scheduled_date, assigned_lawyer_id = excluded.assigned_lawyer_id,
+                      done = excluded.done, done_at = excluded.done_at,
+                      overdue_nudged_for = excluded.overdue_nudged_for, term_nudged_for = excluded.term_nudged_for,
+                      updated_at = now()
+                    """, id, tenantId, tenantSlug, UUID.fromString(activity.clientId()),
+                    UUID.fromString(activity.activityTypeId()), activity.kind(), activity.label(),
+                    activity.startDate(), activity.turnaroundDays(), activity.dueDate(), activity.scheduledDate(),
+                    activity.termDays(), UUID.fromString(activity.assignedLawyerId()), activity.done(),
+                    timestamp(activity.doneAt()), activity.overdueNudgedFor(), activity.termNudgedFor());
+            insertHistory(tenantId, UUID.fromString(activity.clientId()), history.stream()
+                    .map(entry -> HistoryEntry.of(activity.clientId(), id.toString(), entry.field(), entry.oldValue(),
+                            entry.newValue(), entry.actorUserId()))
+                    .toList());
+            return null;
+        });
+        return activity(tenantSlug, id.toString()).orElseThrow();
+    }
+
+    private String activitySelect() {
+        return """
+                select a.id, a.tenant_slug, a.client_id, a.activity_type_id, t.name as type_name, a.kind, a.label,
+                       a.start_date, a.turnaround_days, a.due_date, a.scheduled_date, a.term_days, a.assigned_lawyer_id,
+                       a.done, a.done_at, a.overdue_nudged_for, a.term_nudged_for, a.created_at
+                from activities a join activity_types t on t.id = a.activity_type_id
+                """;
+    }
+
+    private Activity mapActivity(ResultSet rs, int row) throws SQLException {
+        return new Activity(rs.getString("id"), rs.getString("tenant_slug"), rs.getString("client_id"),
+                rs.getString("activity_type_id"), rs.getString("type_name"), rs.getString("kind"), rs.getString("label"),
+                rs.getObject("start_date", java.time.LocalDate.class), (Integer) rs.getObject("turnaround_days"),
+                rs.getObject("due_date", java.time.LocalDate.class), rs.getObject("scheduled_date", java.time.LocalDate.class),
+                (Integer) rs.getObject("term_days"), rs.getString("assigned_lawyer_id"), rs.getBoolean("done"),
+                instant(rs, "done_at"), rs.getObject("overdue_nudged_for", java.time.LocalDate.class),
+                rs.getObject("term_nudged_for", java.time.LocalDate.class), instant(rs, "created_at"));
+    }
+
     private String correspondenceSelect() {
         return """
                 select c.id, c.tenant_slug, c.client_id, c.contact_address, c.message_id, c.subject, c.body,
@@ -315,7 +383,8 @@ class JdbcClientsRepository implements ClientsRepository {
     private String clientSelect() {
         return """
                 select c.id, c.name, c.kind, c.id_number, c.phone, c.notes, c.responsible_lawyer_id,
-                       c.created_at, c.updated_at, 0 as open_activities
+                       c.created_at, c.updated_at,
+                       (select count(*) from activities a where a.client_id = c.id and not a.done) as open_activities
                 from clients c join tenants t on t.id = c.tenant_id
                 """;
     }

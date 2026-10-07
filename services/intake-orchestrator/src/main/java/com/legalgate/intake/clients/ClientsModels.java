@@ -1,6 +1,9 @@
 package com.legalgate.intake.clients;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.legalgate.intake.service.BusinessDays;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 /** The Clients context's records; vocabulary in clients/CONTEXT.md. */
@@ -118,5 +121,79 @@ public final class ClientsModels {
 
     /** A Consultation's Engagement: the Client it became, or a draft prefilled from it when not yet engaged. */
     public record Engagement(String consultationId, String clientId, ClientRequest draft) {
+    }
+
+    /**
+     * One piece of work for one Client. Its kind and Turnaround are snapshotted when it is opened,
+     * so the firm's catalog never moves a promise already made. {@code overdueNudgedFor} and
+     * {@code termNudgedFor} hold the date a reminder was sent for, so each is sent once per date.
+     */
+    public record Activity(
+            String id,
+            String tenantId,
+            String clientId,
+            String activityTypeId,
+            String typeName,
+            String kind,
+            String label,
+            LocalDate startDate,
+            Integer turnaroundDays,
+            LocalDate dueDate,
+            LocalDate scheduledDate,
+            Integer termDays,
+            String assignedLawyerId,
+            boolean done,
+            Instant doneAt,
+            LocalDate overdueNudgedFor,
+            LocalDate termNudgedFor,
+            Instant createdAt
+    ) {
+        /** What the Client reads: the label, else the type's name. */
+        @JsonProperty
+        public String displayName() {
+            return label == null || label.isBlank() ? typeName : label;
+        }
+
+        /** Turnaround: the due date, else start plus Turnaround; Dated: its day; External: its term's end, if any. */
+        @JsonProperty
+        public LocalDate expectedDate() {
+            return switch (kind) {
+                case TURNAROUND -> dueDate != null ? dueDate : BusinessDays.add(startDate, turnaroundDays);
+                case DATED -> scheduledDate;
+                default -> termDays == null ? null : BusinessDays.add(startDate, termDays);
+            };
+        }
+
+        /** The firm is late, or nobody closed it. Never External: that clock is not the firm's. */
+        @JsonProperty
+        public boolean overdue() {
+            return !done && !EXTERNAL.equals(kind) && expectedDate() != null
+                    && BusinessDays.today().isAfter(expectedDate());
+        }
+
+        @JsonProperty
+        public boolean termPassed() {
+            return !done && EXTERNAL.equals(kind) && expectedDate() != null
+                    && BusinessDays.today().isAfter(expectedDate());
+        }
+
+        public Activity with(String label, LocalDate startDate, LocalDate dueDate, LocalDate scheduledDate,
+                String assignedLawyerId, boolean done, Instant doneAt) {
+            return new Activity(id, tenantId, clientId, activityTypeId, typeName, kind, label, startDate,
+                    turnaroundDays, dueDate, scheduledDate, termDays, assignedLawyerId, done, doneAt,
+                    overdueNudgedFor, termNudgedFor, createdAt);
+        }
+    }
+
+    /** Opening or editing an Activity; type and term are only read when it is opened. */
+    public record ActivityRequest(
+            String activityTypeId,
+            String label,
+            LocalDate startDate,
+            LocalDate dueDate,
+            LocalDate scheduledDate,
+            Integer termDays,
+            String assignedLawyerId
+    ) {
     }
 }

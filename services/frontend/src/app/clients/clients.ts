@@ -1,6 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
 import { PixelIconComponent } from '../console/pixel-icon';
 
@@ -35,6 +36,47 @@ export interface HistoryEntry {
   actorUserId: string | null;
   createdAt: string;
 }
+
+export interface Activity {
+  id: string;
+  clientId: string;
+  activityTypeId: string;
+  typeName: string;
+  kind: 'TURNAROUND' | 'DATED' | 'EXTERNAL';
+  label: string | null;
+  displayName: string;
+  startDate: string;
+  turnaroundDays: number | null;
+  dueDate: string | null;
+  scheduledDate: string | null;
+  termDays: number | null;
+  assignedLawyerId: string;
+  done: boolean;
+  doneAt: string | null;
+  expectedDate: string | null;
+  overdue: boolean;
+  termPassed: boolean;
+}
+
+export interface ActivityForm {
+  id: string | null;
+  activityTypeId: string;
+  label: string;
+  startDate: string;
+  dueDate: string;
+  scheduledDate: string;
+  termDays: number | null;
+  assignedLawyerId: string;
+}
+
+const ACTIVITY_ERRORS: Record<string, string> = {
+  scheduled_date_required: 'Indica la fecha de la actividad.',
+  activity_type_retired: 'Ese tipo de actividad está retirado.',
+  activity_type_required: 'Escoge un tipo de actividad.',
+  assigned_lawyer_required: 'Escoge un abogado activo.',
+  invalid_term_days: 'El término legal debe estar entre 1 y 365 días hábiles.',
+  activity_done: 'La actividad ya está terminada y no se puede cambiar.',
+};
 
 export interface Correspondence {
   id: string;
@@ -119,6 +161,14 @@ const FIELD_LABELS: Record<string, string> = {
   phone: 'Teléfono',
   notes: 'Notas',
   responsibleLawyerId: 'Abogado responsable',
+  activity: 'Actividad creada',
+  label: 'Etiqueta',
+  startDate: 'Inicio',
+  dueDate: 'Fecha límite',
+  scheduledDate: 'Fecha programada',
+  assignedLawyerId: 'Abogado asignado',
+  status: 'Estado',
+  engagement: 'Vinculado desde consulta',
   contactAddress: 'Correo de contacto',
 };
 
@@ -142,6 +192,11 @@ export class ClientsComponent implements OnInit {
   readonly selected = signal<Client | null>(null);
   readonly history = signal<HistoryEntry[]>([]);
   readonly correspondence = signal<Correspondence[]>([]);
+  readonly activities = signal<Activity[]>([]);
+  readonly activityTypes = signal<ActivityType[]>([]);
+  readonly offeredTypes = computed(() => this.activityTypes().filter((type) => !type.retiredAt));
+  readonly activityError = signal('');
+  readonly activityForm = signal<ActivityForm | null>(null);
   readonly isFormOpen = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly isSubmitting = signal(false);
@@ -153,6 +208,10 @@ export class ClientsComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.http.get<ActivityType[]>(this.apiConfig.url('/api/activity-types')).subscribe({
+      next: (types) => this.activityTypes.set(types),
+      error: () => this.activityTypes.set([]),
+    });
   }
 
   load(): void {
@@ -189,14 +248,146 @@ export class ClientsComponent implements OnInit {
 
   open(client: Client): void {
     this.selected.set(client);
+    this.activityForm.set(null);
+    this.loadActivities(client.id);
     this.loadHistory(client.id);
     this.loadCorrespondence(client.id);
+  }
+
+  loadActivities(clientId: string): void {
+    this.http.get<Activity[]>(this.apiConfig.url(`/api/clients/${clientId}/activities`)).subscribe({
+      next: (activities) => this.activities.set(activities),
+      error: () => this.activities.set([]),
+    });
+  }
+
+  typeFor(activityTypeId: string): ActivityType | undefined {
+    return this.activityTypes().find((type) => type.id === activityTypeId);
+  }
+
+  formKind(): string | undefined {
+    const form = this.activityForm();
+    return form ? this.typeFor(form.activityTypeId)?.kind : undefined;
+  }
+
+  openActivityCreate(): void {
+    const first = this.offeredTypes()[0];
+    this.activityError.set('');
+    this.activityForm.set({
+      id: null,
+      activityTypeId: first?.id ?? '',
+      label: '',
+      startDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }),
+      dueDate: '',
+      scheduledDate: '',
+      termDays: first?.defaultTermDays ?? null,
+      assignedLawyerId: this.selected()?.responsibleLawyerId ?? '',
+    });
+  }
+
+  /** A new type brings its own statutory term, which the form shows for the firm to keep or clear. */
+  changeActivityType(activityTypeId: string): void {
+    this.activityForm.update((form) =>
+      form && { ...form, activityTypeId, termDays: this.typeFor(activityTypeId)?.defaultTermDays ?? null },
+    );
+  }
+
+  openActivityEdit(activity: Activity): void {
+    this.activityError.set('');
+    this.activityForm.set({
+      id: activity.id,
+      activityTypeId: activity.activityTypeId,
+      label: activity.label ?? '',
+      startDate: activity.startDate,
+      dueDate: activity.dueDate ?? '',
+      scheduledDate: activity.scheduledDate ?? '',
+      termDays: activity.termDays,
+      assignedLawyerId: activity.assignedLawyerId,
+    });
+  }
+
+  cancelActivity(): void {
+    this.activityForm.set(null);
+  }
+
+  saveActivity(): void {
+    const client = this.selected();
+    const form = this.activityForm();
+    if (!client || !form) {
+      return;
+    }
+    const payload = {
+      activityTypeId: form.activityTypeId,
+      label: form.label.trim() || null,
+      startDate: form.startDate || null,
+      dueDate: form.dueDate || null,
+      scheduledDate: form.scheduledDate || null,
+      termDays: form.termDays || null,
+      assignedLawyerId: form.assignedLawyerId || null,
+    };
+    const base = `/api/clients/${client.id}/activities`;
+    const request = form.id
+      ? this.http.put<Activity>(this.apiConfig.url(`${base}/${form.id}`), payload)
+      : this.http.post<Activity>(this.apiConfig.url(base), payload);
+    request.subscribe({
+      next: () => {
+        this.activityForm.set(null);
+        this.loadActivities(client.id);
+        this.loadHistory(client.id);
+        this.load();
+      },
+      error: (error: HttpErrorResponse) =>
+        this.activityError.set(ACTIVITY_ERRORS[error.error?.error] ?? 'No se pudo guardar la actividad.'),
+    });
+  }
+
+  completeActivity(activity: Activity): void {
+    const client = this.selected();
+    if (!client || !confirm(`¿Marcar "${activity.displayName}" como terminada? No se puede deshacer.`)) {
+      return;
+    }
+    this.http
+      .post<Activity>(this.apiConfig.url(`/api/clients/${client.id}/activities/${activity.id}/done`), {})
+      .subscribe({
+        next: () => {
+          this.loadActivities(client.id);
+          this.loadHistory(client.id);
+          this.load();
+        },
+        error: (error: HttpErrorResponse) =>
+          this.activityError.set(ACTIVITY_ERRORS[error.error?.error] ?? 'No se pudo cerrar la actividad.'),
+      });
+  }
+
+  activityWhen(activity: Activity): string {
+    switch (activity.kind) {
+      case 'TURNAROUND':
+        return `Inició ${this.formatDate(activity.startDate)} · se espera ${this.formatDate(activity.expectedDate)}`;
+      case 'DATED':
+        return `Programada para ${this.formatDate(activity.scheduledDate)}`;
+      default:
+        return activity.expectedDate
+          ? `Externa · término legal hasta ${this.formatDate(activity.expectedDate)}`
+          : 'Externa · sin término fijo';
+    }
+  }
+
+  formatDate(value: string | null): string {
+    if (!value) {
+      return '—';
+    }
+    const [year, month, day] = value.split('-').map(Number);
+    return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'UTC' }).format(
+      new Date(Date.UTC(year, month - 1, day)),
+    );
   }
 
   close(): void {
     this.selected.set(null);
     this.history.set([]);
     this.correspondence.set([]);
+    this.activities.set([]);
+    this.activityForm.set(null);
   }
 
   loadCorrespondence(clientId: string): void {

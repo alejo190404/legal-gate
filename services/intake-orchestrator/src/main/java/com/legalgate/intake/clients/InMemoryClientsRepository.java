@@ -1,5 +1,6 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -27,6 +28,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
     private final Map<String, Map<String, ActivityType>> activityTypesByTenant = new ConcurrentHashMap<>();
     private final Map<String, Correspondence> correspondenceById = new ConcurrentHashMap<>();
     private final Map<String, String> engagedClientByConsultation = new ConcurrentHashMap<>();
+    private final Map<String, Activity> activitiesById = new ConcurrentHashMap<>();
     private final IntakeRepository intake;
 
     /** Queues mail through the in-memory intake repository, which owns the outbox. */
@@ -38,19 +40,21 @@ public class InMemoryClientsRepository implements ClientsRepository {
     public List<Client> clients(String tenantSlug) {
         return tenantClients(tenantSlug).values().stream()
                 .sorted(Comparator.comparing(client -> client.name().toLowerCase()))
+                .map(this::withOpenActivities)
                 .toList();
     }
 
     @Override
     public Optional<Client> client(String tenantSlug, String clientId) {
-        return Optional.ofNullable(tenantClients(tenantSlug).get(clientId));
+        return Optional.ofNullable(tenantClients(tenantSlug).get(clientId)).map(this::withOpenActivities);
     }
 
     @Override
     public Optional<Client> clientForContactAddress(String tenantSlug, String address) {
         return tenantClients(tenantSlug).values().stream()
                 .filter(client -> client.contactAddresses().stream().anyMatch(held -> held.equalsIgnoreCase(address)))
-                .findFirst();
+                .findFirst()
+                .map(this::withOpenActivities);
     }
 
     @Override
@@ -169,6 +173,53 @@ public class InMemoryClientsRepository implements ClientsRepository {
         }
         appendHistory(tenantSlug, clientId, history);
         return true;
+    }
+
+    @Override
+    public List<Activity> activities(String tenantSlug, String clientId) {
+        return activitiesById.values().stream()
+                .filter(activity -> activity.tenantId().equals(tenantSlug) && activity.clientId().equals(clientId))
+                .sorted(Comparator.comparing(Activity::done).thenComparing(Activity::startDate))
+                .map(activity -> withTypeName(tenantSlug, activity))
+                .toList();
+    }
+
+    @Override
+    public Optional<Activity> activity(String tenantSlug, String activityId) {
+        return Optional.ofNullable(activitiesById.get(activityId))
+                .filter(activity -> activity.tenantId().equals(tenantSlug))
+                .map(activity -> withTypeName(tenantSlug, activity));
+    }
+
+    @Override
+    public Activity saveActivity(String tenantSlug, Activity activity, List<HistoryEntry> history) {
+        String id = activity.id() == null ? UUID.randomUUID().toString() : activity.id();
+        Activity saved = new Activity(id, tenantSlug, activity.clientId(), activity.activityTypeId(), null,
+                activity.kind(), activity.label(), activity.startDate(), activity.turnaroundDays(), activity.dueDate(),
+                activity.scheduledDate(), activity.termDays(), activity.assignedLawyerId(), activity.done(),
+                activity.doneAt(), activity.overdueNudgedFor(), activity.termNudgedFor(),
+                activity.createdAt() == null ? Instant.now() : activity.createdAt());
+        activitiesById.put(id, saved);
+        appendHistory(tenantSlug, activity.clientId(), history.stream()
+                .map(entry -> HistoryEntry.of(activity.clientId(), id, entry.field(), entry.oldValue(), entry.newValue(), entry.actorUserId()))
+                .toList());
+        return activity(tenantSlug, id).orElseThrow();
+    }
+
+    private Activity withTypeName(String tenantSlug, Activity activity) {
+        String typeName = activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null);
+        return new Activity(activity.id(), activity.tenantId(), activity.clientId(), activity.activityTypeId(), typeName,
+                activity.kind(), activity.label(), activity.startDate(), activity.turnaroundDays(), activity.dueDate(),
+                activity.scheduledDate(), activity.termDays(), activity.assignedLawyerId(), activity.done(),
+                activity.doneAt(), activity.overdueNudgedFor(), activity.termNudgedFor(), activity.createdAt());
+    }
+
+    private Client withOpenActivities(Client client) {
+        int open = (int) activitiesById.values().stream()
+                .filter(activity -> activity.clientId().equals(client.id()) && !activity.done())
+                .count();
+        return new Client(client.id(), client.name(), client.kind(), client.idNumber(), client.phone(), client.notes(),
+                client.responsibleLawyerId(), client.contactAddresses(), open, client.createdAt(), client.updatedAt());
     }
 
     private static Correspondence leased(Correspondence entry, Instant until) {

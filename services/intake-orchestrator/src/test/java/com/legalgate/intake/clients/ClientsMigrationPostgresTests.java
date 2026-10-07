@@ -2,6 +2,7 @@ package com.legalgate.intake.clients;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -210,6 +211,32 @@ class ClientsMigrationPostgresTests {
         assertThat(repository.engagedClientId("tenant-a", consultationId)).contains(acme.id());
         assertThat(repository.engagedClientId("tenant-b", consultationId)).isEmpty();
         assertThat(repository.history("tenant-a", acme.id())).extracting(HistoryEntry::field).containsExactly("engagement");
+    }
+
+    @Test
+    void activitiesCountTowardsTheirClientAndStayInsideTheirFirm() throws Exception {
+        JdbcClientsRepository repository = repository();
+        Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());
+        repository.seedActivityTypesOnce("tenant-a", ClientsService.STARTER_CATALOG);
+        ActivityType hearing = repository.activityTypes("tenant-a").stream()
+                .filter(type -> type.name().equals("Audiencia")).findFirst().orElseThrow();
+
+        Activity saved = repository.saveActivity("tenant-a", new Activity(null, "tenant-a", acme.id(), hearing.id(), null,
+                ClientsModels.DATED, "Audiencia inicial", java.time.LocalDate.of(2026, 10, 1), null, null,
+                java.time.LocalDate.of(2026, 10, 20), null, LAWYER_A, false, null, null, null, null),
+                List.of(HistoryEntry.of(acme.id(), null, "activity", null, "Audiencia inicial", "user_1")));
+
+        assertThat(saved.typeName()).isEqualTo("Audiencia");
+        assertThat(saved.expectedDate()).isEqualTo(java.time.LocalDate.of(2026, 10, 20));
+        assertThat(repository.client("tenant-a", acme.id()).orElseThrow().openActivities()).isEqualTo(1);
+        assertThat(repository.history("tenant-a", acme.id())).extracting(HistoryEntry::activityId).containsExactly(saved.id());
+        try (Connection connection = appConnection()) {
+            connection.setAutoCommit(false);
+            assertThat(countFor(connection, "tenant-b", "activities")).isZero();
+            assertThat(countFor(connection, "tenant-a", "activities")).isEqualTo(1);
+            assertThat(countFor(connection, "__worker__", "activities")).isEqualTo(1);
+            connection.rollback();
+        }
     }
 
     static Correspondence pending(Client client, String messageId) {
