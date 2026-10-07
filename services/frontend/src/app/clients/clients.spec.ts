@@ -91,6 +91,7 @@ describe('ClientsComponent', () => {
     request.flush(client());
     http.expectOne('/api/clients').flush([client()]);
     http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
 
     expect(component.isFormOpen()).toBe(false);
     expect(component.selected()?.id).toBe('client-1');
@@ -125,6 +126,7 @@ describe('ClientsComponent', () => {
       { id: 'h2', clientId: 'client-1', activityId: null, field: 'responsibleLawyerId', oldValue: null,
         newValue: 'lawyer-ana', actorUserId: 'user_admin', createdAt: '2026-10-01T15:00:00Z' },
     ]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
     fixture.detectChanges();
 
     const rows = fixture.nativeElement.querySelectorAll('.history-row');
@@ -132,5 +134,29 @@ describe('ClientsComponent', () => {
     expect(rows[0].classList).toContain('address-change');
     expect(rows[1].classList).not.toContain('address-change');
     expect(rows[1].textContent).toContain('Ana Abogada');
+  });
+
+  it('shows each Client email with what LegalGate did and the exact answer', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+
+    component.open(client());
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([
+      { id: 'c1', clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: '<m1>', subject: 'Estado',
+        body: 'Como va?', receivedAt: '2026-10-02T15:00:00Z', intent: 'status_inquiry',
+        outcome: 'WOULD_HAVE_ANSWERED', answerText: 'Estimado(a):\n\nSu contrato...', purgedAt: null },
+      { id: 'c2', clientId: 'client-1', contactAddress: 'ceo@acme.co', messageId: '<m2>', subject: 'Viejo',
+        body: null, receivedAt: '2025-01-02T15:00:00Z', intent: 'needs_lawyer',
+        outcome: 'FORWARDED', answerText: null, purgedAt: '2026-01-03T00:00:00Z' },
+    ]);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Reenviado (respuesta automática apagada)');
+    expect(text).toContain('Respuesta que se habría enviado');
+    expect(text).toContain('Su contrato...');
+    expect(text).toContain('Reenviado al abogado');
+    expect(text).toContain('El texto del cliente se borró al cumplir un año.');
   });
 });

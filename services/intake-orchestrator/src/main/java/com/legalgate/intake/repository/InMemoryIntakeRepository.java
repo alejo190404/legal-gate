@@ -364,27 +364,7 @@ class InMemoryIntakeRepository implements IntakeRepository {
                     ? id
                     : tenantSlug + ":" + notification.consultationId() + ":" + notification.eventId()
                             + ":" + notification.type() + ":" + notification.recipientRole();
-            NotificationOutboxItem queued = new NotificationOutboxItem(
-                    id,
-                    tenantSlug,
-                    notification.consultationId(),
-                    notification.eventId(),
-                    notification.type(),
-                    notification.recipientRole(),
-                    notification.recipientEmail(),
-                    notification.fromEmail(),
-                    notification.subject(),
-                    notification.body(),
-                    notification.htmlBody(),
-                    notification.icsContent(),
-                    "PENDING",
-                    0,
-                    null,
-                    null,
-                    now,
-                    now,
-                    now
-            );
+            NotificationOutboxItem queued = notification.withDelivery(id, tenantSlug, "PENDING", 0, null, null, now, now, now);
             notificationsByDedupeKey.compute(dedupeKey, (ignored, existing) -> shouldSuppressDuplicate(existing) ? existing : queued);
         }
     }
@@ -398,12 +378,9 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 .limit(Math.max(1, limit))
                 .map(entry -> {
                     NotificationOutboxItem notification = entry.getValue();
-                    NotificationOutboxItem claimed = new NotificationOutboxItem(
-                            notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                            notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
-                            notification.htmlBody(), notification.icsContent(), "SENDING", notification.attempts(), notification.providerMessageId(),
-                            notification.lastError(), notification.createdAt(), now, now.plusSeconds(NOTIFICATION_LEASE_SECONDS)
-                    );
+                    NotificationOutboxItem claimed = notification.withDelivery(notification.id(), notification.tenantId(),
+                            "SENDING", notification.attempts(), notification.providerMessageId(), notification.lastError(),
+                            notification.createdAt(), now, now.plusSeconds(NOTIFICATION_LEASE_SECONDS));
                     entry.setValue(claimed);
                     return claimed;
                 })
@@ -413,12 +390,8 @@ class InMemoryIntakeRepository implements IntakeRepository {
     @Override
     public void markNotificationSent(String notificationId, String providerMessageId) {
         notificationsByDedupeKey.replaceAll((key, notification) -> notificationId.equals(notification.id())
-                ? new NotificationOutboxItem(
-                        notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                        notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
-                        notification.htmlBody(), notification.icsContent(), "SENT", notification.attempts(), providerMessageId, null,
-                        notification.createdAt(), Instant.now(), notification.nextAttemptAt()
-                )
+                ? notification.withDelivery(notification.id(), notification.tenantId(), "SENT", notification.attempts(),
+                        providerMessageId, null, notification.createdAt(), Instant.now(), notification.nextAttemptAt())
                 : notification);
     }
 
@@ -431,12 +404,9 @@ class InMemoryIntakeRepository implements IntakeRepository {
             }
             int attempts = notification.attempts() + 1;
             boolean exhausted = attempts >= MAX_NOTIFICATION_ATTEMPTS;
-            return new NotificationOutboxItem(
-                    notification.id(), notification.tenantId(), notification.consultationId(), notification.eventId(),
-                    notification.type(), notification.recipientRole(), notification.recipientEmail(), notification.fromEmail(), notification.subject(), notification.body(),
-                    notification.htmlBody(), notification.icsContent(), exhausted ? "DEAD" : "FAILED", attempts, notification.providerMessageId(),
-                    errorMessage, notification.createdAt(), now, exhausted ? now : now.plusSeconds(retryDelaySeconds(attempts))
-            );
+            return notification.withDelivery(notification.id(), notification.tenantId(), exhausted ? "DEAD" : "FAILED",
+                    attempts, notification.providerMessageId(), errorMessage, notification.createdAt(), now,
+                    exhausted ? now : now.plusSeconds(retryDelaySeconds(attempts)));
         });
     }
 

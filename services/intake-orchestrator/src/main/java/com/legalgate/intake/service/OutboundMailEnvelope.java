@@ -59,6 +59,15 @@ class OutboundMailEnvelope {
      * and the Consultation Thread anchored flat at the client's first email. See ADR 0004.
      */
     Map<String, String> clientHeaders(NotificationOutboxItem notification, String threadAnchor) {
+        // A forwarded Client email is answered straight to the Client, from the lawyer's own inbox.
+        if (!isBlank(notification.replyTo())) {
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("Reply-To", notification.replyTo().trim());
+            if ("CLIENT".equals(notification.recipientRole())) {
+                headers.putAll(threadHeaders(threadAnchor));
+            }
+            return headers;
+        }
         // Staff mail is not part of the client's conversation, and carries no Reply Token.
         if (!"CLIENT".equals(notification.recipientRole())) {
             return Map.of();
@@ -69,12 +78,19 @@ class OutboundMailEnvelope {
         if (tagged != null && !tagged.equals(fromEmail(notification))) {
             headers.put("Reply-To", tagged);
         }
-        if (!isBlank(threadAnchor)) {
-            String anchor = angleBracketed(threadAnchor);
-            if (!"<>".equals(anchor)) {
-                headers.put("In-Reply-To", anchor);
-                headers.put("References", anchor);
-            }
+        headers.putAll(threadHeaders(threadAnchor));
+        return headers;
+    }
+
+    private Map<String, String> threadHeaders(String threadAnchor) {
+        if (isBlank(threadAnchor)) {
+            return Map.of();
+        }
+        String anchor = angleBracketed(threadAnchor);
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (!"<>".equals(anchor)) {
+            headers.put("In-Reply-To", anchor);
+            headers.put("References", anchor);
         }
         return headers;
     }

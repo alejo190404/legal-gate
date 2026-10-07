@@ -23,8 +23,9 @@ class InboundEmailControllerTests {
 
     private final DiagnosticsService diagnosticsService = mock(DiagnosticsService.class);
     private final BillingAccessService billingAccessService = mock(BillingAccessService.class);
-    private final InboundEmailController controller =
-            new InboundEmailController(diagnosticsService, billingAccessService);
+    private final InboundEmailController controller = new InboundEmailController(diagnosticsService,
+            new InboundMailRouter(diagnosticsService, mock(com.legalgate.intake.clients.ClientMailService.class)),
+            billingAccessService);
 
     @Test
     void acceptsValidInboundEmailEvents() {

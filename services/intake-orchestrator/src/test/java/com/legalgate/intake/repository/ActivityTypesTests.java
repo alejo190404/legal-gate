@@ -16,7 +16,7 @@ class ActivityTypesTests {
     private static final String TENANT = "firma-demo";
 
     private final InMemoryIntakeRepository intake = new InMemoryIntakeRepository();
-    private final ClientsService clients = ClientsFixtures.clientsService(intake, new InMemoryClientsRepository());
+    private final ClientsService clients = ClientsFixtures.clientsService(intake, new InMemoryClientsRepository(intake));
 
     @Test
     void theFirstReadSeedsTheStarterSetOnce() {

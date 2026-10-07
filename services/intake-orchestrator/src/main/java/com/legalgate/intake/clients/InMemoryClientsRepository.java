@@ -2,7 +2,10 @@ package com.legalgate.intake.clients;
 
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
+import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.repository.IntakeRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,6 +25,13 @@ public class InMemoryClientsRepository implements ClientsRepository {
     private final Map<String, Map<String, Client>> clientsByTenant = new ConcurrentHashMap<>();
     private final Map<String, List<HistoryEntry>> historyByTenant = new ConcurrentHashMap<>();
     private final Map<String, Map<String, ActivityType>> activityTypesByTenant = new ConcurrentHashMap<>();
+    private final Map<String, Correspondence> correspondenceById = new ConcurrentHashMap<>();
+    private final IntakeRepository intake;
+
+    /** Queues mail through the in-memory intake repository, which owns the outbox. */
+    public InMemoryClientsRepository(IntakeRepository intake) {
+        this.intake = intake;
+    }
 
     @Override
     public List<Client> clients(String tenantSlug) {
@@ -97,6 +107,59 @@ public class InMemoryClientsRepository implements ClientsRepository {
         ActivityType saved = withId(activityType, id);
         activityTypesByTenant.computeIfAbsent(tenantSlug, ignored -> new ConcurrentHashMap<>()).put(id, saved);
         return saved;
+    }
+
+    @Override
+    public synchronized Optional<Correspondence> recordCorrespondence(String tenantSlug, Correspondence correspondence) {
+        boolean duplicate = correspondenceById.values().stream().anyMatch(existing ->
+                existing.tenantId().equals(tenantSlug) && existing.messageId().equals(correspondence.messageId()));
+        if (duplicate) {
+            return Optional.empty();
+        }
+        String id = UUID.randomUUID().toString();
+        Correspondence saved = new Correspondence(id, tenantSlug, correspondence.clientId(), correspondence.contactAddress(),
+                correspondence.messageId(), correspondence.subject(), correspondence.body(), correspondence.receivedAt(),
+                correspondence.intent(), correspondence.outcome(), correspondence.answerText(), correspondence.purgedAt(),
+                correspondence.attempts(), correspondence.nextAttemptAt());
+        correspondenceById.put(id, saved);
+        return Optional.of(saved);
+    }
+
+    @Override
+    public Optional<Correspondence> correspondence(String tenantSlug, String correspondenceId) {
+        return Optional.ofNullable(correspondenceById.get(correspondenceId)).filter(entry -> entry.tenantId().equals(tenantSlug));
+    }
+
+    @Override
+    public List<Correspondence> correspondenceForClient(String tenantSlug, String clientId) {
+        return correspondenceById.values().stream()
+                .filter(entry -> entry.tenantId().equals(tenantSlug) && entry.clientId().equals(clientId))
+                .sorted(Comparator.comparing(Correspondence::receivedAt).reversed())
+                .toList();
+    }
+
+    @Override
+    public synchronized List<Correspondence> claimDueCorrespondence(int limit) {
+        Instant now = Instant.now();
+        List<Correspondence> due = correspondenceById.values().stream()
+                .filter(entry -> entry.outcome() == null && entry.nextAttemptAt() != null && !entry.nextAttemptAt().isAfter(now))
+                .sorted(Comparator.comparing(Correspondence::receivedAt))
+                .limit(limit)
+                .toList();
+        due.forEach(entry -> correspondenceById.put(entry.id(), leased(entry, now.plusSeconds(300))));
+        return due;
+    }
+
+    @Override
+    public void saveCorrespondence(String tenantSlug, Correspondence correspondence, List<NotificationOutboxItem> notifications) {
+        correspondenceById.put(correspondence.id(), correspondence);
+        intake.queueNotifications(tenantSlug, notifications);
+    }
+
+    private static Correspondence leased(Correspondence entry, Instant until) {
+        return new Correspondence(entry.id(), entry.tenantId(), entry.clientId(), entry.contactAddress(), entry.messageId(),
+                entry.subject(), entry.body(), entry.receivedAt(), entry.intent(), entry.outcome(), entry.answerText(),
+                entry.purgedAt(), entry.attempts(), until);
     }
 
     private static ActivityType withId(ActivityType type, String id) {

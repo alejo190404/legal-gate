@@ -90,6 +90,30 @@
             </div>
           }
 
+          <div class="section-h">Correspondencia</div>
+          @for (entry of correspondence(); track entry.id) {
+            <div class="history-row">
+              <span class="lbl">{{ formatDateTime(entry.receivedAt) }} · {{ entry.contactAddress }}</span>
+              <span><strong>{{ entry.subject || '(sin asunto)' }}</strong></span>
+              <span class="tag">{{ outcomeLabel(entry.outcome) }}</span>
+              @if (entry.body) {
+                <span class="email" style="white-space: pre-wrap">{{ entry.body }}</span>
+              } @else if (entry.purgedAt) {
+                <span class="lg-small">El texto del cliente se borró al cumplir un año.</span>
+              }
+              @if (entry.answerText) {
+                <details>
+                  <summary>
+                    {{ entry.outcome === 'ANSWERED' ? 'Respuesta enviada' : 'Respuesta que se habría enviado' }}
+                  </summary>
+                  <pre class="answer-text">{{ entry.answerText }}</pre>
+                </details>
+              }
+            </div>
+          } @empty {
+            <div class="lg-small">Este cliente no ha escrito todavía.</div>
+          }
+
           <div class="section-h">Historial</div>
           @for (entry of history(); track entry.id) {
             <div class="history-row" [class.address-change]="isAddressChange(entry)">

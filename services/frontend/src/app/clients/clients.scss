@@ -77,3 +77,12 @@
     grid-template-columns: 1fr;
   }
 }
+
+.answer-text {
+  white-space: pre-wrap;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: var(--bg-sunken);
+  padding: 8px;
+  margin: 6px 0 0;
+}

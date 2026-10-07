@@ -24,7 +24,7 @@ class ClientsTests {
     static final String ADMIN = "user_admin";
 
     private final InMemoryIntakeRepository intake = new InMemoryIntakeRepository();
-    private final InMemoryClientsRepository clientsRepository = new InMemoryClientsRepository();
+    private final InMemoryClientsRepository clientsRepository = new InMemoryClientsRepository(intake);
     private final ClientsService clients = ClientsFixtures.clientsService(intake, clientsRepository);
 
     @Test

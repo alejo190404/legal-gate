@@ -21,8 +21,38 @@ public record NotificationOutboxItem(
         String lastError,
         Instant createdAt,
         Instant updatedAt,
-        Instant nextAttemptAt
+        Instant nextAttemptAt,
+        /** Client Correspondence this message answers or forwards; the thread anchor for Client mail. */
+        String correspondenceId,
+        /** An explicit Reply-To, e.g. a forward a lawyer answers straight to the Client. */
+        String replyTo
 ) {
+    public NotificationOutboxItem(
+            String id, String tenantId, String consultationId, String eventId, String type, String recipientRole,
+            String recipientEmail, String fromEmail, String subject, String body, String htmlBody, String icsContent,
+            String status, Integer attempts, String providerMessageId, String lastError, Instant createdAt,
+            Instant updatedAt, Instant nextAttemptAt
+    ) {
+        this(id, tenantId, consultationId, eventId, type, recipientRole, recipientEmail, fromEmail, subject, body,
+                htmlBody, icsContent, status, attempts, providerMessageId, lastError, createdAt, updatedAt,
+                nextAttemptAt, null, null);
+    }
+
+    /** Plaintext mail about a Client's email; no Consultation, no Event, no calendar invite. */
+    public static NotificationOutboxItem forCorrespondence(String correspondenceId, String type, String recipientRole,
+            String recipientEmail, String fromEmail, String replyTo, String subject, String body) {
+        return new NotificationOutboxItem(null, null, null, null, type, recipientRole, recipientEmail, fromEmail,
+                subject, body, null, null, "PENDING", 0, null, null, null, null, null, correspondenceId, replyTo);
+    }
+
+    /** The same message in a new delivery state. */
+    public NotificationOutboxItem withDelivery(String id, String tenantId, String status, Integer attempts,
+            String providerMessageId, String lastError, Instant createdAt, Instant updatedAt, Instant nextAttemptAt) {
+        return new NotificationOutboxItem(id, tenantId, consultationId, eventId, type, recipientRole, recipientEmail,
+                fromEmail, subject, body, htmlBody, icsContent, status, attempts, providerMessageId, lastError,
+                createdAt, updatedAt, nextAttemptAt, correspondenceId, replyTo);
+    }
+
     public NotificationOutboxItem(
             String consultationId,
             String eventId,

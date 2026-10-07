@@ -4,6 +4,7 @@ import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.service.TenantContextResolver;
 import java.net.URI;
@@ -73,6 +74,11 @@ public class ClientsController {
     @GetMapping("/api/clients/{clientId}/history")
     public List<HistoryEntry> history(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
         return clients.history(tenant(organizationId), clientId);
+    }
+
+    @GetMapping("/api/clients/{clientId}/correspondence")
+    public List<Correspondence> correspondence(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+        return clients.correspondence(tenant(organizationId), clientId);
     }
 
     @GetMapping("/api/activity-types")

@@ -9,9 +9,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
+import com.legalgate.intake.clients.ClientsRepository;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -21,13 +24,33 @@ import org.springframework.web.client.HttpClientErrorException;
 
 class NotificationDeliveryServiceTests {
 
+    private final ClientsRepository clientsRepository = mock(ClientsRepository.class);
+
+    @Test
+    void clientMailIsSentUnderTheClientsOwnMessageId() {
+        IntakeRepository intakeRepository = mock(IntakeRepository.class);
+        OutboundEmailClient outboundEmailClient = mock(OutboundEmailClient.class);
+        when(outboundEmailClient.isEnabled()).thenReturn(true);
+        NotificationOutboxItem receipt = NotificationOutboxItem.forCorrespondence("corr-1", "CLIENT_RECEIPT", "CLIENT",
+                "gc@acme.co", "firma-demo@intake.legal-gate.co", null, "Re: Hola", "Cuerpo")
+                .withDelivery("notification-2", "firma-demo", "SENDING", 0, null, null, null, null, null);
+        when(intakeRepository.claimPendingNotifications(anyInt())).thenReturn(List.of(receipt));
+        when(clientsRepository.correspondence("firma-demo", "corr-1")).thenReturn(Optional.of(new Correspondence(
+                "corr-1", "firma-demo", "client-1", "gc@acme.co", "<c-1@acme.co>", "Hola", "Hola.", Instant.now(),
+                null, "FORWARDED", null, null, 0, null)));
+
+        new NotificationDeliveryService(intakeRepository, outboundEmailClient, clientsRepository).deliverPendingNotifications();
+
+        verify(outboundEmailClient).send(any(NotificationOutboxItem.class), eq("<c-1@acme.co>"));
+    }
+
     @Test
     void disabledOutboundEmailLeavesPendingNotificationsUnclaimed() {
         IntakeRepository intakeRepository = mock(IntakeRepository.class);
         OutboundEmailClient outboundEmailClient = mock(OutboundEmailClient.class);
         when(outboundEmailClient.isEnabled()).thenReturn(false);
 
-        new NotificationDeliveryService(intakeRepository, outboundEmailClient).deliverPendingNotifications();
+        new NotificationDeliveryService(intakeRepository, outboundEmailClient, clientsRepository).deliverPendingNotifications();
 
         verify(intakeRepository, never()).claimPendingNotifications(anyInt());
     }
@@ -39,7 +62,7 @@ class NotificationDeliveryServiceTests {
         when(intakeRepository.consultationById("firma-demo", "consultation-1"))
                 .thenReturn(Optional.of(consultation("<CAF=original@mail.gmail.com>")));
 
-        new NotificationDeliveryService(intakeRepository, outboundEmailClient).deliverPendingNotifications();
+        new NotificationDeliveryService(intakeRepository, outboundEmailClient, clientsRepository).deliverPendingNotifications();
 
         verify(outboundEmailClient).send(any(NotificationOutboxItem.class), eq("<CAF=original@mail.gmail.com>"));
     }
@@ -51,7 +74,7 @@ class NotificationDeliveryServiceTests {
         when(intakeRepository.consultationById("firma-demo", "consultation-1"))
                 .thenReturn(Optional.of(consultation(null)));
 
-        new NotificationDeliveryService(intakeRepository, outboundEmailClient).deliverPendingNotifications();
+        new NotificationDeliveryService(intakeRepository, outboundEmailClient, clientsRepository).deliverPendingNotifications();
 
         verify(outboundEmailClient).send(any(NotificationOutboxItem.class), eq(null));
     }
@@ -66,7 +89,7 @@ class NotificationDeliveryServiceTests {
                 .thenThrow(HttpClientErrorException.create(
                         HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders.EMPTY, new byte[0], null));
 
-        new NotificationDeliveryService(intakeRepository, outboundEmailClient).deliverPendingNotifications();
+        new NotificationDeliveryService(intakeRepository, outboundEmailClient, clientsRepository).deliverPendingNotifications();
 
         // The row stays SENDING and is re-claimed in five minutes; marking it failed would walk
         // real client mail toward DEAD on a busy day. The rest of the batch is not attempted.

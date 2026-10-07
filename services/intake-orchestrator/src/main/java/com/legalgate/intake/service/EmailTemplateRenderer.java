@@ -130,6 +130,31 @@ public class EmailTemplateRenderer {
                 + signOff(firmName);
     }
 
+    /**
+     * The receipt a Client gets when their email goes to a lawyer. Firm Voice, plaintext, every
+     * sentence fixed (ADR-0007). A Client is represented, so unlike a potential client's letters
+     * this carries no not-legal-advice disclaimer and is signed by the firm, not its intake team.
+     *
+     * @param salutationName the Client's name for a person, or null for an organization
+     */
+    public String renderClientReceipt(String salutationName, String firmName) {
+        return salutation(salutationName) + "\n"
+                + "\n"
+                + "Recibimos su mensaje y lo trasladamos a su abogado(a), quien le respondera directamente.\n"
+                + "\n"
+                + clientSignOff(firmName);
+    }
+
+    /** Client mail stays on the Client's own subject line, as a reply to it. */
+    public String clientReplySubject(String originalSubject) {
+        return replySubject(originalSubject, "Su mensaje");
+    }
+
+    /** How a letter to a Client ends: the firm's own name, or nothing — never LegalGate. */
+    public String clientSignOff(String firmName) {
+        return "Cordialmente,\n" + signatureFirmLine(firmName);
+    }
+
     /** Keeps the Diagnostics question on the potential client's own subject line, as a reply to it. */
     String diagnosticsQuestionSubject(String originalSubject) {
         return replySubject(originalSubject, DIAGNOSTICS_QUESTION_SUBJECT);
@@ -177,7 +202,7 @@ public class EmailTemplateRenderer {
      * A name we cannot vouch for is worse in a salutation than no name at all: an email address or
      * a bare lowercase handle in "Estimado ..." reads as a mail merge, which is what this avoids.
      */
-    private String salutation(String clientName) {
+    String salutation(String clientName) {
         String name = nullToEmpty(clientName).trim();
         String first = firstName(name);
         boolean trustworthy = !first.isEmpty()

@@ -36,6 +36,28 @@ export interface HistoryEntry {
   createdAt: string;
 }
 
+export interface Correspondence {
+  id: string;
+  clientId: string;
+  contactAddress: string;
+  messageId: string;
+  subject: string | null;
+  body: string | null;
+  receivedAt: string;
+  intent: string | null;
+  outcome: string | null;
+  answerText: string | null;
+  purgedAt: string | null;
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  ANSWERED: 'Respondido automáticamente',
+  WOULD_HAVE_ANSWERED: 'Reenviado (respuesta automática apagada)',
+  FORWARDED: 'Reenviado al abogado',
+  HELD_BACK: 'Retenido: actividad vencida',
+  IGNORED: 'Correo automático, ignorado',
+};
+
 export interface ClientForm {
   name: string;
   kind: 'PERSON' | 'ORGANIZATION';
@@ -117,6 +139,7 @@ export class ClientsComponent implements OnInit {
   readonly idleOnly = signal(false);
   readonly selected = signal<Client | null>(null);
   readonly history = signal<HistoryEntry[]>([]);
+  readonly correspondence = signal<Correspondence[]>([]);
   readonly isFormOpen = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly isSubmitting = signal(false);
@@ -160,11 +183,24 @@ export class ClientsComponent implements OnInit {
   open(client: Client): void {
     this.selected.set(client);
     this.loadHistory(client.id);
+    this.loadCorrespondence(client.id);
   }
 
   close(): void {
     this.selected.set(null);
     this.history.set([]);
+    this.correspondence.set([]);
+  }
+
+  loadCorrespondence(clientId: string): void {
+    this.http.get<Correspondence[]>(this.apiConfig.url(`/api/clients/${clientId}/correspondence`)).subscribe({
+      next: (entries) => this.correspondence.set(entries),
+      error: () => this.correspondence.set([]),
+    });
+  }
+
+  outcomeLabel(outcome: string | null): string {
+    return outcome ? (OUTCOME_LABELS[outcome] ?? outcome) : 'En proceso';
   }
 
   loadHistory(clientId: string): void {

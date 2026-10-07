@@ -13,6 +13,13 @@ public final class ClientsModels {
     public static final String DATED = "DATED";
     public static final String EXTERNAL = "EXTERNAL";
 
+    /** What LegalGate did with a Client's email. */
+    public static final String ANSWERED = "ANSWERED";
+    public static final String WOULD_HAVE_ANSWERED = "WOULD_HAVE_ANSWERED";
+    public static final String FORWARDED = "FORWARDED";
+    public static final String HELD_BACK = "HELD_BACK";
+    public static final String IGNORED = "IGNORED";
+
     private ClientsModels() {
     }
 
@@ -72,5 +79,36 @@ public final class ClientsModels {
     }
 
     public record ActivityTypeRequest(String name, String kind, Integer defaultTurnaroundDays, Integer defaultTermDays) {
+    }
+
+    /**
+     * One email a Client sent, and what LegalGate did about it. {@code outcome} is null while the
+     * worker has yet to act; {@code body} is null once purged. {@code tenantId} is the tenant slug.
+     */
+    public record Correspondence(
+            String id,
+            String tenantId,
+            String clientId,
+            String contactAddress,
+            String messageId,
+            String subject,
+            String body,
+            Instant receivedAt,
+            String intent,
+            String outcome,
+            String answerText,
+            Instant purgedAt,
+            int attempts,
+            Instant nextAttemptAt
+    ) {
+        public Correspondence resolved(String intent, String outcome, String answerText) {
+            return new Correspondence(id, tenantId, clientId, contactAddress, messageId, subject, body, receivedAt,
+                    intent, outcome, answerText, purgedAt, attempts, null);
+        }
+
+        public Correspondence retrying(Instant next) {
+            return new Correspondence(id, tenantId, clientId, contactAddress, messageId, subject, body, receivedAt,
+                    intent, outcome, answerText, purgedAt, attempts + 1, next);
+        }
     }
 }

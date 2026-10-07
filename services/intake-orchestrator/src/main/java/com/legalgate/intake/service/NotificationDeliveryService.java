@@ -1,5 +1,7 @@
 package com.legalgate.intake.service;
 
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
+import com.legalgate.intake.clients.ClientsRepository;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
@@ -18,10 +20,13 @@ class NotificationDeliveryService {
 
     private final IntakeRepository intakeRepository;
     private final OutboundEmailClient outboundEmailClient;
+    private final ClientsRepository clientsRepository;
 
-    NotificationDeliveryService(IntakeRepository intakeRepository, OutboundEmailClient outboundEmailClient) {
+    NotificationDeliveryService(IntakeRepository intakeRepository, OutboundEmailClient outboundEmailClient,
+            ClientsRepository clientsRepository) {
         this.intakeRepository = intakeRepository;
         this.outboundEmailClient = outboundEmailClient;
+        this.clientsRepository = clientsRepository;
     }
 
     @Scheduled(fixedDelayString = "${LEGALGATE_NOTIFICATION_DISPATCH_DELAY_MS:30000}", initialDelayString = "${LEGALGATE_NOTIFICATION_DISPATCH_INITIAL_DELAY_MS:10000}")
@@ -52,14 +57,23 @@ class NotificationDeliveryService {
     }
 
     /**
-     * The Consultation Thread anchor (ADR 0004), resolved here so the outbox carries no message ids.
+     * The thread anchor (ADR 0004), resolved here so the outbox carries no message ids: the
+     * Consultation's first email, or for Client mail the Client's own email being answered.
      * Threading is an enhancement, never a delivery risk: a failed lookup sends the mail unthreaded.
      */
     private String threadAnchor(NotificationOutboxItem notification) {
-        if (notification.consultationId() == null || notification.tenantId() == null) {
+        if (notification.tenantId() == null) {
             return null;
         }
         try {
+            if (notification.correspondenceId() != null) {
+                return clientsRepository.correspondence(notification.tenantId(), notification.correspondenceId())
+                        .map(Correspondence::messageId)
+                        .orElse(null);
+            }
+            if (notification.consultationId() == null) {
+                return null;
+            }
             return intakeRepository.consultationById(notification.tenantId(), notification.consultationId())
                     .map(ConsultationResponse::sourceMessageId)
                     .orElse(null);

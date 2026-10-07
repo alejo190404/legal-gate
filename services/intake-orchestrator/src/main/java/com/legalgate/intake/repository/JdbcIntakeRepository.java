@@ -632,7 +632,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                     )
                     returning id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
                               from_email, subject, body, html_body, ics_content, status, attempts, provider_message_id,
-                              last_error, created_at, updated_at, next_attempt_at
+                              last_error, created_at, updated_at, next_attempt_at, correspondence_id, reply_to
                     """, this::mapNotification, MAX_NOTIFICATION_ATTEMPTS, Math.max(1, limit));
             return notifications;
         });
@@ -894,39 +894,14 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     private void insertNotifications(UUID tenantId, String tenantSlug, List<NotificationOutboxItem> notifications) {
-        if (notifications == null || notifications.isEmpty()) {
-            return;
-        }
-        for (NotificationOutboxItem notification : notifications) {
-            jdbcTemplate.update("""
-                    insert into notification_outbox (
-                      tenant_id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                      from_email, subject, body, html_body, ics_content, status, attempts, next_attempt_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
-                    on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role)
-                    where status in ('PENDING', 'SENDING', 'FAILED') and event_id is not null
-                    do nothing
-                    """,
-                    tenantId,
-                    tenantSlug,
-                    UUID.fromString(notification.consultationId()),
-                    uuidOrNull(notification.eventId()),
-                    notification.type(),
-                    notification.recipientRole(),
-                    notification.recipientEmail(),
-                    notification.fromEmail(),
-                    notification.subject(),
-                    notification.body(),
-                    notification.htmlBody(),
-                    notification.icsContent());
-        }
+        NotificationOutboxSql.insert(jdbcTemplate, tenantId, tenantSlug, notifications);
     }
 
     private NotificationOutboxItem mapNotification(ResultSet rs, int rowNum) throws SQLException {
         return new NotificationOutboxItem(
                 rs.getObject("id", UUID.class).toString(),
                 rs.getString("tenant_slug"),
-                rs.getObject("consultation_id", UUID.class).toString(),
+                rs.getString("consultation_id"),
                 rs.getObject("event_id") == null ? null : rs.getObject("event_id", UUID.class).toString(),
                 rs.getString("notification_type"),
                 rs.getString("recipient_role"),
@@ -942,7 +917,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getString("last_error"),
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant(),
-                rs.getTimestamp("next_attempt_at").toInstant()
+                rs.getTimestamp("next_attempt_at").toInstant(),
+                rs.getString("correspondence_id"),
+                rs.getString("reply_to")
         );
     }
 

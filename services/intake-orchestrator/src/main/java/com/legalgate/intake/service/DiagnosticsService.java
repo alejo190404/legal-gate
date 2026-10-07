@@ -107,6 +107,11 @@ public class DiagnosticsService {
         return sessionForReply(event).isPresent();
     }
 
+    /** Whether this email answers a Diagnostics session still in progress: the first match for inbound mail. */
+    public boolean isPendingDiagnosticsReply(InboundEmailReceived event) {
+        return sessionForReply(event).filter(DiagnosticsSession::isPending).isPresent();
+    }
+
     /**
      * Entry point for the inbound-email webhook. Persists and returns; no LLM work happens here.
      * A tenant with a blank Diagnostics Prompt keeps the pre-diagnostics behaviour exactly.

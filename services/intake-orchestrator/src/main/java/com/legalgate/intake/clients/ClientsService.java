@@ -4,6 +4,7 @@ import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.repository.IntakeRepository;
@@ -105,6 +106,12 @@ public class ClientsService {
     public List<HistoryEntry> history(String tenant, String clientId) {
         client(tenant, clientId);
         return clients.history(tenant, clientId);
+    }
+
+    /** Every email the Client sent and what LegalGate did with it, newest first. */
+    public List<Correspondence> correspondence(String tenant, String clientId) {
+        client(tenant, clientId);
+        return clients.correspondenceForClient(tenant, clientId);
     }
 
     public List<ActivityType> activityTypes(String tenant) {

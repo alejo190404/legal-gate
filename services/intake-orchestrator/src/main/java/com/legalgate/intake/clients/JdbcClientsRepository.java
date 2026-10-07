@@ -2,7 +2,10 @@ package com.legalgate.intake.clients;
 
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
+import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.repository.NotificationOutboxSql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -184,6 +187,92 @@ class JdbcClientsRepository implements ClientsRepository {
         return new ActivityType(rs.getString("id"), rs.getString("name"), rs.getString("kind"),
                 (Integer) rs.getObject("default_turnaround_days"), (Integer) rs.getObject("default_term_days"),
                 instant(rs, "retired_at"));
+    }
+
+    @Override
+    public Optional<Correspondence> recordCorrespondence(String tenantSlug, Correspondence entry) {
+        return inTenant(tenantSlug, () -> jdbc.query("""
+                insert into client_correspondence (
+                  tenant_id, tenant_slug, client_id, contact_address, message_id, subject, body, received_at,
+                  intent, outcome, answer_text, next_attempt_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict (tenant_id, message_id) do nothing
+                returning id
+                """, (rs, row) -> rs.getString("id"), tenantId(tenantSlug), tenantSlug, UUID.fromString(entry.clientId()),
+                entry.contactAddress(), entry.messageId(), entry.subject(), entry.body(),
+                java.sql.Timestamp.from(entry.receivedAt()), entry.intent(), entry.outcome(), entry.answerText(),
+                timestamp(entry.nextAttemptAt())).stream().findFirst())
+                .flatMap(id -> correspondence(tenantSlug, id));
+    }
+
+    @Override
+    public Optional<Correspondence> correspondence(String tenantSlug, String correspondenceId) {
+        UUID id = uuid(correspondenceId);
+        if (id == null) {
+            return Optional.empty();
+        }
+        return inTenant(tenantSlug, () -> jdbc.query(correspondenceSelect() + " where c.tenant_slug = ? and c.id = ?",
+                this::mapCorrespondence, tenantSlug, id).stream().findFirst());
+    }
+
+    @Override
+    public List<Correspondence> correspondenceForClient(String tenantSlug, String clientId) {
+        return inTenant(tenantSlug, () -> jdbc.query(
+                correspondenceSelect() + " where c.tenant_slug = ? and c.client_id = ? order by c.received_at desc",
+                this::mapCorrespondence, tenantSlug, UUID.fromString(clientId)));
+    }
+
+    @Override
+    public List<Correspondence> claimDueCorrespondence(int limit) {
+        return inTenant(WORKER, () -> jdbc.query("""
+                with claimed as (
+                  update client_correspondence
+                  set next_attempt_at = now() + interval '5 minutes'
+                  where id in (
+                    select id from client_correspondence
+                    where outcome is null and next_attempt_at <= now()
+                    order by received_at
+                    limit ?
+                    for update skip locked
+                  )
+                  returning *
+                )
+                """ + correspondenceSelect().replace("from client_correspondence c", "from claimed c")
+                + " order by c.received_at", this::mapCorrespondence, Math.max(1, limit)));
+    }
+
+    @Override
+    public void saveCorrespondence(String tenantSlug, Correspondence entry, List<NotificationOutboxItem> notifications) {
+        inTenant(tenantSlug, () -> {
+            jdbc.update("""
+                    update client_correspondence
+                    set intent = ?, outcome = ?, answer_text = ?, attempts = ?, next_attempt_at = ?
+                    where id = ?
+                    """, entry.intent(), entry.outcome(), entry.answerText(), entry.attempts(),
+                    timestamp(entry.nextAttemptAt()), UUID.fromString(entry.id()));
+            NotificationOutboxSql.insert(jdbc, tenantId(tenantSlug), tenantSlug, notifications);
+            return null;
+        });
+    }
+
+    private String correspondenceSelect() {
+        return """
+                select c.id, c.tenant_slug, c.client_id, c.contact_address, c.message_id, c.subject, c.body,
+                       c.received_at, c.intent, c.outcome, c.answer_text, c.purged_at, c.attempts, c.next_attempt_at
+                from client_correspondence c
+                """;
+    }
+
+    private Correspondence mapCorrespondence(ResultSet rs, int row) throws SQLException {
+        return new Correspondence(rs.getString("id"), rs.getString("tenant_slug"), rs.getString("client_id"),
+                rs.getString("contact_address"), rs.getString("message_id"), rs.getString("subject"),
+                rs.getString("body"), instant(rs, "received_at"), rs.getString("intent"), rs.getString("outcome"),
+                rs.getString("answer_text"), instant(rs, "purged_at"), rs.getInt("attempts"),
+                instant(rs, "next_attempt_at"));
+    }
+
+    static java.sql.Timestamp timestamp(Instant value) {
+        return value == null ? null : java.sql.Timestamp.from(value);
     }
 
     void insertHistory(UUID tenantId, UUID clientId, List<HistoryEntry> history) {

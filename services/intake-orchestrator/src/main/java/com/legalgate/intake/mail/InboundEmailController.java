@@ -1,6 +1,5 @@
 package com.legalgate.intake.mail;
 
-import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.billing.BillingAccessService;
 import java.util.LinkedHashMap;
@@ -22,10 +21,13 @@ class InboundEmailController {
     private static final Logger log = LoggerFactory.getLogger(InboundEmailController.class);
 
     private final DiagnosticsService diagnosticsService;
+    private final InboundMailRouter router;
     private final BillingAccessService billingAccessService;
 
-    InboundEmailController(DiagnosticsService diagnosticsService, BillingAccessService billingAccessService) {
+    InboundEmailController(DiagnosticsService diagnosticsService, InboundMailRouter router,
+            BillingAccessService billingAccessService) {
         this.diagnosticsService = diagnosticsService;
+        this.router = router;
         this.billingAccessService = billingAccessService;
     }
 
@@ -48,15 +50,22 @@ class InboundEmailController {
                     "eventId", event.eventId(),
                     "tenantId", event.tenantId()));
         }
-        // The webhook persists and returns; Diagnostics and Classification run on the worker,
-        // so the mail provider is never held open for an LLM call.
-        ConsultationResponse consultation = diagnosticsService.receiveInboundEmail(event);
+        // The webhook persists and returns; Diagnostics, Classification and Client mail run on the
+        // worker, so the mail provider is never held open for an LLM call.
+        InboundMailRouter.Received received = router.receive(event);
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", "created");
         response.put("eventId", event.eventId());
         response.put("tenantId", event.tenantId());
-        response.put("consultationId", consultation.id());
+        if (received.consultation() != null) {
+            response.put("status", "created");
+            response.put("consultationId", received.consultation().id());
+        } else {
+            response.put("status", received.correspondence() == null ? "duplicate_client_mail" : "client_mail");
+            if (received.correspondence() != null) {
+                response.put("correspondenceId", received.correspondence().id());
+            }
+        }
         return ResponseEntity.ok(response);
     }
 

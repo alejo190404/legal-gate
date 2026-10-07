@@ -2,7 +2,9 @@ package com.legalgate.intake.clients;
 
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
+import com.legalgate.intake.model.NotificationOutboxItem;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,4 +37,20 @@ public interface ClientsRepository {
 
     /** Inserts or updates by id. */
     ActivityType saveActivityType(String tenantSlug, ActivityType activityType);
+
+    /** Records a Client's email once per tenant and Message-ID; empty when it was already recorded. */
+    Optional<Correspondence> recordCorrespondence(String tenantSlug, Correspondence correspondence);
+
+    Optional<Correspondence> correspondence(String tenantSlug, String correspondenceId);
+
+    /** Newest first. */
+    List<Correspondence> correspondenceForClient(String tenantSlug, String clientId);
+
+    /** Leases unresolved entries that are due, across tenants, so a second worker skips them. */
+    List<Correspondence> claimDueCorrespondence(int limit);
+
+    /**
+     * Saves the entry's new state and queues {@code notifications} in the same write, so an outcome is never recorded without the mail it caused, or the reverse.
+     */
+    void saveCorrespondence(String tenantSlug, Correspondence correspondence, List<NotificationOutboxItem> notifications);
 }

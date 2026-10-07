@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.clients.ClientsModels.Correspondence;
+import com.legalgate.intake.model.NotificationOutboxItem;
+import java.time.Instant;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -147,6 +150,48 @@ class ClientsMigrationPostgresTests {
             assertThat(countFor(connection, "tenant-a", "activity_type_catalogs")).isEqualTo(1);
             connection.rollback();
         }
+    }
+
+    @Test
+    void correspondenceIsRecordedOncePerMessageIdAndClaimedOnceByTheWorker() throws Exception {
+        JdbcClientsRepository repository = repository();
+        Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());
+
+        Correspondence first = repository.recordCorrespondence("tenant-a", pending(acme, "<m-1@acme.co>")).orElseThrow();
+        assertThat(repository.recordCorrespondence("tenant-a", pending(acme, "<m-1@acme.co>"))).isEmpty();
+
+        List<Correspondence> claimed = repository.claimDueCorrespondence(10);
+        assertThat(claimed).extracting(Correspondence::id).containsExactly(first.id());
+        assertThat(claimed.get(0).tenantId()).isEqualTo("tenant-a");
+        assertThat(repository.claimDueCorrespondence(10)).isEmpty();
+
+        repository.saveCorrespondence("tenant-a", first.resolved(null, ClientsModels.FORWARDED, null), List.of(
+                NotificationOutboxItem.forCorrespondence(first.id(), "CLIENT_RECEIPT", "CLIENT", "gc@acme.co",
+                        "tenant-a@intake.legal-gate.co", null, "Re: Hola", "Recibimos su mensaje."),
+                NotificationOutboxItem.forCorrespondence(first.id(), "CLIENT_MAIL_FORWARD", "LAWYER", "ana@a.co",
+                        null, "gc@acme.co", "Correo de cliente", "Hola.")));
+
+        assertThat(repository.correspondenceForClient("tenant-a", acme.id()))
+                .extracting(Correspondence::outcome).containsExactly(ClientsModels.FORWARDED);
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+             ResultSet rows = sql.executeQuery(
+                     "select consultation_id, correspondence_id, reply_to from notification_outbox order by notification_type")) {
+            rows.next();
+            assertThat(rows.getString("consultation_id")).isNull();
+            assertThat(rows.getString("correspondence_id")).isEqualTo(first.id());
+            assertThat(rows.getString("reply_to")).isEqualTo("gc@acme.co");
+        }
+        try (Connection connection = appConnection()) {
+            connection.setAutoCommit(false);
+            assertThat(countFor(connection, "tenant-b", "client_correspondence")).isZero();
+            assertThat(countFor(connection, "tenant-a", "client_correspondence")).isEqualTo(1);
+            connection.rollback();
+        }
+    }
+
+    static Correspondence pending(Client client, String messageId) {
+        return new Correspondence(null, "tenant-a", client.id(), "gc@acme.co", messageId, "Hola", "Hola.",
+                Instant.now(), null, null, null, null, 0, Instant.now().minusSeconds(1));
     }
 
     static int countFor(Connection connection, String tenant, String table) throws SQLException {
