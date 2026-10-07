@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
+import { ClientsComponent } from '../clients/clients';
 import { PixelIconComponent } from './pixel-icon';
 
 type ViewName = 'loading' | 'register' | 'onboard-lawyers' | 'onboard-rules' | 'billing' | 'console';
 type ConsoleView =
   | 'inbox'
+  | 'clients'
   | 'rules'
   | 'calendar'
   | 'templates'
@@ -284,7 +286,7 @@ interface CalendarBlock {
 
 @Component({
   selector: 'app-console',
-  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent],
+  imports: [FormsModule, LoadingScreenComponent, PixelIconComponent, ClientsComponent],
   templateUrl: './console.html',
   styleUrl: './console.scss',
 })
@@ -399,11 +401,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return this.tenantSettings()?.intakeEmail || 'No disponible';
   });
   readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
+  readonly savedLawyers = computed(() => this.tenantSettings()?.lawyers ?? []);
   // App-kit navigation: a Workspace group and a Configure group, mirroring the
   // "Firm Console" in Claude Design. `wip` screens render the design-system
   // Work-in-progress placeholder instead of a built feature.
   readonly workspaceNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
     { id: 'inbox', icon: 'inbox', label: 'Bandeja de intake' },
+    { id: 'clients', icon: 'users', label: 'Clientes' },
     { id: 'rules', icon: 'route', label: 'Reglas de enrutamiento' },
     { id: 'templates', icon: 'mail', label: 'Plantillas de correo', wip: true },
   ];
@@ -429,6 +433,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   private readonly viewMeta: Record<ConsoleView, { crumb: string; title: string }> = {
     inbox: { crumb: 'Espacio de trabajo', title: 'Bandeja de intake' },
+    clients: { crumb: 'Espacio de trabajo', title: 'Clientes' },
     rules: { crumb: 'Configurar', title: 'Reglas de enrutamiento' },
     calendar: { crumb: 'Espacio de trabajo', title: 'Consultas' },
     templates: { crumb: 'Configurar', title: 'Plantillas de correo' },

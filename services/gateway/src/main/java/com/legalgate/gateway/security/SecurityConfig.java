@@ -56,7 +56,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/webhooks/mercadopago").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/onboarding/organization").authenticated()
                         .requestMatchers("/api/session", "/api/tenant/settings", "/api/billing", "/api/billing/**",
-                                "/api/consultations", "/api/consultations/**")
+                                "/api/consultations", "/api/consultations/**", "/api/clients", "/api/clients/**",
+                                "/api/activity-types", "/api/activity-types/**")
                         .access((authentication, context) -> {
                             if (!(authentication.get() instanceof JwtAuthenticationToken token)) {
                                 return new AuthorizationDecision(false);

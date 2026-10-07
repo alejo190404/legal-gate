@@ -1,0 +1,179 @@
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="lg-h4">Clientes</div>
+      <div class="lg-small">
+        Personas y empresas que la firma representa. El correo que llega desde una dirección de contacto
+        nunca pasa por diagnóstico.
+      </div>
+    </div>
+    <button class="btn primary" type="button" (click)="openCreate()">
+      <pixel-icon name="plus" [size]="15" />Nuevo cliente
+    </button>
+  </div>
+
+  <div class="clients-toolbar">
+    <div class="search">
+      <pixel-icon name="search" [size]="15" />
+      <input
+        aria-label="Buscar clientes"
+        placeholder="Nombre, correo o cédula / NIT"
+        [ngModel]="query()"
+        (ngModelChange)="search($event)"
+      />
+    </div>
+    <button class="fchip" type="button" [class.on]="idleOnly()" (click)="toggleIdle()">Sin actividades abiertas</button>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="panel-error"><strong>{{ errorMessage() }}</strong></div>
+  }
+
+  <div class="clients-layout" [class.split]="selected()">
+    <div class="clients-list">
+      @for (client of clients(); track client.id) {
+        <button class="client-row" type="button" [class.on]="selected()?.id === client.id" (click)="open(client)">
+          <span class="avatar">{{ client.name.slice(0, 2).toUpperCase() }}</span>
+          <span class="client-row-main">
+            <span class="who">{{ client.name }}</span>
+            <span class="email">{{ client.contactAddresses.join(', ') }}</span>
+          </span>
+          <span class="tag">{{ client.openActivities ? client.openActivities + ' abiertas' : 'Inactivo' }}</span>
+        </button>
+      } @empty {
+        <div class="empty">
+          <pixel-icon name="users" [size]="48" color="var(--stone-300)" />
+          <div class="lg-h4">No hay clientes en esta vista</div>
+          <div class="lg-small">Registra los clientes que ya tenías o vincula una consulta desde la bandeja.</div>
+        </div>
+      }
+    </div>
+
+    @if (selected(); as c) {
+      <section class="detail">
+        <div class="detail-hd">
+          <div style="min-width: 0">
+            <div class="who">{{ c.name }}</div>
+            <div class="email">{{ kindLabel(c.kind) }}{{ c.idNumber ? ' · ' + c.idNumber : '' }}</div>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center">
+            <button class="iconbtn" type="button" title="Editar" aria-label="Editar cliente" (click)="openEdit(c)">
+              <pixel-icon name="edit" [size]="15" />
+            </button>
+            <button class="iconbtn" type="button" title="Cerrar" aria-label="Cerrar cliente" (click)="close()">
+              <pixel-icon name="x" [size]="15" />
+            </button>
+          </div>
+        </div>
+        <div class="detail-body">
+          <div class="section-h">Contacto</div>
+          @for (address of c.contactAddresses; track address) {
+            <div class="detail-row">
+              <span class="k">Correo</span>
+              <span class="mono">{{ address }}</span>
+            </div>
+          }
+          @if (c.phone) {
+            <div class="detail-row">
+              <span class="k">Teléfono</span>
+              <span class="mono">{{ c.phone }}</span>
+            </div>
+          }
+          <div class="detail-row">
+            <span class="k">Abogado responsable</span>
+            <span>{{ lawyerName(c.responsibleLawyerId) }}</span>
+          </div>
+          @if (c.notes) {
+            <div class="detail-row">
+              <span class="k">Notas</span>
+              <span style="white-space: pre-wrap; text-align: right">{{ c.notes }}</span>
+            </div>
+          }
+
+          <div class="section-h">Historial</div>
+          @for (entry of history(); track entry.id) {
+            <div class="history-row" [class.address-change]="isAddressChange(entry)">
+              <span class="lbl">{{ formatDateTime(entry.createdAt) }} · {{ entry.actorUserId || 'sistema' }}</span>
+              <span>
+                <strong>{{ fieldLabel(entry.field) }}</strong>:
+                {{ historyValue(entry, entry.oldValue) }} → {{ historyValue(entry, entry.newValue) }}
+              </span>
+            </div>
+          } @empty {
+            <div class="lg-small">Sin cambios registrados.</div>
+          }
+        </div>
+      </section>
+    }
+  </div>
+</div>
+
+@if (isFormOpen()) {
+  <div class="modal-backdrop" role="presentation" (click)="closeForm()"></div>
+  <section class="tutorial-modal pixel-card" role="dialog" aria-modal="true" aria-labelledby="client-form-title">
+    <header>
+      <div>
+        <p class="eyebrow">Cliente</p>
+        <h2 id="client-form-title">{{ editingId() ? 'Editar cliente' : 'Nuevo cliente' }}</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="closeForm()">×</button>
+    </header>
+    <form class="settings-form" (submit)="save(); $event.preventDefault()">
+      <div class="form-field">
+        <label for="clientName">Nombre</label>
+        <input id="clientName" name="clientName" [(ngModel)]="form.name" required />
+      </div>
+      <div class="form-field">
+        <label for="clientKind">Tipo</label>
+        <select id="clientKind" name="clientKind" [(ngModel)]="form.kind">
+          <option value="PERSON">Persona</option>
+          <option value="ORGANIZATION">Organización</option>
+        </select>
+      </div>
+      <fieldset class="form-field">
+        <legend>Correos de contacto</legend>
+        @for (address of form.contactAddresses; track $index) {
+          <div class="address-row">
+            <input
+              type="email"
+              [attr.aria-label]="'Correo de contacto ' + ($index + 1)"
+              [name]="'contactAddress' + $index"
+              [(ngModel)]="form.contactAddresses[$index]"
+            />
+            @if (form.contactAddresses.length > 1) {
+              <button class="icon-button" type="button" aria-label="Quitar correo" (click)="removeAddress($index)">×</button>
+            }
+          </div>
+        }
+        <button class="link-button" type="button" (click)="addAddress()">+ Agregar correo</button>
+        <small class="lg-small">Solo el correo que llega desde estas direcciones se reconoce como de este cliente.</small>
+      </fieldset>
+      <div class="form-field">
+        <label for="clientLawyer">Abogado responsable</label>
+        <select id="clientLawyer" name="clientLawyer" [(ngModel)]="form.responsibleLawyerId">
+          @for (lawyer of activeLawyers(); track lawyer.id) {
+            <option [value]="lawyer.id">{{ lawyer.displayName }}</option>
+          }
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="clientIdNumber">Cédula / NIT (opcional)</label>
+        <input id="clientIdNumber" name="clientIdNumber" [(ngModel)]="form.idNumber" />
+      </div>
+      <div class="form-field">
+        <label for="clientPhone">Teléfono (opcional)</label>
+        <input id="clientPhone" name="clientPhone" [(ngModel)]="form.phone" />
+      </div>
+      <div class="form-field">
+        <label for="clientNotes">Notas internas (opcional)</label>
+        <textarea id="clientNotes" name="clientNotes" rows="3" [(ngModel)]="form.notes"></textarea>
+      </div>
+      @if (formError()) {
+        <div class="panel-error"><strong>{{ formError() }}</strong></div>
+      }
+      <button class="btn primary" type="submit" [disabled]="isSubmitting()">
+        {{ isSubmitting() ? 'Guardando…' : 'Guardar cliente' }}
+      </button>
+    </form>
+  </section>
+}

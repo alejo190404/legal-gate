@@ -51,7 +51,11 @@ public class BackendProxyController {
             "/api/billing",
             "/api/billing/**",
             "/api/consultations",
-            "/api/consultations/**"
+            "/api/consultations/**",
+            "/api/clients",
+            "/api/clients/**",
+            "/api/activity-types",
+            "/api/activity-types/**"
     })
     public ResponseEntity<?> proxy(
             HttpServletRequest request,

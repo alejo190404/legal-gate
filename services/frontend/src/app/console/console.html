@@ -904,6 +904,10 @@
             </div>
           }
 
+          @case ('clients') {
+            <app-clients [lawyers]="savedLawyers()" />
+          }
+
           @case ('rules') {
             <div class="page">
               <div class="page-head">
