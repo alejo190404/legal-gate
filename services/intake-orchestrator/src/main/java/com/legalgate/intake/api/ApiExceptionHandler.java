@@ -1,5 +1,6 @@
 package com.legalgate.intake.api;
 
+import com.legalgate.intake.clients.LawyerInChargeException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,16 @@ public class ApiExceptionHandler {
                 "message", "Request payload failed validation.",
                 "fields", fields
         );
+    }
+
+    /** The settings screen lists exactly what must be reassigned before the lawyer can go. */
+    @ExceptionHandler(LawyerInChargeException.class)
+    public ResponseEntity<Map<String, Object>> handleLawyerInCharge(LawyerInChargeException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", "lawyer_still_in_charge",
+                "message", exception.getMessage(),
+                "blockers", exception.blockers()
+        ));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

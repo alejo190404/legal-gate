@@ -567,7 +567,8 @@ class DiagnosticsTests {
 
     private DiagnosticsService diagnosticsFor(String prompt) {
         IntakeService intakeService = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(repository, properties()));
+                new FirmNameResolver(repository, properties()),
+                new com.legalgate.intake.clients.ClientsService(new com.legalgate.intake.clients.InMemoryClientsRepository(repository), repository));
         intakeService.saveSettings(TENANT, settingsRequest(prompt));
         return new DiagnosticsService(repository, intakeService, classifier, properties(),
                 new EmailTemplateRenderer(), new FirmNameResolver(repository, properties()));
@@ -575,13 +576,15 @@ class DiagnosticsTests {
 
     private void saveSettings(String prompt) {
         new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(repository, properties()))
+                new FirmNameResolver(repository, properties()),
+                new com.legalgate.intake.clients.ClientsService(new com.legalgate.intake.clients.InMemoryClientsRepository(repository), repository))
                 .saveSettings(TENANT, settingsRequest(prompt));
     }
 
     private void saveNonEngagementNotice(String notice) {
         new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(repository, properties()))
+                new FirmNameResolver(repository, properties()),
+                new com.legalgate.intake.clients.ClientsService(new com.legalgate.intake.clients.InMemoryClientsRepository(repository), repository))
                 .saveSettings(TENANT, settingsRequest(PROMPT, notice));
     }
 

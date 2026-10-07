@@ -30,6 +30,7 @@ import com.legalgate.intake.classifier.ClassifierUnavailableException;
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
 import com.legalgate.intake.classifier.ConsultationClassifierRequest;
 import com.legalgate.intake.classifier.ConsultationClassifierResponse;
+import com.legalgate.intake.clients.ClientsService;
 import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.mail.InboundEmailReceived;
 import com.legalgate.intake.model.ClassificationResult;
@@ -77,19 +78,23 @@ public class IntakeService {
     private final ConsultationClassifierClient consultationClassifierClient;
     private final EmailTemplateRenderer emailTemplateRenderer;
     private final FirmNameResolver firmNameResolver;
+    private final ClientsService clientsService;
 
     public IntakeService(IntakeRepository intakeRepository, IntakeProperties intakeProperties,
             ConsultationClassifierClient consultationClassifierClient, EmailTemplateRenderer emailTemplateRenderer,
-            FirmNameResolver firmNameResolver) {
+            FirmNameResolver firmNameResolver, ClientsService clientsService) {
         this.intakeRepository = intakeRepository;
         this.intakeProperties = intakeProperties;
         this.consultationClassifierClient = consultationClassifierClient;
         this.emailTemplateRenderer = emailTemplateRenderer;
         this.firmNameResolver = firmNameResolver;
+        this.clientsService = clientsService;
     }
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
         List<LawyerProfile> lawyers = lawyersFrom(tenantId, request.lawyers(), request.routingRules());
+        // A Client's mail must never reach someone who has left the firm.
+        clientsService.assertLawyersReleasable(tenantId, intakeRepository.lawyersForTenant(tenantId), lawyers);
         List<TenantRoutingRule> routingRules = routingRulesFrom(request, lawyers);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
         TenantSettingsResponse settings = new TenantSettingsResponse(

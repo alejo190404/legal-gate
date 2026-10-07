@@ -331,6 +331,12 @@ class JdbcClientsRepository implements ClientsRepository {
         return activity(tenantSlug, id.toString()).orElseThrow();
     }
 
+    @Override
+    public List<Activity> openActivities(String tenantSlug) {
+        return inTenant(tenantSlug, () -> jdbc.query(activitySelect() + " where a.tenant_slug = ? and not a.done",
+                this::mapActivity, tenantSlug));
+    }
+
     private String activitySelect() {
         return """
                 select a.id, a.tenant_slug, a.client_id, a.activity_type_id, t.name as type_name, a.kind, a.label,

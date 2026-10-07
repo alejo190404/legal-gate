@@ -61,7 +61,8 @@ class IntakeServiceManualConsultationTests {
 
     private IntakeService seededService(InMemoryIntakeRepository repository, ConsultationClassifierClient classifier) {
         IntakeService service = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(repository, properties()));
+                new FirmNameResolver(repository, properties()),
+                new com.legalgate.intake.clients.ClientsService(new com.legalgate.intake.clients.InMemoryClientsRepository(repository), repository));
         service.saveSettings(TENANT, new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "General", "General intake", List.of(), List.of("manana"),

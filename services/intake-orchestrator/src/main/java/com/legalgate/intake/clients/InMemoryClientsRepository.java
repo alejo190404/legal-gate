@@ -206,6 +206,14 @@ public class InMemoryClientsRepository implements ClientsRepository {
         return activity(tenantSlug, id).orElseThrow();
     }
 
+    @Override
+    public List<Activity> openActivities(String tenantSlug) {
+        return activitiesById.values().stream()
+                .filter(activity -> activity.tenantId().equals(tenantSlug) && !activity.done())
+                .map(activity -> withTypeName(tenantSlug, activity))
+                .toList();
+    }
+
     private Activity withTypeName(String tenantSlug, Activity activity) {
         String typeName = activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null);
         return new Activity(activity.id(), activity.tenantId(), activity.clientId(), activity.activityTypeId(), typeName,

@@ -1225,9 +1225,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         error: (error: HttpErrorResponse) => {
           this.handleProtectedError(error, () => {
             this.settingsErrorMessage.set(
-              error.status === 409
-                ? 'Ese email ya esta configurado para otra firma.'
-                : 'No se pudo guardar la configuracion. Intenta nuevamente.',
+              error.error?.error === 'lawyer_still_in_charge'
+                ? error.error.message
+                : error.status === 409
+                  ? 'Ese email ya esta configurado para otra firma.'
+                  : 'No se pudo guardar la configuracion. Intenta nuevamente.',
             );
             this.isSubmitting.set(false);
           });

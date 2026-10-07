@@ -340,6 +340,39 @@ public class ClientsService {
         return date == null ? null : date.toString();
     }
 
+    /**
+     * Refuses a settings save that deactivates or removes a lawyer who is still a Responsible
+     * Lawyer or the Assigned Lawyer on open work, naming what must be reassigned first.
+     */
+    public void assertLawyersReleasable(String tenant, List<LawyerProfile> current, List<LawyerProfile> next) {
+        List<LawyerInChargeException.Blocker> blockers = new ArrayList<>();
+        List<Client> all = clients.clients(tenant);
+        List<Activity> open = clients.openActivities(tenant);
+        for (LawyerProfile lawyer : current) {
+            boolean stays = next.stream().anyMatch(candidate -> candidate.id().equals(lawyer.id())
+                    && (candidate.active() == null || candidate.active()));
+            if (stays) {
+                continue;
+            }
+            List<String> responsibleFor = all.stream()
+                    .filter(client -> lawyer.id().equals(client.responsibleLawyerId()))
+                    .map(Client::name)
+                    .toList();
+            List<String> assigned = open.stream()
+                    .filter(activity -> lawyer.id().equals(activity.assignedLawyerId()))
+                    .map(activity -> activity.displayName() + " (" + all.stream()
+                            .filter(client -> client.id().equals(activity.clientId()))
+                            .map(Client::name).findFirst().orElse("?") + ")")
+                    .toList();
+            if (!responsibleFor.isEmpty() || !assigned.isEmpty()) {
+                blockers.add(new LawyerInChargeException.Blocker(lawyer.id(), lawyer.displayName(), responsibleFor, assigned));
+            }
+        }
+        if (!blockers.isEmpty()) {
+            throw new LawyerInChargeException(blockers);
+        }
+    }
+
     /** The active lawyer with that id, or a 400: Responsible and Assigned Lawyers are always active. */
     LawyerProfile activeLawyer(String tenant, String lawyerId, String reason) {
         return intake.lawyersForTenant(tenant).stream()

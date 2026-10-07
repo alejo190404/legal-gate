@@ -5,6 +5,7 @@ import java.util.List;
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
 import com.legalgate.intake.clients.ClientsRepository;
 import com.legalgate.intake.clients.ClientsService;
+import com.legalgate.intake.clients.InMemoryClientsRepository;
 import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.TenantRoutingRule;
@@ -29,8 +30,13 @@ final class ClientsFixtures {
     }
 
     static IntakeService intakeService(InMemoryIntakeRepository intake, ConsultationClassifierClient classifier) {
+        return intakeService(intake, classifier, new InMemoryClientsRepository(intake));
+    }
+
+    static IntakeService intakeService(InMemoryIntakeRepository intake, ConsultationClassifierClient classifier,
+            ClientsRepository clients) {
         return new IntakeService(intake, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(intake, properties()));
+                new FirmNameResolver(intake, properties()), new ClientsService(clients, intake));
     }
 
     static void saveLawyers(InMemoryIntakeRepository intake, String tenant) {

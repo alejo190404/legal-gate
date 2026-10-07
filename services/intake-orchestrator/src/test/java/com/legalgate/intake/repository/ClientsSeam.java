@@ -58,7 +58,7 @@ abstract class ClientsSeam {
     void firm(String diagnosticsPrompt) {
         intake.startTenantProvisioning("owner", "Vargas & Asociados", TENANT, TENANT + "@intake.legal-gate.co");
         ClientsFixtures.saveSettings(intake, TENANT, diagnosticsPrompt);
-        intakeService = ClientsFixtures.intakeService(intake, classifier);
+        intakeService = ClientsFixtures.intakeService(intake, classifier, clientsRepository);
         diagnostics = new DiagnosticsService(intake, intakeService, classifier, ClientsFixtures.properties(),
                 new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()));
         clientMail = new ClientMailService(clientsRepository, intake, intakeService, classifier,

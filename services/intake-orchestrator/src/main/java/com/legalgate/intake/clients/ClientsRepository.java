@@ -70,4 +70,7 @@ public interface ClientsRepository {
 
     /** Inserts or updates by id and appends {@code history} in the same write. */
     Activity saveActivity(String tenantSlug, Activity activity, List<HistoryEntry> history);
+
+    /** Every open Activity of the tenant. */
+    List<Activity> openActivities(String tenantSlug);
 }
