@@ -97,10 +97,15 @@ public class IntakeService {
         clientsService.assertLawyersReleasable(tenantId, intakeRepository.lawyersForTenant(tenantId), lawyers);
         List<TenantRoutingRule> routingRules = routingRulesFrom(request, lawyers);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
+        TenantSettingsResponse current = intakeRepository.settingsFor(tenantId, null);
+        boolean automaticAnswers = request.automaticAnswers() != null
+                ? request.automaticAnswers()
+                : current != null && current.automaticAnswers();
         TenantSettingsResponse settings = new TenantSettingsResponse(
                 tenantId, primaryRule.urgentKeywords(), primaryRule.consultationWindows(), derivedUrgencyLevels(routingRules),
                 primaryRule.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), routingRules, lawyers,
-                sanitizeNullable(request.diagnosticsPrompt()), sanitizeNullable(request.nonEngagementNotice())
+                sanitizeNullable(request.diagnosticsPrompt()), sanitizeNullable(request.nonEngagementNotice()),
+                automaticAnswers
         );
         return intakeRepository.saveSettings(tenantId, settings);
     }
@@ -687,7 +692,8 @@ public class IntakeService {
             TenantSettingsResponse healedSettings = new TenantSettingsResponse(
                     settings.tenantId(), settings.urgentKeywords(), settings.consultationWindows(), settings.urgencyLevels(),
                     settings.destinationEmail(), intakeProperties.canonicalIntakeEmail(tenantId), settings.routingRules(),
-                    settings.lawyers(), settings.diagnosticsPrompt(), settings.nonEngagementNotice()
+                    settings.lawyers(), settings.diagnosticsPrompt(), settings.nonEngagementNotice(),
+                    settings.automaticAnswers()
             );
             return intakeRepository.saveSettings(tenantId, healedSettings);
         }
@@ -701,7 +707,8 @@ public class IntakeService {
         return new TenantSettingsResponse(
                 settings.tenantId() == null ? tenantId : settings.tenantId(), primaryRule.urgentKeywords(), primaryRule.consultationWindows(),
                 derivedUrgencyLevels(routingRules), primaryRule.destinationEmail(), settings.intakeEmail(), routingRules, lawyers,
-                sanitizeNullable(settings.diagnosticsPrompt()), sanitizeNullable(settings.nonEngagementNotice())
+                sanitizeNullable(settings.diagnosticsPrompt()), sanitizeNullable(settings.nonEngagementNotice()),
+                settings.automaticAnswers()
         );
     }
     private List<LawyerProfile> lawyersFrom(String tenantId, List<LawyerProfile> submitted, List<TenantRoutingRule> routingRules) {

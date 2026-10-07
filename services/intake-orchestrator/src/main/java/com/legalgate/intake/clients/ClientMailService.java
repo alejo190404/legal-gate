@@ -1,16 +1,25 @@
 package com.legalgate.intake.clients;
 
+import com.legalgate.intake.classifier.ClassifierUnavailableException;
+import com.legalgate.intake.classifier.ClientMailIntentRequest;
+import com.legalgate.intake.classifier.ClientMailIntentResponse;
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.mail.InboundEmailReceived;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
+import com.legalgate.intake.service.BusinessDays;
+import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -33,6 +42,9 @@ public class ClientMailService {
 
     static final String FORWARD = "CLIENT_MAIL_FORWARD";
     static final String RECEIPT = "CLIENT_RECEIPT";
+    static final String STATUS_ANSWER = "CLIENT_STATUS_ANSWER";
+
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", Locale.forLanguageTag("es"));
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMailService.class);
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
@@ -44,15 +56,18 @@ public class ClientMailService {
     private final ConsultationClassifierClient classifier;
     private final EmailTemplateRenderer renderer;
     private final FirmNameResolver firmNames;
+    private final ActivityNudgeService nudges;
 
     public ClientMailService(ClientsRepository clients, IntakeRepository intake, IntakeService intakeService,
-            ConsultationClassifierClient classifier, EmailTemplateRenderer renderer, FirmNameResolver firmNames) {
+            ConsultationClassifierClient classifier, EmailTemplateRenderer renderer, FirmNameResolver firmNames,
+            ActivityNudgeService nudges) {
         this.clients = clients;
         this.intake = intake;
         this.intakeService = intakeService;
         this.classifier = classifier;
         this.renderer = renderer;
         this.firmNames = firmNames;
+        this.nudges = nudges;
     }
 
     /**
@@ -90,19 +105,111 @@ public class ClientMailService {
         }
     }
 
+    /**
+     * Decides what the email is, then answers it from the record or passes it to a lawyer. Only a
+     * Status Inquiry from a Client with open work, none of it Overdue, is ever answered; anything
+     * LegalGate cannot decide goes to a person (ADR-0007).
+     */
     private void process(Correspondence entry) {
         Client client = clients.client(entry.tenantId(), entry.clientId()).orElse(null);
         if (client == null) {
             return;
         }
-        forward(entry, client, null, ClientsModels.FORWARDED, null, "El cliente escribio y LegalGate no responde este tipo de correo por su cuenta.");
+        ClientMailIntentResponse intent;
+        try {
+            intent = classifier.classifyClientMail(new ClientMailIntentRequest(entry.subject(), entry.body()));
+        } catch (ClassifierUnavailableException ex) {
+            if (entry.attempts() < DiagnosticsService.RETRY_BACKOFF.size()) {
+                clients.saveCorrespondence(entry.tenantId(),
+                        entry.retrying(Instant.now().plus(DiagnosticsService.RETRY_BACKOFF.get(entry.attempts()))), List.of());
+                return;
+            }
+            LOGGER.warn("Client mail id={} tenant={} could not be classified; forwarding.", entry.id(), entry.tenantId());
+            forward(entry, client, null, ClientsModels.FORWARDED, null,
+                    "LegalGate no pudo determinar de que trata el correo, asi que no lo respondio.", List.of());
+            return;
+        }
+        if (!intent.isStatusInquiry()) {
+            forward(entry, client, intent.intent(), ClientsModels.FORWARDED, null,
+                    "El cliente escribio sobre algo que requiere a un abogado.", List.of());
+            return;
+        }
+        List<Activity> open = clients.activities(entry.tenantId(), client.id()).stream().filter(activity -> !activity.done()).toList();
+        if (open.isEmpty()) {
+            // "Nothing pending" may be work the firm never logged, so a person answers.
+            forward(entry, client, intent.intent(), ClientsModels.FORWARDED, null,
+                    "El cliente pregunto por el estado de su trabajo, pero no tiene actividades abiertas registradas.", List.of());
+            return;
+        }
+        List<Activity> overdue = open.stream().filter(Activity::overdue).toList();
+        if (!overdue.isEmpty()) {
+            // LegalGate never tells a Client in writing that the firm is late.
+            List<NotificationOutboxItem> reminders = new ArrayList<>();
+            overdue.forEach(activity -> reminders.addAll(nudges.heldBack(activity, client)));
+            forward(entry, client, intent.intent(), ClientsModels.HELD_BACK, null,
+                    "El cliente pregunto por el estado de su trabajo y LegalGate no respondio porque esta vencida: "
+                            + String.join(", ", overdue.stream().map(Activity::displayName).toList()) + ".",
+                    reminders);
+            return;
+        }
+        String answer = statusAnswer(entry, client, open);
+        if (intakeService.settingsForTenant(entry.tenantId()).automaticAnswers()) {
+            clients.saveCorrespondence(entry.tenantId(),
+                    entry.resolved(intent.intent(), ClientsModels.ANSWERED, answer),
+                    List.of(clientMessage(entry, STATUS_ANSWER, answer)));
+            return;
+        }
+        forward(entry, client, intent.intent(), ClientsModels.WOULD_HAVE_ANSWERED, answer,
+                "El cliente pregunto por el estado de su trabajo. Las respuestas automaticas estan apagadas; "
+                        + "la consola muestra la respuesta que se habria enviado.", List.of());
+    }
+
+    /**
+     * The status answer: fixed Spanish sentences filled from the record and nothing else, so no
+     * model ever states anything about a Client's matter (ADR-0007). Dates are Bogota's.
+     */
+    String statusAnswer(Correspondence entry, Client client, List<Activity> open) {
+        LocalDate today = BusinessDays.today();
+        StringBuilder answer = new StringBuilder(renderer.salutation(salutationName(client)))
+                .append("\n\nEste es el estado de sus asuntos con nosotros:\n");
+        for (Activity activity : open) {
+            answer.append("\n").append(activity.displayName()).append("\n").append(statusLine(activity, today)).append("\n");
+        }
+        return answer.append("\n").append(renderer.clientSignOff(firmName(entry))).toString();
+    }
+
+    private static String statusLine(Activity activity, LocalDate today) {
+        LocalDate expected = activity.expectedDate();
+        return switch (activity.kind()) {
+            case ClientsModels.TURNAROUND -> "Inicio: " + format(activity.startDate()) + ". Han transcurrido "
+                    + days(Math.max(0, BusinessDays.between(activity.startDate(), today))) + " y faltan "
+                    + Math.max(0, BusinessDays.between(today, expected)) + ". Fecha estimada de entrega: "
+                    + format(expected) + ".";
+            case ClientsModels.DATED -> "Programada para el " + format(expected) + ".";
+            default -> expected == null
+                    ? "Estamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo."
+                    : today.isAfter(expected)
+                            ? "El termino legal para la decision vencio el " + format(expected)
+                                    + " y estamos atentos a la respuesta del juzgado o la autoridad."
+                            : "Estamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
+                                    + format(expected) + ".";
+        };
+    }
+
+    private static String days(int count) {
+        return count == 1 ? "1 dia habil" : count + " dias habiles";
+    }
+
+    private static String format(LocalDate date) {
+        return date.format(DATE);
     }
 
     /** Passes the email to the Responsible Lawyer and sends the Client a receipt, in one write. */
-    void forward(Correspondence entry, Client client, String intent, String outcome, String answerText, String why) {
-        clients.saveCorrespondence(entry.tenantId(), entry.resolved(intent, outcome, answerText), List.of(
-                forwardToLawyer(entry, client, why),
-                receipt(entry, client)));
+    void forward(Correspondence entry, Client client, String intent, String outcome, String answerText, String why,
+            List<NotificationOutboxItem> alsoQueue) {
+        List<NotificationOutboxItem> notifications = new ArrayList<>(List.of(forwardToLawyer(entry, client, why), receipt(entry, client)));
+        notifications.addAll(alsoQueue);
+        clients.saveCorrespondence(entry.tenantId(), entry.resolved(intent, outcome, answerText), notifications);
     }
 
     private NotificationOutboxItem forwardToLawyer(Correspondence entry, Client client, String why) {

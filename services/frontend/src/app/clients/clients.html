@@ -183,7 +183,10 @@
             <div class="history-row">
               <span class="lbl">{{ formatDateTime(entry.receivedAt) }} · {{ entry.contactAddress }}</span>
               <span><strong>{{ entry.subject || '(sin asunto)' }}</strong></span>
-              <span class="tag">{{ outcomeLabel(entry.outcome) }}</span>
+              <span style="display: flex; gap: 6px; flex-wrap: wrap">
+                <span class="tag">{{ intentLabel(entry.intent) }}</span>
+                <span class="tag">{{ outcomeLabel(entry.outcome) }}</span>
+              </span>
               @if (entry.body) {
                 <span class="email" style="white-space: pre-wrap">{{ entry.body }}</span>
               } @else if (entry.purgedAt) {

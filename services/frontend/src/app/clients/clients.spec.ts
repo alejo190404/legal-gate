@@ -164,6 +164,7 @@ describe('ClientsComponent', () => {
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Pregunta por el estado');
     expect(text).toContain('Reenviado (respuesta automática apagada)');
     expect(text).toContain('Respuesta que se habría enviado');
     expect(text).toContain('Su contrato...');

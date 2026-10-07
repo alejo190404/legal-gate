@@ -115,6 +115,7 @@ interface TenantSettingsResponse {
   lawyers: LawyerProfile[];
   diagnosticsPrompt: string | null;
   nonEngagementNotice: string | null;
+  automaticAnswers?: boolean;
 }
 
 interface DiagnosticsMessage {
@@ -166,6 +167,7 @@ interface TenantSettingsForm {
   routingRules: TenantRoutingRuleForm[];
   diagnosticsPrompt: string;
   nonEngagementNotice: string;
+  automaticAnswers: boolean;
 }
 
 interface LawyerForm {
@@ -385,6 +387,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     ],
     diagnosticsPrompt: '',
     nonEngagementNotice: '',
+    automaticAnswers: false,
   };
 
   readonly totalConsultations = computed(() => this.consultations().length);
@@ -1119,6 +1122,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.settingsForm.routingRules = this.routingRuleFormsFrom(settings);
     this.settingsForm.diagnosticsPrompt = settings.diagnosticsPrompt ?? '';
     this.settingsForm.nonEngagementNotice = settings.nonEngagementNotice ?? '';
+    this.settingsForm.automaticAnswers = settings.automaticAnswers ?? false;
     this.clampActiveIndexes();
   }
 
@@ -1219,6 +1223,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         // An empty prompt disables Diagnostics entirely: the adopt/kill switch.
         diagnosticsPrompt: this.settingsForm.diagnosticsPrompt.trim() || null,
         nonEngagementNotice: this.settingsForm.nonEngagementNotice.trim() || null,
+        automaticAnswers: this.settingsForm.automaticAnswers,
       })
       .subscribe({
         next: (settings) => {

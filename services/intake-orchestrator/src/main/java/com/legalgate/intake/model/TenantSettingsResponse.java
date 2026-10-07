@@ -12,8 +12,26 @@ public record TenantSettingsResponse(
         List<TenantRoutingRule> routingRules,
         List<LawyerProfile> lawyers,
         String diagnosticsPrompt,
-        String nonEngagementNotice
+        String nonEngagementNotice,
+        /** Status Inquiries answered on their own (ADR-0007); off until the firm switches it on. */
+        boolean automaticAnswers
 ) {
+    public TenantSettingsResponse(
+            String tenantId,
+            List<String> urgentKeywords,
+            List<String> consultationWindows,
+            List<String> urgencyLevels,
+            String destinationEmail,
+            String intakeEmail,
+            List<TenantRoutingRule> routingRules,
+            List<LawyerProfile> lawyers,
+            String diagnosticsPrompt,
+            String nonEngagementNotice
+    ) {
+        this(tenantId, urgentKeywords, consultationWindows, urgencyLevels, destinationEmail, intakeEmail,
+                routingRules, lawyers, diagnosticsPrompt, nonEngagementNotice, false);
+    }
+
     public TenantSettingsResponse(
             String tenantId,
             List<String> urgentKeywords,

@@ -53,7 +53,7 @@ public class DiagnosticsService {
 
     // 5m, 10m, 15m: half an hour of retrying before a matter is handed to a human unfiltered.
     // A potential client waiting on a first reply is the thing being spent here, not compute.
-    private static final List<Duration> RETRY_BACKOFF = List.of(
+    public static final List<Duration> RETRY_BACKOFF = List.of(
             Duration.ofMinutes(5), Duration.ofMinutes(10), Duration.ofMinutes(15));
 
     /** Why a Consultation reached the firm without a Verdict; see ADR 0005. */

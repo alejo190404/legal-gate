@@ -210,6 +210,23 @@ class DiagnosticsMigrationPostgresTests {
         assertThat(repository.tenantDisplayName("tenant-firm-voice")).contains("Vargas & Asociados");
     }
 
+    @Test
+    void theAutomaticAnswersSwitchIsOffByDefaultAndRoundTrips() {
+        JdbcIntakeRepository repository = repository();
+        com.legalgate.intake.model.TenantSettingsResponse settings = new com.legalgate.intake.model.TenantSettingsResponse(
+                "tenant-switch", List.of(), List.of(), List.of("NORMAL"), "ana@firm.co", "tenant-switch@intake.legal-gate.co",
+                List.of(), List.of());
+        repository.saveSettings("tenant-switch", settings);
+        assertThat(repository.settingsFor("tenant-switch", null).automaticAnswers()).isFalse();
+
+        repository.saveSettings("tenant-switch", new com.legalgate.intake.model.TenantSettingsResponse(
+                settings.tenantId(), settings.urgentKeywords(), settings.consultationWindows(), settings.urgencyLevels(),
+                settings.destinationEmail(), settings.intakeEmail(), settings.routingRules(), settings.lawyers(),
+                null, null, true));
+
+        assertThat(repository.settingsFor("tenant-switch", null).automaticAnswers()).isTrue();
+    }
+
     private ConsultationResponse savePending(JdbcIntakeRepository repository, String tenantSlug) {
         ConsultationResponse consultation = new ConsultationResponse(
                 UUID.randomUUID().toString(), tenantSlug, "Maria Perez", "maria@example.com",

@@ -1369,6 +1369,29 @@
                   </button>
                 </form>
 
+                <form class="config-frame" (submit)="saveSettings(); $event.preventDefault()">
+                  <div class="config-frame-header">
+                    <div>
+                      <p class="eyebrow">Clientes</p>
+                      <h3>Respuestas automáticas</h3>
+                    </div>
+                    <span class="config-count">{{ settingsForm.automaticAnswers ? 'Encendidas' : 'Apagadas' }}</span>
+                  </div>
+                  <div class="form-field">
+                    <label>
+                      <input type="checkbox" name="automaticAnswers" [(ngModel)]="settingsForm.automaticAnswers" />
+                      Responder por mi firma cuando un cliente pregunta por el estado de su trabajo
+                    </label>
+                    <small class="lg-small">
+                      La respuesta se arma solo con lo que la firma registró: cada actividad abierta con su inicio y
+                      su fecha esperada. Nunca se responde si alguna actividad está vencida. Mientras estén apagadas,
+                      el correo se reenvía al abogado y la correspondencia del cliente muestra la respuesta que se
+                      habría enviado.
+                    </small>
+                  </div>
+                  <button class="btn primary" type="submit" [disabled]="isSubmitting()">Guardar</button>
+                </form>
+
                 <app-activity-types />
 
                 <div class="config-frame">

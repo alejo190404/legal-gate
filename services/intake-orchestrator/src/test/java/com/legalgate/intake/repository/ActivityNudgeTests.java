@@ -7,7 +7,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.legalgate.intake.clients.ActivityNudgeService;
 import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
@@ -16,14 +15,6 @@ import com.legalgate.intake.service.BusinessDays;
 
 /** Seam 1 for reminders: Activities are opened backdated and the worker is run by hand. */
 class ActivityNudgeTests extends ClientsSeam {
-
-    ActivityNudgeService nudges;
-
-    @Override
-    void firm(String diagnosticsPrompt) {
-        super.firm(diagnosticsPrompt);
-        nudges = new ActivityNudgeService(clientsRepository, intake, intakeService, "https://app.legal-gate.co/dashboard");
-    }
 
     @Test
     void anActivityTurningOverdueRemindsItsLawyerOnceWithACopyToTheFirm() {

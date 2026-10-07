@@ -397,6 +397,10 @@ export class ClientsComponent implements OnInit {
     });
   }
 
+  intentLabel(intent: string | null): string {
+    return intent === 'status_inquiry' ? 'Pregunta por el estado' : intent === 'needs_lawyer' ? 'Requiere abogado' : 'Sin clasificar';
+  }
+
   outcomeLabel(outcome: string | null): string {
     return outcome ? (OUTCOME_LABELS[outcome] ?? outcome) : 'En proceso';
   }

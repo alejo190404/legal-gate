@@ -137,9 +137,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                         insert into tenant_settings (
                           tenant_id, urgent_keywords, consultation_windows, urgency_levels,
                           destination_email, intake_email, routing_rules, diagnostics_prompt,
-                          non_engagement_notice, updated_at
+                          non_engagement_notice, automatic_answers, updated_at
                         )
-                        values (?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), ?, ?, now())
+                        values (?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), ?, ?, cast(? as jsonb), ?, ?, ?, now())
                         on conflict (tenant_id) do update set
                           urgent_keywords = excluded.urgent_keywords,
                           consultation_windows = excluded.consultation_windows,
@@ -149,6 +149,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                           routing_rules = excluded.routing_rules,
                           diagnostics_prompt = excluded.diagnostics_prompt,
                           non_engagement_notice = excluded.non_engagement_notice,
+                          automatic_answers = excluded.automatic_answers,
                           updated_at = now()
                         """,
                         tenantId,
@@ -159,7 +160,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                         settings.intakeEmail(),
                         toJson(settings.routingRules()),
                         settings.diagnosticsPrompt(),
-                        settings.nonEngagementNotice());
+                        settings.nonEngagementNotice(),
+                        settings.automaticAnswers());
                 saveLawyers(tenantId, settings.lawyers());
                 return settings;
             });
@@ -176,7 +178,7 @@ class JdbcIntakeRepository implements IntakeRepository {
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
                     select t.slug, s.urgent_keywords, s.consultation_windows, s.urgency_levels,
                            s.destination_email, s.intake_email, s.routing_rules,
-                           s.diagnostics_prompt, s.non_engagement_notice
+                           s.diagnostics_prompt, s.non_engagement_notice, s.automatic_answers
                     from tenants t
                     join tenant_settings s on s.tenant_id = t.id
                     where t.slug = ?
@@ -842,7 +844,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                 fromJson(rs.getString("routing_rules"), ROUTING_RULE_LIST),
                 lawyersForCurrentTenant(),
                 rs.getString("diagnostics_prompt"),
-                rs.getString("non_engagement_notice")
+                rs.getString("non_engagement_notice"),
+                rs.getBoolean("automatic_answers")
         );
     }
 

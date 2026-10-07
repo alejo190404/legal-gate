@@ -126,6 +126,45 @@ describe('ConsoleComponent session + billing flow', () => {
     );
   });
 
+  it('sends the automatic-answers switch with the settings', () => {
+    user.set({ id: 'user_1', email: 'admin@firma.test' });
+    hasOrganization.set(true);
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http.expectOne('/api/session').flush({
+      userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
+      displayName: 'Firma 1', role: 'firm_admin',
+    });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
+      subscription: null, payments: [], accessEndsAt: null, message: '',
+    });
+    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/tenant/settings').flush({
+      tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+      destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co',
+      routingRules: [{
+        name: 'Laboral', description: null, urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+        lawyerId: 'lawyer-ana', urgencyDefinitions: [{ name: 'NORMAL', rank: 1, slaDays: 5, active: true }],
+        destinationEmail: 'ana@firm.co',
+      }],
+      lawyers: [{
+        id: 'lawyer-ana', displayName: 'Ana Abogada', email: 'ana@firm.co', meetingUrl: null, active: true,
+        defaultEventDurationMinutes: 60,
+        availabilityWindows: [{ weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' }],
+      }],
+      diagnosticsPrompt: null, nonEngagementNotice: null, automaticAnswers: false,
+    });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.settingsForm.automaticAnswers).toBe(false);
+
+    fixture.componentInstance.settingsForm.automaticAnswers = true;
+    fixture.componentInstance.saveSettings();
+
+    expect(http.expectOne('/api/tenant/settings').request.body.automaticAnswers).toBe(true);
+  });
+
   it('routes an organization without entitlement to onboarding before checkout', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);

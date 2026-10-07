@@ -48,13 +48,17 @@ final class ClientsFixtures {
     }
 
     static TenantSettingsRequest settingsRequest(String diagnosticsPrompt, List<LawyerProfile> lawyers) {
+        return settingsRequest(diagnosticsPrompt, lawyers, null);
+    }
+
+    static TenantSettingsRequest settingsRequest(String diagnosticsPrompt, List<LawyerProfile> lawyers, Boolean automaticAnswers) {
         return new TenantSettingsRequest(
                 List.of(new TenantRoutingRule(
                         "Laboral", "Despidos y contratos", List.of(), List.of("manana"),
                         List.of("NORMAL", "URGENTE"), LUIS,
                         List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENTE", 2, 1, true)),
                         "luis@firm.co")),
-                lawyers, diagnosticsPrompt, null);
+                lawyers, diagnosticsPrompt, null, automaticAnswers);
     }
 
     static List<LawyerProfile> lawyers() {

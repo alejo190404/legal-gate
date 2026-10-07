@@ -202,7 +202,7 @@ public class EmailTemplateRenderer {
      * A name we cannot vouch for is worse in a salutation than no name at all: an email address or
      * a bare lowercase handle in "Estimado ..." reads as a mail merge, which is what this avoids.
      */
-    String salutation(String clientName) {
+    public String salutation(String clientName) {
         String name = nullToEmpty(clientName).trim();
         String first = firstName(name);
         boolean trustworthy = !first.isEmpty()

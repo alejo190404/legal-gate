@@ -17,6 +17,7 @@ import com.legalgate.intake.classifier.ConsultationClassifierRequest;
 import com.legalgate.intake.classifier.ConsultationClassifierResponse;
 import com.legalgate.intake.classifier.ConsultationDiagnosticsRequest;
 import com.legalgate.intake.classifier.ConsultationDiagnosticsResponse;
+import com.legalgate.intake.clients.ActivityNudgeService;
 import com.legalgate.intake.clients.ClientMailService;
 import com.legalgate.intake.clients.ClientsModels;
 import com.legalgate.intake.clients.ClientsModels.Client;
@@ -51,6 +52,7 @@ abstract class ClientsSeam {
     IntakeService intakeService;
     DiagnosticsService diagnostics;
     ClientMailService clientMail;
+    ActivityNudgeService nudges;
     InboundMailRouter router;
 
     Client acme;
@@ -61,8 +63,9 @@ abstract class ClientsSeam {
         intakeService = ClientsFixtures.intakeService(intake, classifier, clientsRepository);
         diagnostics = new DiagnosticsService(intake, intakeService, classifier, ClientsFixtures.properties(),
                 new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()));
+        nudges = new ActivityNudgeService(clientsRepository, intake, intakeService, "https://app.legal-gate.co/dashboard");
         clientMail = new ClientMailService(clientsRepository, intake, intakeService, classifier,
-                new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()));
+                new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()), nudges);
         router = new InboundMailRouter(diagnostics, clientMail);
         acme = clients.create(TENANT, "user_admin", new ClientRequest("Acme SAS", ClientsModels.ORGANIZATION, null,
                 null, null, ClientsFixtures.ANA, List.of("gc@acme.co", "ceo@acme.co")));
