@@ -24,8 +24,8 @@ interface ActivityTypeForm {
 
 const KIND_LABELS: Record<ActivityKind, string> = {
   TURNAROUND: 'Con plazo de la firma',
-  DATED: 'Con fecha',
-  EXTERNAL: 'Externa',
+  DATED: 'Con fecha (reunión, audiencia)',
+  EXTERNAL: 'Externa (depende de un juez o entidad)',
 };
 
 const ERRORS: Record<string, string> = {
@@ -45,6 +45,7 @@ export class ActivityTypesComponent implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
 
+  readonly kinds = Object.entries(KIND_LABELS).map(([kind, label]) => ({ kind: kind as ActivityKind, label }));
   readonly types = signal<ActivityType[]>([]);
   readonly errorMessage = signal('');
   readonly isSubmitting = signal(false);

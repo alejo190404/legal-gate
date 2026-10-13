@@ -6,6 +6,7 @@ import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -79,19 +80,22 @@ public interface ClientsRepository {
     List<Activity> openActivitiesAcrossTenants();
 
     /**
-     * Records that the {@code trigger} reminder for {@code forDate} went out and queues it, in one
+     * Records that the {@code trigger} reminder went out, for {@code forDate}, and queues it, in one
      * write; false, queuing nothing, when that reminder was already sent. This is the claim that
-     * keeps a reminder to once per Activity per date even with two workers.
+     * keeps a reminder to once per Activity per trigger even with two workers.
      */
     boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, LocalDate forDate,
             List<NotificationOutboxItem> notifications);
 
-    /** Nulls the body of every entry received before {@code cutoff}, keeping intent, outcome and answer. */
-    int purgeCorrespondenceBodies(java.time.Instant cutoff);
+    /**
+     * Nulls the body of every entry received before {@code cutoff}, and the copy in its forward to
+     * the lawyer, keeping intent, outcome and answer.
+     */
+    int purgeCorrespondenceBodies(Instant cutoff);
 
     /**
-     * Hard-deletes the Client with its Contact Addresses, Activities, Activity History and Client
-     * Correspondence, and clears the link on any Consultation engaged into it.
+     * Hard-deletes the Client with its Contact Addresses, Activities, Activity History, Client
+     * Correspondence and the mail about them, and clears the link on any Consultation engaged into it.
      */
     void deleteClient(String tenantSlug, String clientId);
 

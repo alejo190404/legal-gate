@@ -31,9 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ClientsController {
 
-    static final String ORGANIZATION = "X-LegalGate-Organization-Id";
-    static final String USER = "X-LegalGate-User-Id";
-
     private final ClientsService clients;
     private final TenantContextResolver tenants;
 
@@ -44,7 +41,7 @@ public class ClientsController {
 
     @GetMapping("/api/clients")
     public List<Client> clients(
-            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "false") boolean idle
     ) {
@@ -53,8 +50,8 @@ public class ClientsController {
 
     @PostMapping("/api/clients")
     public ResponseEntity<Client> create(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
             @RequestBody ClientRequest request
     ) {
         Client client = clients.create(tenant(organizationId), userId, request);
@@ -62,14 +59,14 @@ public class ClientsController {
     }
 
     @GetMapping("/api/clients/{clientId}")
-    public Client client(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+    public Client client(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String clientId) {
         return clients.client(tenant(organizationId), clientId);
     }
 
     @PutMapping("/api/clients/{clientId}")
     public Client update(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
             @PathVariable String clientId,
             @RequestBody ClientRequest request
     ) {
@@ -77,65 +74,68 @@ public class ClientsController {
     }
 
     @DeleteMapping("/api/clients/{clientId}")
-    public ResponseEntity<Void> delete(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+    public ResponseEntity<Void> delete(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String clientId) {
         clients.deleteClient(tenant(organizationId), clientId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/api/clients/{clientId}/history")
-    public List<HistoryEntry> history(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+    public List<HistoryEntry> history(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String clientId) {
         return clients.history(tenant(organizationId), clientId);
     }
 
     @GetMapping("/api/clients/{clientId}/correspondence")
-    public List<Correspondence> correspondence(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+    public List<Correspondence> correspondence(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String clientId) {
         return clients.correspondence(tenant(organizationId), clientId);
     }
 
     @GetMapping("/api/clients/{clientId}/activities")
-    public List<Activity> activities(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String clientId) {
+    public List<Activity> activities(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String clientId) {
         return clients.activities(tenant(organizationId), clientId);
     }
 
     @PostMapping("/api/clients/{clientId}/activities")
     public Activity createActivity(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
             @PathVariable String clientId,
             @RequestBody ActivityRequest request
     ) {
         return clients.createActivity(tenant(organizationId), userId, clientId, request);
     }
 
-    // Activity routes sit under their Client so the gateway's /api/clients/** rule covers them.
+    // Activity routes sit under their Client so the gateway's /api/clients/** rule covers them;
+    // an Activity of another Client is not found.
     @PutMapping("/api/clients/{clientId}/activities/{activityId}")
     public Activity updateActivity(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
+            @PathVariable String clientId,
             @PathVariable String activityId,
             @RequestBody ActivityRequest request
     ) {
-        return clients.updateActivity(tenant(organizationId), userId, activityId, request);
+        return clients.updateActivity(tenant(organizationId), userId, clientId, activityId, request);
     }
 
     @PostMapping("/api/clients/{clientId}/activities/{activityId}/done")
     public Activity completeActivity(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
+            @PathVariable String clientId,
             @PathVariable String activityId
     ) {
-        return clients.completeActivity(tenant(organizationId), userId, activityId);
+        return clients.completeActivity(tenant(organizationId), userId, clientId, activityId);
     }
 
     @GetMapping("/api/consultations/{consultationId}/engagement")
-    public Engagement engagement(@RequestHeader(ORGANIZATION) String organizationId, @PathVariable String consultationId) {
+    public Engagement engagement(@RequestHeader("X-LegalGate-Organization-Id") String organizationId, @PathVariable String consultationId) {
         return clients.engagement(tenant(organizationId), consultationId);
     }
 
     @PostMapping("/api/consultations/{consultationId}/engage")
     public Client engage(
-            @RequestHeader(ORGANIZATION) String organizationId,
-            @RequestHeader(USER) String userId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestHeader("X-LegalGate-User-Id") String userId,
             @PathVariable String consultationId,
             @RequestBody EngagementRequest request
     ) {
@@ -143,13 +143,13 @@ public class ClientsController {
     }
 
     @GetMapping("/api/activity-types")
-    public List<ActivityType> activityTypes(@RequestHeader(ORGANIZATION) String organizationId) {
+    public List<ActivityType> activityTypes(@RequestHeader("X-LegalGate-Organization-Id") String organizationId) {
         return clients.activityTypes(tenant(organizationId));
     }
 
     @PostMapping("/api/activity-types")
     public ActivityType createActivityType(
-            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @RequestBody ActivityTypeRequest request
     ) {
         return clients.createActivityType(tenant(organizationId), request);
@@ -157,7 +157,7 @@ public class ClientsController {
 
     @PutMapping("/api/activity-types/{activityTypeId}")
     public ActivityType updateActivityType(
-            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @PathVariable String activityTypeId,
             @RequestBody ActivityTypeRequest request
     ) {
@@ -166,7 +166,7 @@ public class ClientsController {
 
     @PostMapping("/api/activity-types/{activityTypeId}/retire")
     public ActivityType retireActivityType(
-            @RequestHeader(ORGANIZATION) String organizationId,
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @PathVariable String activityTypeId
     ) {
         return clients.retireActivityType(tenant(organizationId), activityTypeId);

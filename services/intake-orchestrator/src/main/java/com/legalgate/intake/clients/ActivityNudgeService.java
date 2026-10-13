@@ -7,11 +7,8 @@ import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.IntakeService;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,8 +16,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Reminders that let a lawyer learn about stale work before a Client does: once on the day an
- * Activity turns Overdue, once on the day an External term passes, and whenever a Status Inquiry
+ * Reminders that let a lawyer learn about stale work before a Client does: once when an Activity
+ * turns Overdue, once when an External term passes, and whenever a Status Inquiry
  * is held back. LegalGate-branded, to the Assigned Lawyer with a copy to the firm's destination
  * address, because lawyers do not sign in and whoever keeps the docket must update the record.
  *
@@ -32,7 +29,6 @@ public class ActivityNudgeService {
     static final String NUDGE = "ACTIVITY_NUDGE";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ActivityNudgeService.class);
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", Locale.forLanguageTag("es"));
     private static final String FOOTER = "Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.";
 
     private final ClientsRepository clients;
@@ -53,12 +49,12 @@ public class ActivityNudgeService {
     public void sendDueNudges() {
         for (Activity activity : clients.openActivitiesAcrossTenants()) {
             try {
-                if (activity.overdue() && !activity.expectedDate().equals(activity.overdueNudgedFor())) {
+                if (activity.overdue() && !activity.nudgedFor(NudgeTrigger.OVERDUE)) {
                     nudge(activity, NudgeTrigger.OVERDUE, "Actividad vencida", """
                             La actividad "%s" del cliente %s vencio el %s y sigue abierta.
                             Si ya termino, marquela como terminada; si no, actualice su fecha.""");
                 }
-                if (activity.termPassed() && !activity.expectedDate().equals(activity.termNudgedFor())) {
+                if (activity.termPassed() && !activity.nudgedFor(NudgeTrigger.TERM_PASSED)) {
                     nudge(activity, NudgeTrigger.TERM_PASSED, "Termino legal vencido", """
                             El termino legal de "%s" del cliente %s termino el %s y no hay decision registrada.
                             Puede ser momento de actuar, por ejemplo con un incidente de desacato.""");
@@ -86,27 +82,18 @@ public class ActivityNudgeService {
 
     private List<NotificationOutboxItem> reminders(Activity activity, Client client, String subject, String sentence) {
         String body = "LegalGate:\n\n"
-                + sentence.formatted(activity.displayName(), client.name(), format(activity.expectedDate())) + "\n\n"
-                + "Ver en la consola: " + consoleUrl + "?client=" + client.id() + "\n\n"
+                + sentence.formatted(activity.displayName(), client.name(), ClientsModels.spanishDate(activity.expectedDate())) + "\n\n"
+                + "Ver en la consola: " + consoleUrl + "?client=" + client.id() + "&activity=" + activity.id() + "\n\n"
                 + FOOTER;
         String fullSubject = subject + ": " + activity.displayName() + " (" + client.name() + ")";
         List<String> recipients = new ArrayList<>();
-        intake.lawyersForTenant(activity.tenantId()).stream()
-                .filter(lawyer -> lawyer.id().equals(activity.assignedLawyerId()))
-                .map(LawyerProfile::email)
-                .findFirst()
-                .ifPresent(recipients::add);
+        intake.lawyer(activity.tenantId(), activity.assignedLawyerId()).map(LawyerProfile::email).ifPresent(recipients::add);
         String destination = intakeService.settingsForTenant(activity.tenantId()).destinationEmail();
         if (destination != null && recipients.stream().noneMatch(destination::equalsIgnoreCase)) {
             recipients.add(destination);
         }
         return recipients.stream()
-                .map(recipient -> NotificationOutboxItem.forCorrespondence(null, NUDGE, "LAWYER", recipient, null, null,
-                        fullSubject, body))
+                .map(recipient -> NotificationOutboxItem.forActivity(activity.id(), NUDGE, recipient, fullSubject, body))
                 .toList();
-    }
-
-    private static String format(LocalDate date) {
-        return date == null ? "" : date.format(DATE);
     }
 }

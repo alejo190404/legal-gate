@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.legalgate.intake.classifier.ClientMailIntentResponse;
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels;
 import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -64,7 +65,7 @@ class RetentionTests extends ClientsSeam {
 
     void receivedAt(String messageId, Instant when) {
         clients.createActivity(TENANT, "user_admin", acme.id(), new ActivityRequest(
-                clients.offeredActivityTypes(TENANT).stream().filter(type -> "TURNAROUND".equals(type.kind()))
+                clients.offeredActivityTypes(TENANT).stream().filter(type -> type.kind() == ActivityKind.TURNAROUND)
                         .findFirst().orElseThrow().id(), null, null, null, null, null, null));
         InboundEmailReceived email = mail("gc@acme.co", "Acme GC <gc@acme.co>", messageId);
         router.receive(new InboundEmailReceived(email.eventId(), email.tenantId(), email.envelopeTo(), email.recipients(),

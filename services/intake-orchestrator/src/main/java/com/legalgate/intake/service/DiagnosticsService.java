@@ -51,11 +51,6 @@ public class DiagnosticsService {
     private static final Duration SILENCE_TIMEOUT = Duration.ofDays(7);
     private static final Duration TRANSCRIPT_RETENTION = Duration.ofDays(180);
 
-    // 5m, 10m, 15m: half an hour of retrying before a matter is handed to a human unfiltered.
-    // A potential client waiting on a first reply is the thing being spent here, not compute.
-    public static final List<Duration> RETRY_BACKOFF = List.of(
-            Duration.ofMinutes(5), Duration.ofMinutes(10), Duration.ofMinutes(15));
-
     /** Why a Consultation reached the firm without a Verdict; see ADR 0005. */
     static final String UNFILTERED_DIAGNOSTICS_UNAVAILABLE = "DIAGNOSTICS_UNAVAILABLE";
     static final String UNFILTERED_DIAGNOSTICS_INVALID_RESPONSE = "DIAGNOSTICS_INVALID_RESPONSE";
@@ -314,8 +309,8 @@ public class DiagnosticsService {
     }
 
     private void retryOrFailOpen(DiagnosticsSession session, String error, String unfilteredCause) {
-        if (session.attempts() < RETRY_BACKOFF.size()) {
-            Instant next = Instant.now().plus(RETRY_BACKOFF.get(session.attempts()));
+        if (session.attempts() < ConsultationClassifierClient.RETRY_BACKOFF.size()) {
+            Instant next = Instant.now().plus(ConsultationClassifierClient.RETRY_BACKOFF.get(session.attempts()));
             intakeRepository.saveDiagnosticsSession(session.tenantId(), session.retrying(next, error), List.of(), List.of());
             return;
         }

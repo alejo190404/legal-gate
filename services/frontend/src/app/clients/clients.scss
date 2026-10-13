@@ -90,3 +90,8 @@
 .activity-row.done {
   opacity: 0.6;
 }
+
+.activity-row.linked {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}

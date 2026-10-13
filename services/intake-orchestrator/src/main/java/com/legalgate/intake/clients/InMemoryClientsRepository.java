@@ -8,7 +8,9 @@ import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -151,7 +153,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .sorted(Comparator.comparing(Correspondence::receivedAt))
                 .limit(limit)
                 .toList();
-        due.forEach(entry -> correspondenceById.put(entry.id(), leased(entry, now.plusSeconds(300))));
+        due.forEach(entry -> correspondenceById.put(entry.id(), entry.withNextAttemptAt(now.plusSeconds(300))));
         return due;
     }
 
@@ -224,18 +226,12 @@ public class InMemoryClientsRepository implements ClientsRepository {
 
     @Override
     public synchronized boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger,
-            java.time.LocalDate forDate, List<NotificationOutboxItem> notifications) {
+            LocalDate forDate, List<NotificationOutboxItem> notifications) {
         Activity activity = activitiesById.get(activityId);
-        boolean overdue = trigger == NudgeTrigger.OVERDUE;
-        if (activity == null || forDate.equals(overdue ? activity.overdueNudgedFor() : activity.termNudgedFor())) {
+        if (activity == null || activity.done() || activity.nudgedFor(trigger)) {
             return false;
         }
-        activitiesById.put(activityId, new Activity(activity.id(), activity.tenantId(), activity.clientId(),
-                activity.activityTypeId(), activity.typeName(), activity.kind(), activity.label(), activity.startDate(),
-                activity.turnaroundDays(), activity.dueDate(), activity.scheduledDate(), activity.termDays(),
-                activity.assignedLawyerId(), activity.done(), activity.doneAt(),
-                overdue ? forDate : activity.overdueNudgedFor(), overdue ? activity.termNudgedFor() : forDate,
-                activity.createdAt()));
+        activitiesById.put(activityId, activity.nudged(trigger, forDate));
         intake.queueNotifications(tenantSlug, notifications);
         return true;
     }
@@ -246,12 +242,12 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .filter(entry -> entry.purgedAt() == null && entry.receivedAt().isBefore(cutoff))
                 .toList();
         Instant now = Instant.now();
-        due.forEach(entry -> correspondenceById.put(entry.id(), new Correspondence(entry.id(), entry.tenantId(),
-                entry.clientId(), entry.contactAddress(), entry.messageId(), entry.subject(), null, entry.receivedAt(),
-                entry.intent(), entry.outcome(), entry.answerText(), now, entry.attempts(), entry.nextAttemptAt())));
+        due.forEach(entry -> correspondenceById.put(entry.id(), entry.purged(now)));
         return due.size();
     }
 
+    // ponytail: the outbox lives in InMemoryIntakeRepository, so mail about a deleted Client stays
+    // queued here; Postgres removes it by cascade.
     @Override
     public synchronized void deleteClient(String tenantSlug, String clientId) {
         tenantClients(tenantSlug).remove(clientId);
@@ -262,11 +258,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
     }
 
     private Activity withTypeName(String tenantSlug, Activity activity) {
-        String typeName = activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null);
-        return new Activity(activity.id(), activity.tenantId(), activity.clientId(), activity.activityTypeId(), typeName,
-                activity.kind(), activity.label(), activity.startDate(), activity.turnaroundDays(), activity.dueDate(),
-                activity.scheduledDate(), activity.termDays(), activity.assignedLawyerId(), activity.done(),
-                activity.doneAt(), activity.overdueNudgedFor(), activity.termNudgedFor(), activity.createdAt());
+        return activity.withTypeName(activityType(tenantSlug, activity.activityTypeId()).map(ActivityType::name).orElse(null));
     }
 
     private Client withOpenActivities(Client client) {
@@ -275,12 +267,6 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .count();
         return new Client(client.id(), client.name(), client.kind(), client.idNumber(), client.phone(), client.notes(),
                 client.responsibleLawyerId(), client.contactAddresses(), open, client.createdAt(), client.updatedAt());
-    }
-
-    private static Correspondence leased(Correspondence entry, Instant until) {
-        return new Correspondence(entry.id(), entry.tenantId(), entry.clientId(), entry.contactAddress(), entry.messageId(),
-                entry.subject(), entry.body(), entry.receivedAt(), entry.intent(), entry.outcome(), entry.answerText(),
-                entry.purgedAt(), entry.attempts(), until);
     }
 
     private static ActivityType withId(ActivityType type, String id) {
@@ -300,6 +286,6 @@ public class InMemoryClientsRepository implements ClientsRepository {
     }
 
     private List<HistoryEntry> tenantHistory(String tenantSlug) {
-        return historyByTenant.computeIfAbsent(tenantSlug, ignored -> java.util.Collections.synchronizedList(new ArrayList<>()));
+        return historyByTenant.computeIfAbsent(tenantSlug, ignored -> Collections.synchronizedList(new ArrayList<>()));
     }
 }

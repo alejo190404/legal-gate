@@ -12,13 +12,12 @@ import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.BusinessDays;
-import com.legalgate.intake.service.DiagnosticsService;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -44,12 +43,10 @@ public class ClientMailService {
     static final String RECEIPT = "CLIENT_RECEIPT";
     static final String STATUS_ANSWER = "CLIENT_STATUS_ANSWER";
 
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", Locale.forLanguageTag("es"));
-
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMailService.class);
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
     private static final int BATCH_SIZE = 20;
-    private static final java.time.Duration CORRESPONDENCE_RETENTION = java.time.Duration.ofDays(365);
+    private static final Duration CORRESPONDENCE_RETENTION = Duration.ofDays(365);
 
     private final ClientsRepository clients;
     private final IntakeRepository intake;
@@ -133,9 +130,9 @@ public class ClientMailService {
         try {
             intent = classifier.classifyClientMail(new ClientMailIntentRequest(entry.subject(), entry.body()));
         } catch (ClassifierUnavailableException ex) {
-            if (entry.attempts() < DiagnosticsService.RETRY_BACKOFF.size()) {
+            if (entry.attempts() < ConsultationClassifierClient.RETRY_BACKOFF.size()) {
                 clients.saveCorrespondence(entry.tenantId(),
-                        entry.retrying(Instant.now().plus(DiagnosticsService.RETRY_BACKOFF.get(entry.attempts()))), List.of());
+                        entry.retrying(Instant.now().plus(ConsultationClassifierClient.RETRY_BACKOFF.get(entry.attempts()))), List.of());
                 return;
             }
             LOGGER.warn("Client mail id={} tenant={} could not be classified; forwarding.", entry.id(), entry.tenantId());
@@ -195,27 +192,23 @@ public class ClientMailService {
     private static String statusLine(Activity activity, LocalDate today) {
         LocalDate expected = activity.expectedDate();
         return switch (activity.kind()) {
-            case ClientsModels.TURNAROUND -> "Inicio: " + format(activity.startDate()) + ". Han transcurrido "
+            case TURNAROUND -> "Inicio: " + ClientsModels.spanishDate(activity.startDate()) + ". Han transcurrido "
                     + days(Math.max(0, BusinessDays.between(activity.startDate(), today))) + " y faltan "
                     + Math.max(0, BusinessDays.between(today, expected)) + ". Fecha estimada de entrega: "
-                    + format(expected) + ".";
-            case ClientsModels.DATED -> "Programada para el " + format(expected) + ".";
-            default -> expected == null
+                    + ClientsModels.spanishDate(expected) + ".";
+            case DATED -> "Programada para el " + ClientsModels.spanishDate(expected) + ".";
+            case EXTERNAL -> expected == null
                     ? "Estamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo."
                     : today.isAfter(expected)
-                            ? "El termino legal para la decision vencio el " + format(expected)
+                            ? "El termino legal para la decision vencio el " + ClientsModels.spanishDate(expected)
                                     + " y estamos atentos a la respuesta del juzgado o la autoridad."
                             : "Estamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
-                                    + format(expected) + ".";
+                                    + ClientsModels.spanishDate(expected) + ".";
         };
     }
 
     private static String days(int count) {
         return count == 1 ? "1 dia habil" : count + " dias habiles";
-    }
-
-    private static String format(LocalDate date) {
-        return date.format(DATE);
     }
 
     /** Passes the email to the Responsible Lawyer and sends the Client a receipt, in one write. */
@@ -266,9 +259,7 @@ public class ClientMailService {
     }
 
     LawyerProfile lawyer(String tenant, String lawyerId) {
-        return intake.lawyersForTenant(tenant).stream()
-                .filter(lawyer -> lawyer.id().equals(lawyerId))
-                .findFirst()
+        return intake.lawyer(tenant, lawyerId)
                 .orElseThrow(() -> new IllegalStateException("lawyer_not_found:" + lawyerId));
     }
 

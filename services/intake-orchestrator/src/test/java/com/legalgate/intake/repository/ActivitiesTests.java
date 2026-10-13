@@ -12,7 +12,9 @@ import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
+import com.legalgate.intake.clients.ClientsModels;
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.service.BusinessDays;
 
@@ -90,15 +92,42 @@ class ActivitiesTests extends ClientsSeam {
         assertThat(activity.startDate()).isEqualTo(BusinessDays.today());
         assertThat(clients.search(TENANT, null, true)).extracting(Client::id).doesNotContain(acme.id());
 
-        clients.completeActivity(TENANT, "user_admin", activity.id());
+        clients.completeActivity(TENANT, "user_admin", acme.id(), activity.id());
 
         assertThat(clients.activities(TENANT, acme.id()).get(0).done()).isTrue();
         assertThat(clients.search(TENANT, null, true)).extracting(Client::id).contains(acme.id());
-        assertThatThrownBy(() -> clients.completeActivity(TENANT, "user_admin", activity.id()))
+        assertThatThrownBy(() -> clients.completeActivity(TENANT, "user_admin", acme.id(), activity.id()))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_done");
-        assertThatThrownBy(() -> clients.updateActivity(TENANT, "user_admin", activity.id(),
+        assertThatThrownBy(() -> clients.updateActivity(TENANT, "user_admin", acme.id(), activity.id(),
                 new ActivityRequest(null, "Otro", null, null, null, null, null)))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_done");
+    }
+
+    @Test
+    void anExternalTermCanBeCorrectedLater() {
+        firm(null);
+        Activity ruling = open(new ActivityRequest(type("Fallo de tutela").id(), null, LocalDate.of(2026, 10, 1), null, null, 10, null));
+
+        Activity edited = clients.updateActivity(TENANT, "user_admin", acme.id(), ruling.id(),
+                new ActivityRequest(null, null, null, null, null, 15, null));
+
+        assertThat(edited.termDays()).isEqualTo(15);
+        assertThat(edited.expectedDate()).isEqualTo(BusinessDays.add(LocalDate.of(2026, 10, 1), 15));
+        assertThat(clients.history(TENANT, acme.id())).extracting(HistoryEntry::field).contains("termDays");
+    }
+
+    @Test
+    void anActivityIsOnlyReachedThroughItsOwnClient() {
+        firm(null);
+        Activity activity = open(new ActivityRequest(type("Concepto jurídico").id(), null, null, null, null, null, null));
+        Client other = clients.create(TENANT, "user_admin", new ClientRequest("Beta SAS", ClientsModels.ORGANIZATION,
+                null, null, null, ClientsFixtures.ANA, List.of("legal@beta.co")));
+
+        assertThatThrownBy(() -> clients.completeActivity(TENANT, "user_admin", other.id(), activity.id()))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_not_found");
+        assertThatThrownBy(() -> clients.updateActivity(TENANT, "user_admin", other.id(), activity.id(),
+                new ActivityRequest(null, "Otro", null, null, null, null, null)))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_not_found");
     }
 
     @Test
@@ -107,9 +136,9 @@ class ActivitiesTests extends ClientsSeam {
         Activity activity = open(new ActivityRequest(type("Concepto jurídico").id(), "Concepto laboral",
                 LocalDate.of(2026, 10, 1), null, null, null, null));
 
-        clients.updateActivity(TENANT, "user_other", activity.id(), new ActivityRequest(null, "Concepto tributario",
+        clients.updateActivity(TENANT, "user_other", acme.id(), activity.id(), new ActivityRequest(null, "Concepto tributario",
                 LocalDate.of(2026, 10, 2), LocalDate.of(2026, 10, 20), null, null, ClientsFixtures.LUIS));
-        clients.completeActivity(TENANT, "user_other", activity.id());
+        clients.completeActivity(TENANT, "user_other", acme.id(), activity.id());
 
         assertThat(clients.history(TENANT, acme.id()))
                 .filteredOn(entry -> activity.id().equals(entry.activityId()))

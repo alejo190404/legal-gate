@@ -98,7 +98,8 @@
             <div class="panel-error"><strong>{{ activityError() }}</strong></div>
           }
           @for (activity of activities(); track activity.id) {
-            <div class="history-row activity-row" [class.done]="activity.done">
+            <div class="history-row activity-row" [id]="'activity-' + activity.id" [class.done]="activity.done"
+              [class.linked]="activity.id === openActivityId()">
               <span>
                 <strong>{{ activity.displayName }}</strong>
                 @if (activity.label) {
@@ -158,7 +159,7 @@
                   <input id="activityScheduled" name="activityScheduled" type="date" [(ngModel)]="f.scheduledDate" />
                 </div>
               }
-              @if (formKind() === 'EXTERNAL' && !f.id) {
+              @if (formKind() === 'EXTERNAL') {
                 <div class="form-field">
                   <label for="activityTerm">Término legal (días hábiles, vacío si no hay)</label>
                   <input id="activityTerm" name="activityTerm" type="number" min="1" max="365" [(ngModel)]="f.termDays" />

@@ -1,6 +1,7 @@
 package com.legalgate.intake.clients;
 
 import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
@@ -9,14 +10,14 @@ import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.Engagement;
 import com.legalgate.intake.clients.ClientsModels.EngagementRequest;
-import com.legalgate.intake.model.ConsultationResponse;
-import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
+import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.BusinessDays;
-import java.time.LocalDate;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,18 +43,18 @@ public class ClientsService {
 
     /** Suggestions for the firm to review, seeded the first time its catalog is read. */
     static final List<ActivityType> STARTER_CATALOG = List.of(
-            new ActivityType(null, "Redacción de contrato", ClientsModels.TURNAROUND, 5, null, null),
-            new ActivityType(null, "Revisión de contrato", ClientsModels.TURNAROUND, 3, null, null),
-            new ActivityType(null, "Concepto jurídico", ClientsModels.TURNAROUND, 5, null, null),
-            new ActivityType(null, "Redacción de demanda", ClientsModels.TURNAROUND, 10, null, null),
-            new ActivityType(null, "Redacción de tutela", ClientsModels.TURNAROUND, 3, null, null),
-            new ActivityType(null, "Derecho de petición", ClientsModels.TURNAROUND, 3, null, null),
-            new ActivityType(null, "Reunión con el abogado", ClientsModels.DATED, null, null, null),
-            new ActivityType(null, "Audiencia", ClientsModels.DATED, null, null, null),
-            new ActivityType(null, "Firma en notaría", ClientsModels.DATED, null, null, null),
-            new ActivityType(null, "Fallo de tutela", ClientsModels.EXTERNAL, null, 10, null),
-            new ActivityType(null, "Respuesta a derecho de petición", ClientsModels.EXTERNAL, null, 15, null),
-            new ActivityType(null, "Registro de marca", ClientsModels.EXTERNAL, null, null, null));
+            new ActivityType(null, "Redacción de contrato", ActivityKind.TURNAROUND, 5, null, null),
+            new ActivityType(null, "Revisión de contrato", ActivityKind.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Concepto jurídico", ActivityKind.TURNAROUND, 5, null, null),
+            new ActivityType(null, "Redacción de demanda", ActivityKind.TURNAROUND, 10, null, null),
+            new ActivityType(null, "Redacción de tutela", ActivityKind.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Derecho de petición", ActivityKind.TURNAROUND, 3, null, null),
+            new ActivityType(null, "Reunión con el abogado", ActivityKind.DATED, null, null, null),
+            new ActivityType(null, "Audiencia", ActivityKind.DATED, null, null, null),
+            new ActivityType(null, "Firma en notaría", ActivityKind.DATED, null, null, null),
+            new ActivityType(null, "Fallo de tutela", ActivityKind.EXTERNAL, null, 10, null),
+            new ActivityType(null, "Respuesta a derecho de petición", ActivityKind.EXTERNAL, null, 15, null),
+            new ActivityType(null, "Registro de marca", ActivityKind.EXTERNAL, null, null, null));
 
     private static final int MAX_DAYS = 365;
 
@@ -240,20 +241,27 @@ public class ClientsService {
         if (request == null || trimmed(request.name()) == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_type_name_required");
         }
-        String kind = request.kind() == null ? "" : request.kind().trim().toUpperCase(Locale.ROOT);
+        ActivityKind kind = activityKind(request.kind());
         return switch (kind) {
-            case ClientsModels.TURNAROUND -> {
+            case TURNAROUND -> {
                 if (request.defaultTurnaroundDays() == null || request.defaultTurnaroundDays() < 1
                         || request.defaultTurnaroundDays() > MAX_DAYS) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "turnaround_days_required");
                 }
                 yield new ActivityType(id, request.name().trim(), kind, request.defaultTurnaroundDays(), null, retiredAt);
             }
-            case ClientsModels.EXTERNAL -> new ActivityType(id, request.name().trim(), kind, null,
+            case EXTERNAL -> new ActivityType(id, request.name().trim(), kind, null,
                     termDays(request.defaultTermDays()), retiredAt);
-            case ClientsModels.DATED -> new ActivityType(id, request.name().trim(), kind, null, null, retiredAt);
-            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_activity_kind");
+            case DATED -> new ActivityType(id, request.name().trim(), kind, null, null, retiredAt);
         };
+    }
+
+    private static ActivityKind activityKind(String kind) {
+        try {
+            return ActivityKind.valueOf(kind.trim().toUpperCase(Locale.ROOT));
+        } catch (RuntimeException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_activity_kind");
+        }
     }
 
     /** A statutory term is optional; when given it is a positive number of Business Days. */
@@ -287,10 +295,10 @@ public class ClientsService {
         Activity activity = new Activity(null, tenant, clientId, type.id(), type.name(), type.kind(),
                 trimmed(request.label()),
                 request.startDate() == null ? BusinessDays.today() : request.startDate(),
-                ClientsModels.TURNAROUND.equals(type.kind()) ? type.defaultTurnaroundDays() : null,
-                ClientsModels.TURNAROUND.equals(type.kind()) ? request.dueDate() : null,
-                ClientsModels.DATED.equals(type.kind()) ? request.scheduledDate() : null,
-                ClientsModels.EXTERNAL.equals(type.kind()) ? termDays(request.termDays()) : null,
+                type.kind() == ActivityKind.TURNAROUND ? type.defaultTurnaroundDays() : null,
+                type.kind() == ActivityKind.TURNAROUND ? request.dueDate() : null,
+                type.kind() == ActivityKind.DATED ? request.scheduledDate() : null,
+                type.kind() == ActivityKind.EXTERNAL ? termDays(request.termDays()) : null,
                 activeLawyer(tenant, lawyerId, "assigned_lawyer_required").id(),
                 false, null, null, null, null);
         requireDate(activity);
@@ -298,9 +306,9 @@ public class ClientsService {
                 List.of(HistoryEntry.of(clientId, null, "activity", null, activity.displayName(), actor)));
     }
 
-    /** Label, dates and Assigned Lawyer follow reality; a done Activity is never edited. */
-    public Activity updateActivity(String tenant, String actor, String activityId, ActivityRequest request) {
-        Activity before = openActivity(tenant, activityId);
+    /** Label, dates, term and Assigned Lawyer follow reality; a done Activity is never edited. */
+    public Activity updateActivity(String tenant, String actor, String clientId, String activityId, ActivityRequest request) {
+        Activity before = openActivity(tenant, clientId, activityId);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activity_required");
         }
@@ -308,8 +316,9 @@ public class ClientsService {
                 : activeLawyer(tenant, request.assignedLawyerId(), "assigned_lawyer_required").id();
         Activity after = before.with(trimmed(request.label()),
                 request.startDate() == null ? before.startDate() : request.startDate(),
-                ClientsModels.TURNAROUND.equals(before.kind()) ? request.dueDate() : null,
-                ClientsModels.DATED.equals(before.kind()) && request.scheduledDate() != null ? request.scheduledDate() : before.scheduledDate(),
+                before.kind() == ActivityKind.TURNAROUND ? request.dueDate() : null,
+                before.kind() == ActivityKind.DATED && request.scheduledDate() != null ? request.scheduledDate() : before.scheduledDate(),
+                before.kind() == ActivityKind.EXTERNAL ? termDays(request.termDays()) : null,
                 lawyerId, false, null);
         requireDate(after);
         List<HistoryEntry> history = new ArrayList<>();
@@ -317,21 +326,24 @@ public class ClientsService {
         diff(history, before.clientId(), actor, "startDate", text(before.startDate()), text(after.startDate()));
         diff(history, before.clientId(), actor, "dueDate", text(before.dueDate()), text(after.dueDate()));
         diff(history, before.clientId(), actor, "scheduledDate", text(before.scheduledDate()), text(after.scheduledDate()));
+        diff(history, before.clientId(), actor, "termDays", Objects.toString(before.termDays(), null),
+                Objects.toString(after.termDays(), null));
         diff(history, before.clientId(), actor, "assignedLawyerId", before.assignedLawyerId(), after.assignedLawyerId());
         return clients.saveActivity(tenant, after, history);
     }
 
     /** Done is final: a closed piece of work never reappears in a Client's answer. */
-    public Activity completeActivity(String tenant, String actor, String activityId) {
-        Activity before = openActivity(tenant, activityId);
+    public Activity completeActivity(String tenant, String actor, String clientId, String activityId) {
+        Activity before = openActivity(tenant, clientId, activityId);
         return clients.saveActivity(tenant,
                 before.with(before.label(), before.startDate(), before.dueDate(), before.scheduledDate(),
-                        before.assignedLawyerId(), true, Instant.now()),
+                        before.termDays(), before.assignedLawyerId(), true, Instant.now()),
                 List.of(HistoryEntry.of(before.clientId(), null, "status", "OPEN", "DONE", actor)));
     }
 
-    private Activity openActivity(String tenant, String activityId) {
+    private Activity openActivity(String tenant, String clientId, String activityId) {
         Activity activity = clients.activity(tenant, activityId)
+                .filter(candidate -> candidate.clientId().equals(clientId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "activity_not_found"));
         if (activity.done()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "activity_done");
@@ -340,7 +352,7 @@ public class ClientsService {
     }
 
     private static void requireDate(Activity activity) {
-        if (ClientsModels.DATED.equals(activity.kind()) && activity.scheduledDate() == null) {
+        if (activity.kind() == ActivityKind.DATED && activity.scheduledDate() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "scheduled_date_required");
         }
     }
@@ -384,10 +396,8 @@ public class ClientsService {
 
     /** The active lawyer with that id, or a 400: Responsible and Assigned Lawyers are always active. */
     LawyerProfile activeLawyer(String tenant, String lawyerId, String reason) {
-        return intake.lawyersForTenant(tenant).stream()
-                .filter(lawyer -> lawyer.id().equals(lawyerId))
+        return intake.lawyer(tenant, lawyerId)
                 .filter(lawyer -> lawyer.active() == null || lawyer.active())
-                .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, reason));
     }
 

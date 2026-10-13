@@ -37,9 +37,9 @@
       <div class="form-field">
         <label for="activityTypeKind">Tipo</label>
         <select id="activityTypeKind" name="activityTypeKind" [(ngModel)]="f.kind">
-          <option value="TURNAROUND">Con plazo de la firma</option>
-          <option value="DATED">Con fecha (reunión, audiencia)</option>
-          <option value="EXTERNAL">Externa (depende de un juez o entidad)</option>
+          @for (option of kinds; track option.kind) {
+            <option [value]="option.kind">{{ option.label }}</option>
+          }
         </select>
       </div>
       @if (f.kind === 'TURNAROUND') {

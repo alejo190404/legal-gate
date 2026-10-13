@@ -634,7 +634,7 @@ class JdbcIntakeRepository implements IntakeRepository {
                     )
                     returning id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
                               from_email, subject, body, html_body, ics_content, status, attempts, provider_message_id,
-                              last_error, created_at, updated_at, next_attempt_at, correspondence_id, reply_to
+                              last_error, created_at, updated_at, next_attempt_at, correspondence_id, reply_to, activity_id
                     """, this::mapNotification, MAX_NOTIFICATION_ATTEMPTS, Math.max(1, limit));
             return notifications;
         });
@@ -922,7 +922,8 @@ class JdbcIntakeRepository implements IntakeRepository {
                 rs.getTimestamp("updated_at").toInstant(),
                 rs.getTimestamp("next_attempt_at").toInstant(),
                 rs.getString("correspondence_id"),
-                rs.getString("reply_to")
+                rs.getString("reply_to"),
+                rs.getString("activity_id")
         );
     }
 

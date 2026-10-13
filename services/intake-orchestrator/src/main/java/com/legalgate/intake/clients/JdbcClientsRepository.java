@@ -1,6 +1,7 @@
 package com.legalgate.intake.clients;
 
 import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
@@ -9,7 +10,9 @@ import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.NotificationOutboxSql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -173,8 +176,8 @@ class JdbcClientsRepository implements ClientsRepository {
                   default_turnaround_days = excluded.default_turnaround_days,
                   default_term_days = excluded.default_term_days,
                   retired_at = excluded.retired_at, updated_at = now()
-                """, id, tenantId, type.name(), type.kind(), type.defaultTurnaroundDays(), type.defaultTermDays(),
-                type.retiredAt() == null ? null : java.sql.Timestamp.from(type.retiredAt()));
+                """, id, tenantId, type.name(), type.kind().name(), type.defaultTurnaroundDays(), type.defaultTermDays(),
+                type.retiredAt() == null ? null : Timestamp.from(type.retiredAt()));
     }
 
     private String activityTypeSelect() {
@@ -185,7 +188,7 @@ class JdbcClientsRepository implements ClientsRepository {
     }
 
     private ActivityType mapActivityType(ResultSet rs, int row) throws SQLException {
-        return new ActivityType(rs.getString("id"), rs.getString("name"), rs.getString("kind"),
+        return new ActivityType(rs.getString("id"), rs.getString("name"), ActivityKind.valueOf(rs.getString("kind")),
                 (Integer) rs.getObject("default_turnaround_days"), (Integer) rs.getObject("default_term_days"),
                 instant(rs, "retired_at"));
     }
@@ -201,7 +204,7 @@ class JdbcClientsRepository implements ClientsRepository {
                 returning id
                 """, (rs, row) -> rs.getString("id"), tenantId(tenantSlug), tenantSlug, UUID.fromString(entry.clientId()),
                 entry.contactAddress(), entry.messageId(), entry.subject(), entry.body(),
-                java.sql.Timestamp.from(entry.receivedAt()), entry.intent(), entry.outcome(), entry.answerText(),
+                Timestamp.from(entry.receivedAt()), entry.intent(), entry.outcome(), entry.answerText(),
                 timestamp(entry.nextAttemptAt())).stream().findFirst())
                 .flatMap(id -> correspondence(tenantSlug, id));
     }
@@ -313,12 +316,13 @@ class JdbcClientsRepository implements ClientsRepository {
                     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     on conflict (id) do update set
                       label = excluded.label, start_date = excluded.start_date, due_date = excluded.due_date,
-                      scheduled_date = excluded.scheduled_date, assigned_lawyer_id = excluded.assigned_lawyer_id,
+                      scheduled_date = excluded.scheduled_date, term_days = excluded.term_days,
+                      assigned_lawyer_id = excluded.assigned_lawyer_id,
                       done = excluded.done, done_at = excluded.done_at,
                       overdue_nudged_for = excluded.overdue_nudged_for, term_nudged_for = excluded.term_nudged_for,
                       updated_at = now()
                     """, id, tenantId, tenantSlug, UUID.fromString(activity.clientId()),
-                    UUID.fromString(activity.activityTypeId()), activity.kind(), activity.label(),
+                    UUID.fromString(activity.activityTypeId()), activity.kind().name(), activity.label(),
                     activity.startDate(), activity.turnaroundDays(), activity.dueDate(), activity.scheduledDate(),
                     activity.termDays(), UUID.fromString(activity.assignedLawyerId()), activity.done(),
                     timestamp(activity.doneAt()), activity.overdueNudgedFor(), activity.termNudgedFor());
@@ -345,12 +349,12 @@ class JdbcClientsRepository implements ClientsRepository {
     }
 
     @Override
-    public boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, java.time.LocalDate forDate,
+    public boolean claimNudge(String tenantSlug, String activityId, NudgeTrigger trigger, LocalDate forDate,
             List<NotificationOutboxItem> notifications) {
         String column = trigger == NudgeTrigger.OVERDUE ? "overdue_nudged_for" : "term_nudged_for";
         return inTenant(tenantSlug, () -> {
             int claimed = jdbc.update("update activities set " + column + " = ? where id = ? and not done and "
-                    + column + " is distinct from ?", forDate, UUID.fromString(activityId), forDate);
+                    + column + " is null", forDate, UUID.fromString(activityId));
             if (claimed == 0) {
                 return false;
             }
@@ -361,16 +365,24 @@ class JdbcClientsRepository implements ClientsRepository {
 
     @Override
     public int purgeCorrespondenceBodies(Instant cutoff) {
-        return inTenant(WORKER, () -> jdbc.update("""
-                update client_correspondence set body = null, purged_at = now()
-                where received_at < ? and purged_at is null
-                """, java.sql.Timestamp.from(cutoff)));
+        // The forward copied the Client's words into the outbox, so they go from there too.
+        return inTenant(WORKER, () -> jdbc.queryForObject("""
+                with purged as (
+                  update client_correspondence set body = null, purged_at = now()
+                  where received_at < ? and purged_at is null
+                  returning id
+                ), forwards as (
+                  update notification_outbox set body = '(texto del cliente eliminado tras un año)'
+                  where notification_type = 'CLIENT_MAIL_FORWARD' and correspondence_id in (select id from purged)
+                )
+                select count(*) from purged
+                """, Integer.class, Timestamp.from(cutoff)));
     }
 
     @Override
     public void deleteClient(String tenantSlug, String clientId) {
-        // Everything else goes by foreign key: addresses, Activities, history and correspondence
-        // cascade, and an engaged Consultation's link is set null.
+        // Everything else goes by foreign key: addresses, Activities, history, correspondence and
+        // the mail about them cascade, and an engaged Consultation's link is set null.
         inTenant(tenantSlug, () -> jdbc.update("delete from clients where id = ?", UUID.fromString(clientId)));
     }
 
@@ -385,12 +397,13 @@ class JdbcClientsRepository implements ClientsRepository {
 
     private Activity mapActivity(ResultSet rs, int row) throws SQLException {
         return new Activity(rs.getString("id"), rs.getString("tenant_slug"), rs.getString("client_id"),
-                rs.getString("activity_type_id"), rs.getString("type_name"), rs.getString("kind"), rs.getString("label"),
-                rs.getObject("start_date", java.time.LocalDate.class), (Integer) rs.getObject("turnaround_days"),
-                rs.getObject("due_date", java.time.LocalDate.class), rs.getObject("scheduled_date", java.time.LocalDate.class),
+                rs.getString("activity_type_id"), rs.getString("type_name"), ActivityKind.valueOf(rs.getString("kind")),
+                rs.getString("label"),
+                rs.getObject("start_date", LocalDate.class), (Integer) rs.getObject("turnaround_days"),
+                rs.getObject("due_date", LocalDate.class), rs.getObject("scheduled_date", LocalDate.class),
                 (Integer) rs.getObject("term_days"), rs.getString("assigned_lawyer_id"), rs.getBoolean("done"),
-                instant(rs, "done_at"), rs.getObject("overdue_nudged_for", java.time.LocalDate.class),
-                rs.getObject("term_nudged_for", java.time.LocalDate.class), instant(rs, "created_at"));
+                instant(rs, "done_at"), rs.getObject("overdue_nudged_for", LocalDate.class),
+                rs.getObject("term_nudged_for", LocalDate.class), instant(rs, "created_at"));
     }
 
     private String correspondenceSelect() {
@@ -409,8 +422,8 @@ class JdbcClientsRepository implements ClientsRepository {
                 instant(rs, "next_attempt_at"));
     }
 
-    static java.sql.Timestamp timestamp(Instant value) {
-        return value == null ? null : java.sql.Timestamp.from(value);
+    static Timestamp timestamp(Instant value) {
+        return value == null ? null : Timestamp.from(value);
     }
 
     void insertHistory(UUID tenantId, UUID clientId, List<HistoryEntry> history) {
@@ -466,7 +479,7 @@ class JdbcClientsRepository implements ClientsRepository {
     }
 
     static Instant instant(ResultSet rs, String column) throws SQLException {
-        java.sql.Timestamp timestamp = rs.getTimestamp(column);
+        Timestamp timestamp = rs.getTimestamp(column);
         return timestamp == null ? null : timestamp.toInstant();
     }
 

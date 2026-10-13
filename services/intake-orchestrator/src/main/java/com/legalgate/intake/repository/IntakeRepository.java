@@ -88,6 +88,10 @@ public interface IntakeRepository {
 
     List<LawyerProfile> lawyersForTenant(String tenantSlug);
 
+    default Optional<LawyerProfile> lawyer(String tenantSlug, String lawyerId) {
+        return lawyersForTenant(tenantSlug).stream().filter(lawyer -> lawyer.id().equals(lawyerId)).findFirst();
+    }
+
     List<EventResponse> eventsForLawyer(String tenantSlug, String lawyerId);
 
     void updateEvents(String tenantSlug, List<EventResponse> events);

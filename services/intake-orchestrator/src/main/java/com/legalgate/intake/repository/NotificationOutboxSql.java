@@ -22,9 +22,9 @@ public final class NotificationOutboxSql {
             jdbc.update("""
                     insert into notification_outbox (
                       tenant_id, tenant_slug, consultation_id, event_id, notification_type, recipient_role, recipient_email,
-                      from_email, subject, body, html_body, ics_content, correspondence_id, reply_to,
+                      from_email, subject, body, html_body, ics_content, correspondence_id, reply_to, activity_id,
                       status, attempts, next_attempt_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, now(), now(), now())
                     on conflict (tenant_id, consultation_id, event_id, notification_type, recipient_role)
                     where status in ('PENDING', 'SENDING', 'FAILED') and event_id is not null
                     do nothing
@@ -42,7 +42,8 @@ public final class NotificationOutboxSql {
                     notification.htmlBody(),
                     notification.icsContent(),
                     uuidOrNull(notification.correspondenceId()),
-                    notification.replyTo());
+                    notification.replyTo(),
+                    uuidOrNull(notification.activityId()));
         }
     }
 

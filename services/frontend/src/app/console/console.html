@@ -913,7 +913,8 @@
           }
 
           @case ('clients') {
-            <app-clients [lawyers]="savedLawyers()" [openClientId]="openClientId()" />
+            <app-clients [lawyers]="savedLawyers()" [openClientId]="openClientId()"
+              [openActivityId]="openActivityId()" />
           }
 
           @case ('rules') {

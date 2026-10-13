@@ -408,6 +408,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly hasCanonicalIntakeEmail = computed(() => Boolean(this.tenantSettings()?.intakeEmail));
   readonly savedLawyers = computed(() => this.tenantSettings()?.lawyers ?? []);
   readonly openClientId = signal<string | null>(null);
+  readonly openActivityId = signal<string | null>(null);
   // App-kit navigation: a Workspace group and a Configure group, mirroring the
   // "Firm Console" in Claude Design. `wip` screens render the design-system
   // Work-in-progress placeholder instead of a built feature.
@@ -478,9 +479,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       return;
     }
     this.sessionEmail.set(user.email);
-    // Reminder emails link here with ?client=<id>; the Client opens once the console is up.
-    const linkedClient = new URLSearchParams(window.location.search).get('client');
+    // Reminder emails link here with ?client=<id>&activity=<id>; the Client opens once the console is up.
+    const link = new URLSearchParams(window.location.search);
+    const linkedClient = link.get('client');
     if (linkedClient) {
+      this.openActivityId.set(link.get('activity'));
       this.openClient(linkedClient);
     }
     if (this.auth.hasOrganization()) {

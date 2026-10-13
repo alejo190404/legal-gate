@@ -2,6 +2,7 @@ package com.legalgate.intake.clients;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
@@ -222,7 +223,7 @@ class ClientsMigrationPostgresTests {
                 .filter(type -> type.name().equals("Audiencia")).findFirst().orElseThrow();
 
         Activity saved = repository.saveActivity("tenant-a", new Activity(null, "tenant-a", acme.id(), hearing.id(), null,
-                ClientsModels.DATED, "Audiencia inicial", java.time.LocalDate.of(2026, 10, 1), null, null,
+                ActivityKind.DATED, "Audiencia inicial", java.time.LocalDate.of(2026, 10, 1), null, null,
                 java.time.LocalDate.of(2026, 10, 20), null, LAWYER_A, false, null, null, null, null),
                 List.of(HistoryEntry.of(acme.id(), null, "activity", null, "Audiencia inicial", "user_1")));
 
@@ -251,14 +252,16 @@ class ClientsMigrationPostgresTests {
                 .containsExactlyInAnyOrder("tenant-a", "tenant-b");
 
         java.time.LocalDate due = late.expectedDate();
-        List<NotificationOutboxItem> reminder = List.of(NotificationOutboxItem.forCorrespondence(null, "ACTIVITY_NUDGE",
-                "LAWYER", "ana@a.co", null, null, "Actividad vencida", "LegalGate"));
+        List<NotificationOutboxItem> reminder = List.of(NotificationOutboxItem.forActivity(late.id(), "ACTIVITY_NUDGE",
+                "ana@a.co", "Actividad vencida", "LegalGate"));
         assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due, reminder)).isTrue();
         assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due, reminder)).isFalse();
-        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due.plusDays(1), reminder)).isTrue();
-        assertThat(repository.activity("tenant-a", late.id()).orElseThrow().overdueNudgedFor()).isEqualTo(due.plusDays(1));
+        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.OVERDUE, due.plusDays(1), reminder)).isFalse();
+        assertThat(repository.claimNudge("tenant-a", late.id(), ClientsRepository.NudgeTrigger.TERM_PASSED, due, reminder)).isTrue();
+        assertThat(repository.activity("tenant-a", late.id()).orElseThrow().overdueNudgedFor()).isEqualTo(due);
         try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
-             ResultSet rows = sql.executeQuery("select count(*) from notification_outbox where notification_type = 'ACTIVITY_NUDGE'")) {
+             ResultSet rows = sql.executeQuery("select count(*) from notification_outbox where notification_type = 'ACTIVITY_NUDGE'"
+                     + " and activity_id = '" + late.id() + "'")) {
             rows.next();
             assertThat(rows.getInt(1)).isEqualTo(2);
         }
@@ -274,9 +277,15 @@ class ClientsMigrationPostgresTests {
                 null, null, null, null, 0, null)).orElseThrow();
         repository.saveCorrespondence("tenant-a", old.resolved("status_inquiry", ClientsModels.ANSWERED, "Respuesta enviada."),
                 List.of(NotificationOutboxItem.forCorrespondence(old.id(), "CLIENT_STATUS_ANSWER", "CLIENT", "gc@acme.co",
-                        "tenant-a@intake.legal-gate.co", null, "Re: Hola", "Respuesta enviada.")));
+                        "tenant-a@intake.legal-gate.co", null, "Re: Hola", "Respuesta enviada."),
+                        NotificationOutboxItem.forCorrespondence(old.id(), "CLIENT_MAIL_FORWARD", "LAWYER", "ana@a.co",
+                                null, "gc@acme.co", "Correo de cliente", "Texto del cliente")));
         repository.recordCorrespondence("tenant-a", pending(acme, "<new@acme.co>"));
-        repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", acme, LAWYER_A), List.of());
+        Activity activity = repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", acme, LAWYER_A),
+                List.of(HistoryEntry.of(acme.id(), null, "activity", null, "Contrato", "user_1")));
+        repository.claimNudge("tenant-a", activity.id(), ClientsRepository.NudgeTrigger.OVERDUE, activity.expectedDate(),
+                List.of(NotificationOutboxItem.forActivity(activity.id(), "ACTIVITY_NUDGE", "ana@a.co", "Actividad vencida",
+                        "Acme SAS")));
         String consultationId = java.util.UUID.randomUUID().toString();
         try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
             sql.execute("""
@@ -294,12 +303,29 @@ class ClientsMigrationPostgresTests {
         assertThat(purged.purgedAt()).isNotNull();
         assertThat(purged.outcome()).isEqualTo(ClientsModels.ANSWERED);
         assertThat(purged.answerText()).isEqualTo("Respuesta enviada.");
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+             ResultSet rows = sql.executeQuery("select notification_type, body from notification_outbox order by notification_type")) {
+            List<String> bodies = new java.util.ArrayList<>();
+            while (rows.next()) {
+                bodies.add(rows.getString(1) + ": " + rows.getString(2));
+            }
+            assertThat(bodies).containsExactly("ACTIVITY_NUDGE: Acme SAS",
+                    "CLIENT_MAIL_FORWARD: (texto del cliente eliminado tras un año)",
+                    "CLIENT_STATUS_ANSWER: Respuesta enviada.");
+        }
+
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
+            assertThatThrownBy(() -> sql.execute("update activity_history set new_value = 'otro'"))
+                    .hasMessageContaining("append-only");
+            assertThatThrownBy(() -> sql.execute("delete from activity_history"))
+                    .hasMessageContaining("append-only");
+        }
 
         repository.deleteClient("tenant-a", acme.id());
 
         try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {
             for (String table : List.of("clients", "client_contact_addresses", "activities", "activity_history",
-                    "client_correspondence")) {
+                    "client_correspondence", "notification_outbox")) {
                 try (ResultSet rows = sql.executeQuery("select count(*) from " + table)) {
                     rows.next();
                     assertThat(rows.getInt(1)).as(table).isZero();
@@ -316,8 +342,8 @@ class ClientsMigrationPostgresTests {
     static Activity turnaround(JdbcClientsRepository repository, String tenant, Client client, String lawyerId) {
         repository.seedActivityTypesOnce(tenant, ClientsService.STARTER_CATALOG);
         ActivityType type = repository.activityTypes(tenant).stream()
-                .filter(candidate -> candidate.kind().equals(ClientsModels.TURNAROUND)).findFirst().orElseThrow();
-        return new Activity(null, tenant, client.id(), type.id(), null, ClientsModels.TURNAROUND, null,
+                .filter(candidate -> candidate.kind() == ActivityKind.TURNAROUND).findFirst().orElseThrow();
+        return new Activity(null, tenant, client.id(), type.id(), null, ActivityKind.TURNAROUND, null,
                 java.time.LocalDate.of(2026, 1, 5), type.defaultTurnaroundDays(), null, null, null, lawyerId,
                 false, null, null, null, null);
     }

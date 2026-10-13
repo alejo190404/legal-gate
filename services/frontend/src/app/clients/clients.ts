@@ -1,7 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivityType } from '../activity-types/activity-types';
+import { ActivityKind, ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
 import { PixelIconComponent } from '../console/pixel-icon';
 
@@ -42,7 +42,7 @@ export interface Activity {
   clientId: string;
   activityTypeId: string;
   typeName: string;
-  kind: 'TURNAROUND' | 'DATED' | 'EXTERNAL';
+  kind: ActivityKind;
   label: string | null;
   displayName: string;
   startDate: string;
@@ -166,6 +166,7 @@ const FIELD_LABELS: Record<string, string> = {
   startDate: 'Inicio',
   dueDate: 'Fecha límite',
   scheduledDate: 'Fecha programada',
+  termDays: 'Término legal (días hábiles)',
   assignedLawyerId: 'Abogado asignado',
   status: 'Estado',
   engagement: 'Vinculado desde consulta',
@@ -185,6 +186,8 @@ export class ClientsComponent implements OnInit {
   readonly lawyers = input<Lawyer[]>([]);
   /** A Client to open on arrival, e.g. from a Consultation's Engagement. */
   readonly openClientId = input<string | null>(null);
+  /** The Activity a reminder email links to, highlighted once the Client opens. */
+  readonly openActivityId = input<string | null>(null);
 
   readonly clients = signal<Client[]>([]);
   readonly query = signal('');
@@ -256,7 +259,13 @@ export class ClientsComponent implements OnInit {
 
   loadActivities(clientId: string): void {
     this.http.get<Activity[]>(this.apiConfig.url(`/api/clients/${clientId}/activities`)).subscribe({
-      next: (activities) => this.activities.set(activities),
+      next: (activities) => {
+        this.activities.set(activities);
+        const wanted = this.openActivityId();
+        if (wanted && activities.some((activity) => activity.id === wanted)) {
+          setTimeout(() => document.getElementById(`activity-${wanted}`)?.scrollIntoView({ block: 'center' }));
+        }
+      },
       error: () => this.activities.set([]),
     });
   }

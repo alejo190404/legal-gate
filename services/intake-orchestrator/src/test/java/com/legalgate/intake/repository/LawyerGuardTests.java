@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityRequest;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
@@ -38,7 +39,7 @@ class LawyerGuardTests extends ClientsSeam {
         firm(null);
         Activity activity = clients.createActivity(TENANT, "user_admin", acme.id(), new ActivityRequest(
                 clients.offeredActivityTypes(TENANT).stream()
-                        .filter(type -> "TURNAROUND".equals(type.kind())).findFirst().orElseThrow().id(), "Contrato de arriendo", null, null, null, null,
+                        .filter(type -> type.kind() == ActivityKind.TURNAROUND).findFirst().orElseThrow().id(), "Contrato de arriendo", null, null, null, null,
                 ClientsFixtures.LUIS));
 
         assertThatThrownBy(() -> saveLawyers(ana(true), luis(false)))
@@ -47,7 +48,7 @@ class LawyerGuardTests extends ClientsSeam {
                                 .satisfies(blocker -> assertThat(blocker.activities())
                                         .containsExactly("Contrato de arriendo (Acme SAS)")));
 
-        clients.completeActivity(TENANT, "user_admin", activity.id());
+        clients.completeActivity(TENANT, "user_admin", acme.id(), activity.id());
 
         assertThatCode(() -> saveLawyers(ana(true), luis(false))).doesNotThrowAnyException();
     }

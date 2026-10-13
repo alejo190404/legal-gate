@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.ActivityTypeRequest;
 import com.legalgate.intake.clients.ClientsService;
@@ -23,14 +24,14 @@ class ActivityTypesTests {
         assertThat(clients.activityTypes(TENANT))
                 .extracting(ActivityType::name, ActivityType::kind, ActivityType::defaultTermDays)
                 .contains(
-                        tuple("Redacción de contrato", "TURNAROUND", null),
-                        tuple("Audiencia", "DATED", null),
-                        tuple("Fallo de tutela", "EXTERNAL", 10),
-                        tuple("Respuesta a derecho de petición", "EXTERNAL", 15),
-                        tuple("Registro de marca", "EXTERNAL", null));
+                        tuple("Redacción de contrato", ActivityKind.TURNAROUND, null),
+                        tuple("Audiencia", ActivityKind.DATED, null),
+                        tuple("Fallo de tutela", ActivityKind.EXTERNAL, 10),
+                        tuple("Respuesta a derecho de petición", ActivityKind.EXTERNAL, 15),
+                        tuple("Registro de marca", ActivityKind.EXTERNAL, null));
         assertThat(clients.activityTypes(TENANT)).hasSize(12);
         assertThat(clients.activityTypes(TENANT))
-                .filteredOn(type -> "TURNAROUND".equals(type.kind()))
+                .filteredOn(type -> type.kind() == ActivityKind.TURNAROUND)
                 .allSatisfy(type -> assertThat(type.defaultTurnaroundDays()).isPositive());
     }
 

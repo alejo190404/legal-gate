@@ -31,8 +31,9 @@ class ActivityNudgeTests extends ClientsSeam {
         assertThat(queued.get(0).recipientRole()).isEqualTo("LAWYER");
         assertThat(queued.get(0).subject()).contains("Actividad vencida").contains("Revisión de contrato");
         assertThat(queued.get(0).body())
-                .contains("https://app.legal-gate.co/dashboard?client=" + acme.id())
+                .contains("https://app.legal-gate.co/dashboard?client=" + acme.id() + "&activity=" + late.id())
                 .contains("Acme SAS");
+        assertThat(queued.get(0).activityId()).isEqualTo(late.id());
         assertThat(late.overdue()).isTrue();
     }
 
@@ -66,7 +67,7 @@ class ActivityNudgeTests extends ClientsSeam {
     void doneWorkAndWorkStillOnTimeNeverRemind() {
         firm(null);
         Activity late = open("Revisión de contrato", BusinessDays.today().minusDays(30), null, ClientsFixtures.ANA);
-        clients.completeActivity(TENANT, "user_admin", late.id());
+        clients.completeActivity(TENANT, "user_admin", acme.id(), late.id());
         open("Redacción de demanda", BusinessDays.today(), null, ClientsFixtures.ANA);
 
         nudges.sendDueNudges();
@@ -75,17 +76,17 @@ class ActivityNudgeTests extends ClientsSeam {
     }
 
     @Test
-    void movingTheDateGivesANewDayToBeRemindedOn() {
+    void eachReminderGoesOutOnceEvenWhenTheDateMovesAndLapsesAgain() {
         firm(null);
         Activity late = open("Revisión de contrato", BusinessDays.today().minusDays(30), null, ClientsFixtures.LUIS);
         nudges.sendDueNudges();
         queued();
 
-        clients.updateActivity(TENANT, "user_admin", late.id(), new ActivityRequest(null, null, null,
+        clients.updateActivity(TENANT, "user_admin", acme.id(), late.id(), new ActivityRequest(null, null, null,
                 BusinessDays.today().minusDays(1), null, null, null));
         nudges.sendDueNudges();
 
-        assertThat(queued()).hasSize(1);
+        assertThat(queued()).isEmpty();
     }
 
     @Test
