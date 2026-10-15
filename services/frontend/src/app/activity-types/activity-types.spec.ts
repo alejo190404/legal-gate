@@ -39,6 +39,11 @@ describe('ActivityTypesComponent', () => {
 
     component.retire({ id: 't1', name: 'Fallo de tutela', kind: 'EXTERNAL', defaultTurnaroundDays: null, defaultTermDays: 10, retiredAt: null });
     expect(http.expectOne('/api/activity-types/t1/retire').request.method).toBe('POST');
+
+    component.errorMessage.set('El nombre es obligatorio.');
+    component.restore({ id: 't2', name: 'Audiencia', kind: 'DATED', defaultTurnaroundDays: null, defaultTermDays: null, retiredAt: '2026-10-01T00:00:00Z' });
+    expect(component.errorMessage()).toBe('');
+    expect(http.expectOne('/api/activity-types/t2/restore').request.method).toBe('POST');
   });
 
   it('explains a missing turnaround', () => {

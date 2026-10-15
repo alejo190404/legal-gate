@@ -172,6 +172,14 @@ public class ClientsController {
         return clients.retireActivityType(tenant(organizationId), activityTypeId);
     }
 
+    @PostMapping("/api/activity-types/{activityTypeId}/restore")
+    public ActivityType restoreActivityType(
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @PathVariable String activityTypeId
+    ) {
+        return clients.restoreActivityType(tenant(organizationId), activityTypeId);
+    }
+
     /** The form needs to say which Client already holds the address, not just that one does. */
     @ExceptionHandler(ContactAddressTakenException.class)
     public ResponseEntity<Map<String, Object>> contactAddressTaken(ContactAddressTakenException taken) {

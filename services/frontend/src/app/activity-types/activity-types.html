@@ -18,7 +18,10 @@
         <span class="lg-small" style="display: block">{{ kindLabel(type.kind) }} · {{ defaultLabel(type) }}</span>
       </span>
       @if (type.retiredAt) {
-        <span class="tag">Retirado</span>
+        <span style="display: flex; gap: 8px; align-items: center">
+          <span class="tag">Retirado</span>
+          <button class="link-button" type="button" (click)="restore(type)">Restaurar</button>
+        </span>
       } @else {
         <span style="display: flex; gap: 8px">
           <button class="link-button" type="button" (click)="startEdit(type)">Editar</button>

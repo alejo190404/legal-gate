@@ -83,6 +83,9 @@ class ActivitiesTests extends ClientsSeam {
         ActivityType retired = clients.retireActivityType(TENANT, type("Firma en notaría").id());
         assertThatThrownBy(() -> open(new ActivityRequest(retired.id(), null, null, null, LocalDate.now(), null, null)))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_type_retired");
+
+        clients.restoreActivityType(TENANT, retired.id());
+        assertThat(open(new ActivityRequest(retired.id(), null, null, null, LocalDate.now(), null, null)).id()).isNotNull();
     }
 
     @Test

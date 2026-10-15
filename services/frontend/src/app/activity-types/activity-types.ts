@@ -125,9 +125,22 @@ export class ActivityTypesComponent implements OnInit {
   }
 
   retire(type: ActivityType): void {
-    this.http.post<ActivityType>(this.apiConfig.url(`/api/activity-types/${type.id}/retire`), {}).subscribe({
+    this.setRetired(type, 'retire', 'No se pudo retirar el tipo de actividad.');
+  }
+
+  restore(type: ActivityType): void {
+    this.setRetired(type, 'restore', 'No se pudo restaurar el tipo de actividad.');
+  }
+
+  /** A stale form message would otherwise outlive the action that replaced it. */
+  private setRetired(type: ActivityType, action: 'retire' | 'restore', failure: string): void {
+    this.errorMessage.set('');
+    if (this.form?.id === type.id) {
+      this.form = null;
+    }
+    this.http.post<ActivityType>(this.apiConfig.url(`/api/activity-types/${type.id}/${action}`), {}).subscribe({
       next: () => this.load(),
-      error: () => this.errorMessage.set('No se pudo retirar el tipo de actividad.'),
+      error: () => this.errorMessage.set(failure),
     });
   }
 }

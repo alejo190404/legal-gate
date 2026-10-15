@@ -228,8 +228,21 @@ public class ClientsService {
         if (existing.retiredAt() != null) {
             return existing;
         }
+        return withRetiredAt(tenant, existing, Instant.now());
+    }
+
+    /** Undoes a retirement: the type is offered for new Activities again. */
+    public ActivityType restoreActivityType(String tenant, String activityTypeId) {
+        ActivityType existing = activityType(tenant, activityTypeId);
+        if (existing.retiredAt() == null) {
+            return existing;
+        }
+        return withRetiredAt(tenant, existing, null);
+    }
+
+    private ActivityType withRetiredAt(String tenant, ActivityType existing, Instant retiredAt) {
         return clients.saveActivityType(tenant, new ActivityType(existing.id(), existing.name(), existing.kind(),
-                existing.defaultTurnaroundDays(), existing.defaultTermDays(), Instant.now()));
+                existing.defaultTurnaroundDays(), existing.defaultTermDays(), retiredAt));
     }
 
     ActivityType activityType(String tenant, String activityTypeId) {
