@@ -1,3 +1,8 @@
+/* Let .page be the flex item of .main so it, and the detail panel, scroll. */
+:host {
+  display: contents;
+}
+
 .clients-toolbar {
   display: flex;
   gap: 12px;
