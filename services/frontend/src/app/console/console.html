@@ -559,48 +559,29 @@
         </button>
 
         <nav class="nav" aria-label="Secciones del panel">
-          @for (item of workspaceNav; track item.id) {
-            <button
-              class="nav-item"
-              type="button"
-              [class.active]="activeView() === item.id"
-              [attr.aria-current]="activeView() === item.id ? 'page' : null"
-              (click)="setView(item.id)"
-            >
-              <pixel-icon
-                [name]="item.icon"
-                [size]="18"
-                [color]="activeView() === item.id ? 'var(--brand)' : 'var(--fg-3)'"
-              />
-              <span>{{ item.label }}</span>
-              @if (item.wip) {
-                <span class="wip">WIP</span>
-              } @else if (navCount(item.id) !== null) {
-                <span class="cnt">{{ navCount(item.id) }}</span>
-              }
-            </button>
-          }
-          <!-- <div class="nav-sec lbl">Configurar</div> -->
-          @for (item of configureNav; track item.id) {
-            <button
-              class="nav-item"
-              type="button"
-              [class.active]="activeView() === item.id"
-              [attr.aria-current]="activeView() === item.id ? 'page' : null"
-              (click)="setView(item.id)"
-            >
-              <pixel-icon
-                [name]="item.icon"
-                [size]="18"
-                [color]="activeView() === item.id ? 'var(--brand)' : 'var(--fg-3)'"
-              />
-              <span>{{ item.label }}</span>
-              @if (item.wip) {
-                <span class="wip">WIP</span>
-              } @else if (navCount(item.id) !== null) {
-                <span class="cnt">{{ navCount(item.id) }}</span>
-              }
-            </button>
+          @for (section of navSections; track section.label) {
+            <div class="nav-sec lbl">{{ section.label }}</div>
+            @for (item of section.items; track item.id) {
+              <button
+                class="nav-item"
+                type="button"
+                [class.active]="activeView() === item.id"
+                [attr.aria-current]="activeView() === item.id ? 'page' : null"
+                (click)="setView(item.id)"
+              >
+                <pixel-icon
+                  [name]="item.icon"
+                  [size]="18"
+                  [color]="activeView() === item.id ? 'var(--brand)' : 'var(--fg-3)'"
+                />
+                <span>{{ item.label }}</span>
+                @if (item.wip) {
+                  <span class="wip">WIP</span>
+                } @else if (navCount(item.id) !== null) {
+                  <span class="cnt">{{ navCount(item.id) }}</span>
+                }
+              </button>
+            }
           }
         </nav>
 

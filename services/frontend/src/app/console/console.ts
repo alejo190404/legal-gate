@@ -412,16 +412,27 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   // App-kit navigation: a Workspace group and a Configure group, mirroring the
   // "Firm Console" in Claude Design. `wip` screens render the design-system
   // Work-in-progress placeholder instead of a built feature.
-  readonly workspaceNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
-    { id: 'inbox', icon: 'inbox', label: 'Bandeja de intake' },
-    { id: 'clients', icon: 'users', label: 'Clientes' },
-    { id: 'rules', icon: 'route', label: 'Reglas de enrutamiento' },
-    { id: 'templates', icon: 'mail', label: 'Plantillas de correo', wip: true },
-  ];
-  readonly configureNav: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }> = [
-    { id: 'team', icon: 'users', label: 'Equipo' },
-    { id: 'settings', icon: 'gear', label: 'Ajustes' },
-    { id: 'billing', icon: 'file', label: 'Facturacion' },
+  readonly navSections: ReadonlyArray<{
+    label: string;
+    items: ReadonlyArray<{ id: ConsoleView; icon: string; label: string; wip?: boolean }>;
+  }> = [
+    {
+      label: 'Intake',
+      items: [
+        { id: 'inbox', icon: 'inbox', label: 'Bandeja de intake' },
+        { id: 'rules', icon: 'route', label: 'Reglas de enrutamiento' },
+        { id: 'templates', icon: 'mail', label: 'Plantillas de correo', wip: true },
+      ],
+    },
+    { label: 'Clientes', items: [{ id: 'clients', icon: 'users', label: 'Clientes' }] },
+    {
+      label: 'General',
+      items: [
+        { id: 'team', icon: 'users', label: 'Equipo' },
+        { id: 'settings', icon: 'gear', label: 'Ajustes' },
+        { id: 'billing', icon: 'file', label: 'Facturacion' },
+      ],
+    },
   ];
 
   readonly statusChips: ReadonlyArray<{ id: string; label: string }> = [
