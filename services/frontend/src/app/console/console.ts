@@ -368,7 +368,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     preferredWindow: '',
   };
 
-  private savedSettingsSnapshot = '';
+  private savedSettingsSnapshot = { lawyers: '', routingRules: '' };
   readonly settingsForm: TenantSettingsForm = {
     lawyers: [this.blankLawyer()],
     routingRules: [
@@ -1150,12 +1150,15 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.settingsForm.nonEngagementNotice = settings.nonEngagementNotice ?? '';
     this.settingsForm.automaticAnswers = settings.automaticAnswers ?? false;
     this.clampActiveIndexes();
-    this.savedSettingsSnapshot = JSON.stringify(this.settingsForm);
+    this.savedSettingsSnapshot = {
+      lawyers: JSON.stringify(this.settingsForm.lawyers),
+      routingRules: JSON.stringify(this.settingsForm.routingRules),
+    };
   }
 
-  /** The form holds edits Guardar hasn't sent yet: the last loaded or saved settings differ. */
-  hasUnsavedSettings(): boolean {
-    return this.settingsLoaded() && JSON.stringify(this.settingsForm) !== this.savedSettingsSnapshot;
+  /** This page's part of the form holds edits Guardar hasn't sent yet: the last loaded or saved settings differ. */
+  hasUnsavedSettings(part: 'lawyers' | 'routingRules'): boolean {
+    return this.settingsLoaded() && JSON.stringify(this.settingsForm[part]) !== this.savedSettingsSnapshot[part];
   }
 
   private lawyersPayload(forms: LawyerForm[]) {

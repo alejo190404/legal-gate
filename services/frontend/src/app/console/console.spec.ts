@@ -310,6 +310,39 @@ describe('ConsoleComponent session + billing flow', () => {
       expect(text('team')).not.toContain('Cambios sin guardar');
     });
 
+    it('shows a lawyer edit only on Abogados and a rule edit only on Reglas, and a save clears both', () => {
+      const { http, component, text } = loadedConsole();
+
+      component.settingsForm.lawyers[1].displayName = 'Luis Editado';
+      expect(text('team')).toContain('Cambios sin guardar');
+      expect(text('rules')).not.toContain('Cambios sin guardar');
+
+      component.settingsForm.lawyers[1].displayName = 'Luis Abogado';
+      component.addRoutingRule();
+      expect(text('rules')).toContain('Cambios sin guardar');
+      expect(text('team')).not.toContain('Cambios sin guardar');
+
+      component.settingsForm.lawyers[1].displayName = 'Luis Editado';
+      component.saveSettings();
+      const saved = http.expectOne('/api/tenant/settings');
+      saved.flush({ ...settings(saved.request.body.routingRules), lawyers: saved.request.body.lawyers });
+      expect(text('team')).not.toContain('Cambios sin guardar');
+      expect(text('rules')).not.toContain('Cambios sin guardar');
+    });
+
+    it('shows neither page as changed for a Diagnóstico edit, and both when removing a lawyer reassigns rules', () => {
+      const { component, text } = loadedConsole();
+
+      component.settingsForm.diagnosticsPrompt = 'Pregunte por la fecha del despido.';
+      component.settingsForm.automaticAnswers = true;
+      expect(text('team')).not.toContain('Cambios sin guardar');
+      expect(text('rules')).not.toContain('Cambios sin guardar');
+
+      component.removeLawyer(0);
+      expect(text('team')).toContain('Cambios sin guardar');
+      expect(text('rules')).toContain('Cambios sin guardar');
+    });
+
     it('shows unsaved changes when a rule is added, edited or removed', async () => {
       const { fixture, component, text } = loadedConsole();
 

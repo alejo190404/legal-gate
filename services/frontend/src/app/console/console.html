@@ -1077,7 +1077,7 @@
                     {{ isSubmitting() ? 'Guardando...' : 'Guardar reglas' }}
                   </button>
                   <span role="status">
-                    @if (hasUnsavedSettings()) {
+                    @if (hasUnsavedSettings('routingRules')) {
                       <span class="tag kw">Cambios sin guardar</span>
                     }
                   </span>
@@ -1276,7 +1276,7 @@
                     {{ isSubmitting() ? 'Guardando...' : 'Guardar equipo' }}
                   </button>
                   <span role="status">
-                    @if (hasUnsavedSettings()) {
+                    @if (hasUnsavedSettings('lawyers')) {
                       <span class="tag kw">Cambios sin guardar</span>
                     }
                   </span>
