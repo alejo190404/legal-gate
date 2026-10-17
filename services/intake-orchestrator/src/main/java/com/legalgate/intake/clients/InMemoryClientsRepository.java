@@ -280,7 +280,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
         Instant now = Instant.now();
         for (HistoryEntry entry : history) {
             tenantHistory(tenantSlug).add(new HistoryEntry(UUID.randomUUID().toString(), clientId, entry.activityId(),
-                    entry.field(), entry.oldValue(), entry.newValue(), entry.actorUserId(), now));
+                    entry.field(), entry.oldValue(), entry.newValue(), entry.actorUserId(), now, null));
         }
     }
 

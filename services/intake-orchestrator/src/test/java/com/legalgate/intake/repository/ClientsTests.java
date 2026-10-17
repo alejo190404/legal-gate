@@ -1,8 +1,10 @@
 package com.legalgate.intake.repository;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -13,6 +15,7 @@ import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.clients.ClientsService;
 import com.legalgate.intake.clients.ContactAddressTakenException;
 import com.legalgate.intake.clients.InMemoryClientsRepository;
+import com.legalgate.intake.service.ClerkClient;
 
 /**
  * Seam 1 for Clients: the Clients service on the real in-memory repositories. Lives in the
@@ -96,6 +99,34 @@ class ClientsTests {
                 .first().isEqualTo("name");
         assertThat(clients.history(TENANT, client.id())).extracting(HistoryEntry::field)
                 .last().isIn("client", "contactAddress");
+    }
+
+    @Test
+    void historyNamesWhoMadeEachChangeByTheirLawyerNameElseTheirEmail() {
+        ClerkClient clerk = mock(ClerkClient.class);
+        when(clerk.userEmail("user_ana")).thenReturn(Optional.of("ana@firm.co"));
+        when(clerk.userEmail("user_staff")).thenReturn(Optional.of("staff@firm.co"));
+        when(clerk.userEmail("user_gone")).thenReturn(Optional.empty());
+        when(clerk.userEmail("user_broken")).thenThrow(new IllegalStateException("clerk down"));
+        ClientsService named = ClientsFixtures.clientsService(intake, clientsRepository, clerk);
+        ClientsFixtures.saveLawyers(intake, TENANT);
+        Client client = named.create(TENANT, "user_ana", request("Acme", "ORGANIZATION", List.of("gc@acme.co")));
+        named.update(TENANT, "user_staff", client.id(), new ClientRequest(
+                "Acme SAS", "ORGANIZATION", null, null, null, ClientsFixtures.ANA, List.of("gc@acme.co")));
+        named.update(TENANT, "user_gone", client.id(), new ClientRequest(
+                "Acme SAS", "ORGANIZATION", "900123456", null, null, ClientsFixtures.ANA, List.of("gc@acme.co")));
+        named.update(TENANT, "user_broken", client.id(), new ClientRequest(
+                "Acme SAS", "ORGANIZATION", "900123456", "3001234567", null, ClientsFixtures.ANA, List.of("gc@acme.co")));
+
+        assertThat(named.history(TENANT, client.id()))
+                .extracting(HistoryEntry::actorUserId, HistoryEntry::actorName)
+                .containsOnly(
+                        tuple("user_ana", "Ana Abogada"),
+                        tuple("user_staff", "staff@firm.co"),
+                        tuple("user_gone", "user_gone"),
+                        tuple("user_broken", "user_broken"));
+        // Creating the Client wrote two entries for user_ana; Clerk is asked once.
+        verify(clerk, times(1)).userEmail("user_ana");
     }
 
     @Test

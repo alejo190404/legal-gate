@@ -140,7 +140,7 @@
           <div class="section-h">Historial</div>
           @for (entry of history(); track entry.id) {
             <div class="history-row" [class.address-change]="isAddressChange(entry)">
-              <span class="lbl">{{ formatDateTime(entry.createdAt) }} · {{ entry.actorUserId || 'sistema' }}</span>
+              <span class="lbl">{{ formatDateTime(entry.createdAt) }} · {{ entry.actorName || entry.actorUserId || 'sistema' }}</span>
               <span>
                 <strong>{{ fieldLabel(entry.field) }}</strong>:
                 {{ historyValue(entry, entry.oldValue) }} → {{ historyValue(entry, entry.newValue) }}

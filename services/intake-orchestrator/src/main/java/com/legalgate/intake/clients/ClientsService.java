@@ -16,13 +16,17 @@ import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.BusinessDays;
+import com.legalgate.intake.service.ClerkClient;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
@@ -60,10 +64,12 @@ public class ClientsService {
 
     private final ClientsRepository clients;
     private final IntakeRepository intake;
+    private final ClerkClient clerk;
 
-    public ClientsService(ClientsRepository clients, IntakeRepository intake) {
+    public ClientsService(ClientsRepository clients, IntakeRepository intake, ClerkClient clerk) {
         this.clients = clients;
         this.intake = intake;
+        this.clerk = clerk;
     }
 
     public Client create(String tenant, String actor, ClientRequest request) {
@@ -123,7 +129,28 @@ public class ClientsService {
 
     public List<HistoryEntry> history(String tenant, String clientId) {
         client(tenant, clientId);
-        return clients.history(tenant, clientId);
+        List<LawyerProfile> lawyers = intake.lawyersForTenant(tenant);
+        Map<String, String> names = new HashMap<>();
+        return clients.history(tenant, clientId).stream()
+                .map(entry -> entry.actorUserId() == null ? entry : entry.withActorName(
+                        names.computeIfAbsent(entry.actorUserId(), actor -> actorName(actor, lawyers))))
+                .toList();
+    }
+
+    /** The firm user's Lawyer name, else their email, else the raw id: a Clerk failure never fails the History. */
+    private String actorName(String actor, List<LawyerProfile> lawyers) {
+        Optional<String> email;
+        try {
+            email = clerk.userEmail(actor);
+        } catch (RuntimeException e) {
+            return actor;
+        }
+        return email.map(address -> lawyers.stream()
+                        .filter(lawyer -> address.equalsIgnoreCase(lawyer.email()))
+                        .map(LawyerProfile::displayName)
+                        .findFirst()
+                        .orElse(address))
+                .orElse(actor);
     }
 
     /** Whom the Consultation became, or a Client draft prefilled from it. */

@@ -146,6 +146,26 @@ describe('ClientsComponent', () => {
     expect(rows[1].textContent).toContain('Ana Abogada');
   });
 
+  it('names who made each History change instead of their user id', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([
+      { id: 'h1', clientId: 'client-1', activityId: null, field: 'name', oldValue: 'Acme', newValue: 'Acme SAS',
+        actorUserId: 'user_3K3YFS142', actorName: 'Ana Abogada', createdAt: '2026-10-01T15:00:00Z' },
+      { id: 'h2', clientId: 'client-1', activityId: null, field: 'name', oldValue: null, newValue: 'Acme',
+        actorUserId: null, actorName: null, createdAt: '2026-10-01T14:00:00Z' },
+    ]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
+    fixture.detectChanges();
+
+    const rows = fixture.nativeElement.querySelectorAll('.history-row');
+    expect(rows[0].textContent).toContain('Ana Abogada');
+    expect(rows[0].textContent).not.toContain('user_3K3YFS142');
+    expect(rows[1].textContent).toContain('sistema');
+  });
+
   it('shows each Client email with what LegalGate did and the exact answer', () => {
     const { fixture, http, component } = setup();
     http.expectOne('/api/clients').flush([client()]);

@@ -35,6 +35,8 @@ export interface HistoryEntry {
   oldValue: string | null;
   newValue: string | null;
   actorUserId: string | null;
+  /** Who the actor is: their Lawyer name, else email, else the raw id. */
+  actorName: string | null;
   createdAt: string;
 }
 

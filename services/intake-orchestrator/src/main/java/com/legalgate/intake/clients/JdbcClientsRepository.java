@@ -125,7 +125,7 @@ class JdbcClientsRepository implements ClientsRepository {
                 order by h.created_at desc, h.id desc
                 """, (rs, row) -> new HistoryEntry(rs.getString("id"), rs.getString("client_id"),
                 rs.getString("activity_id"), rs.getString("field"), rs.getString("old_value"),
-                rs.getString("new_value"), rs.getString("actor_user_id"), instant(rs, "created_at")),
+                rs.getString("new_value"), rs.getString("actor_user_id"), instant(rs, "created_at"), null),
                 tenantSlug, UUID.fromString(clientId)));
     }
 

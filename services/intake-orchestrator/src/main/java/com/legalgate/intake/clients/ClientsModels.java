@@ -61,7 +61,10 @@ public final class ClientsModels {
     ) {
     }
 
-    /** One line of the Activity History. The subject is the Activity when {@code activityId} is set, else the Client. */
+    /**
+     * One line of the Activity History. The subject is the Activity when {@code activityId} is set, else the Client.
+     * {@code actorName} is who {@code actorUserId} is, resolved when the History is read; never stored.
+     */
     public record HistoryEntry(
             String id,
             String clientId,
@@ -70,11 +73,16 @@ public final class ClientsModels {
             String oldValue,
             String newValue,
             String actorUserId,
-            Instant createdAt
+            Instant createdAt,
+            String actorName
     ) {
         public static HistoryEntry of(String clientId, String activityId, String field, String oldValue,
                 String newValue, String actorUserId) {
-            return new HistoryEntry(null, clientId, activityId, field, oldValue, newValue, actorUserId, null);
+            return new HistoryEntry(null, clientId, activityId, field, oldValue, newValue, actorUserId, null, null);
+        }
+
+        public HistoryEntry withActorName(String name) {
+            return new HistoryEntry(id, clientId, activityId, field, oldValue, newValue, actorUserId, createdAt, name);
         }
     }
 

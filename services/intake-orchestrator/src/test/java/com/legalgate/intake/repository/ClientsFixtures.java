@@ -1,5 +1,7 @@
 package com.legalgate.intake.repository;
 
+import static org.mockito.Mockito.mock;
+
 import java.util.List;
 
 import com.legalgate.intake.classifier.ConsultationClassifierClient;
@@ -11,6 +13,7 @@ import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
+import com.legalgate.intake.service.ClerkClient;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
@@ -26,7 +29,11 @@ final class ClientsFixtures {
     }
 
     static ClientsService clientsService(InMemoryIntakeRepository intake, ClientsRepository clients) {
-        return new ClientsService(clients, intake);
+        return clientsService(intake, clients, mock(ClerkClient.class));
+    }
+
+    static ClientsService clientsService(InMemoryIntakeRepository intake, ClientsRepository clients, ClerkClient clerk) {
+        return new ClientsService(clients, intake, clerk);
     }
 
     static IntakeService intakeService(InMemoryIntakeRepository intake, ConsultationClassifierClient classifier) {
@@ -36,7 +43,7 @@ final class ClientsFixtures {
     static IntakeService intakeService(InMemoryIntakeRepository intake, ConsultationClassifierClient classifier,
             ClientsRepository clients) {
         return new IntakeService(intake, properties(), classifier, new EmailTemplateRenderer(),
-                new FirmNameResolver(intake, properties()), new ClientsService(clients, intake));
+                new FirmNameResolver(intake, properties()), clientsService(intake, clients));
     }
 
     static void saveLawyers(InMemoryIntakeRepository intake, String tenant) {
