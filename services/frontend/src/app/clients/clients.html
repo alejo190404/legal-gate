@@ -129,32 +129,15 @@
           <button class="btn sec wide" type="button" (click)="openActivityCreate()">+ Nueva actividad</button>
 
           <div class="section-h">Correspondencia</div>
-          @for (entry of correspondence(); track entry.id) {
-            <div class="history-row">
-              <span class="lbl">{{ formatDateTime(entry.receivedAt) }} · {{ entry.contactAddress }}</span>
-              <div class="corr-head">
-                <strong>{{ entry.subject || '(sin asunto)' }}</strong>
-                <span class="corr-tags">
-                  <span class="tag meta">{{ intentLabel(entry.intent) }}</span>
-                  <span class="tag meta">{{ outcomeLabel(entry.outcome) }}</span>
-                </span>
-              </div>
-              @if (entry.body) {
-                <span class="email" style="white-space: pre-wrap">{{ entry.body }}</span>
-              } @else if (entry.purgedAt) {
-                <span class="lg-small">El texto del cliente se borró al cumplir un año.</span>
-              }
-              @if (entry.answerText) {
-                <details>
-                  <summary>
-                    {{ entry.outcome === 'ANSWERED' ? 'Respuesta enviada' : 'Respuesta que se habría enviado' }}
-                  </summary>
-                  <pre class="answer-text">{{ entry.answerText }}</pre>
-                </details>
-              }
-            </div>
+          @for (entry of latestCorrespondence(); track entry.id) {
+            <ng-container *ngTemplateOutlet="correspondenceEntry; context: { $implicit: entry }" />
           } @empty {
             <div class="lg-small">Este cliente no ha escrito todavía.</div>
+          }
+          @if (correspondence().length > 3) {
+            <button class="btn sec wide" type="button" (click)="isArchiveOpen.set(true)">
+              Archivo · {{ correspondence().length }} correos
+            </button>
           }
 
           <div class="section-h">Historial</div>
@@ -314,5 +297,48 @@
         <button class="btn" type="button" (click)="cancelActivity()">Cancelar</button>
       </div>
     </form>
+  </section>
+}
+
+<ng-template #correspondenceEntry let-entry>
+  <div class="history-row">
+    <span class="lbl">{{ formatDateTime(entry.receivedAt) }} · {{ entry.contactAddress }}</span>
+    <div class="corr-head">
+      <strong>{{ entry.subject || '(sin asunto)' }}</strong>
+      <span class="corr-tags">
+        <span class="tag meta">{{ intentLabel(entry.intent) }}</span>
+        <span class="tag meta">{{ outcomeLabel(entry.outcome) }}</span>
+      </span>
+    </div>
+    @if (entry.body) {
+      <span class="email" style="white-space: pre-wrap">{{ entry.body }}</span>
+    } @else if (entry.purgedAt) {
+      <span class="lg-small">El texto del cliente se borró al cumplir un año.</span>
+    }
+    @if (entry.answerText) {
+      <details>
+        <summary>
+          {{ entry.outcome === 'ANSWERED' ? 'Respuesta enviada' : 'Respuesta que se habría enviado' }}
+        </summary>
+        <pre class="answer-text">{{ entry.answerText }}</pre>
+      </details>
+    }
+  </div>
+</ng-template>
+
+@if (isArchiveOpen()) {
+  <div class="modal-backdrop" role="presentation" (click)="isArchiveOpen.set(false)"></div>
+  <section #archiveDialog class="tutorial-modal pixel-card" role="dialog" aria-modal="true"
+    aria-labelledby="archive-title" tabindex="-1" (keydown.escape)="isArchiveOpen.set(false)">
+    <header>
+      <div>
+        <p class="eyebrow">{{ selected()?.name }}</p>
+        <h2 id="archive-title">Archivo de correspondencia</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="isArchiveOpen.set(false)">×</button>
+    </header>
+    @for (entry of correspondence(); track entry.id) {
+      <ng-container *ngTemplateOutlet="correspondenceEntry; context: { $implicit: entry }" />
+    }
   </section>
 }

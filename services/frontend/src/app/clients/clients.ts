@@ -1,5 +1,6 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, ElementRef, OnInit, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
@@ -175,7 +176,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 @Component({
   selector: 'app-clients',
-  imports: [FormsModule, PixelIconComponent],
+  imports: [FormsModule, NgTemplateOutlet, PixelIconComponent],
   templateUrl: './clients.html',
   styleUrls: ['../console/console.scss', './clients.scss'],
 })
@@ -195,6 +196,11 @@ export class ClientsComponent implements OnInit {
   readonly selected = signal<Client | null>(null);
   readonly history = signal<HistoryEntry[]>([]);
   readonly correspondence = signal<Correspondence[]>([]);
+  // The panel shows the latest emails; the Archivo dialog shows them all.
+  readonly latestCorrespondence = computed(() => this.correspondence().slice(0, 3));
+  readonly isArchiveOpen = signal(false);
+  private readonly archiveDialog = viewChild<ElementRef<HTMLElement>>('archiveDialog');
+  private readonly focusArchiveDialog = effect(() => this.archiveDialog()?.nativeElement.focus());
   readonly activities = signal<Activity[]>([]);
   readonly activityTypes = signal<ActivityType[]>([]);
   readonly offeredTypes = computed(() => this.activityTypes().filter((type) => !type.retiredAt));
@@ -401,6 +407,7 @@ export class ClientsComponent implements OnInit {
     this.selected.set(null);
     this.history.set([]);
     this.correspondence.set([]);
+    this.isArchiveOpen.set(false);
     this.activities.set([]);
     this.activityForm.set(null);
   }

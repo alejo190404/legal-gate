@@ -172,6 +172,56 @@ describe('ClientsComponent', () => {
     expect(text).toContain('El texto del cliente se borró al cumplir un año.');
   });
 
+  it('shows the 3 latest emails inline and the full correspondence in the Archivo dialog', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    const email = (n: number) => ({
+      id: `c${n}`, clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: `<m${n}>`, subject: `Correo ${n}`,
+      body: 'Hola', receivedAt: `2026-10-0${n}T15:00:00Z`, intent: 'needs_lawyer', outcome: 'FORWARDED',
+      answerText: null, purgedAt: null,
+    });
+    // The server sends newest first.
+    http.expectOne('/api/clients/client-1/correspondence').flush([email(4), email(3), email(2), email(1)]);
+    fixture.detectChanges();
+
+    const panel = fixture.nativeElement.querySelector('.detail');
+    expect(panel.textContent).toContain('Correo 4');
+    expect(panel.textContent).toContain('Correo 2');
+    expect(panel.textContent).not.toContain('Correo 1');
+    expect(fixture.nativeElement.querySelector('[aria-labelledby="archive-title"]')).toBeNull();
+
+    const archive = [...panel.querySelectorAll('button')].find((b: HTMLButtonElement) => b.textContent!.includes('Archivo')) as HTMLButtonElement;
+    archive.click();
+    fixture.detectChanges();
+
+    const dialog = fixture.nativeElement.querySelector('[role="dialog"][aria-labelledby="archive-title"]');
+    expect([1, 2, 3, 4].every((n) => dialog.textContent.includes(`Correo ${n}`))).toBe(true);
+
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[aria-labelledby="archive-title"]')).toBeNull();
+  });
+
+  it('offers no Archivo when the Client has written 3 times or fewer', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([
+      { id: 'c1', clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: '<m1>', subject: 'Correo 1',
+        body: 'Hola', receivedAt: '2026-10-01T15:00:00Z', intent: 'needs_lawyer', outcome: 'FORWARDED',
+        answerText: null, purgedAt: null },
+    ]);
+    fixture.detectChanges();
+
+    const buttons = [...fixture.nativeElement.querySelectorAll('.detail button')] as HTMLButtonElement[];
+    expect(buttons.some((b) => b.textContent!.includes('Archivo'))).toBe(false);
+  });
+
   it('opens an activity with only offered types and the type term, shows overdue work, and closes it after confirming', () => {
     const { fixture, http, component } = setup();
     http.expectOne('/api/clients').flush([client()]);
