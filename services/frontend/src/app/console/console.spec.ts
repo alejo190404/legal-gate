@@ -126,6 +126,69 @@ describe('ConsoleComponent session + billing flow', () => {
     );
   });
 
+  function consoleWith(lawyers: unknown[]) {
+    user.set({ id: 'user_1', email: 'admin@firma.test' });
+    hasOrganization.set(true);
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http.expectOne('/api/session').flush({
+      userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
+      displayName: 'Firma 1', role: 'firm_admin',
+    });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
+      subscription: null, payments: [], accessEndsAt: null, message: '',
+    });
+    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/tenant/settings').flush({
+      tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+      destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co',
+      routingRules: [{
+        name: 'Laboral', description: null, urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+        lawyerId: 'lawyer-ana', urgencyDefinitions: [{ name: 'NORMAL', rank: 1, slaDays: 5, active: true }],
+        destinationEmail: 'ana@firm.co',
+      }],
+      lawyers,
+      diagnosticsPrompt: null, nonEngagementNotice: null,
+    });
+    return { component: fixture.componentInstance, http };
+  }
+
+  const lawyer = (id: string, displayName: string, active: boolean) => ({
+    id, displayName, email: `${id}@firm.co`, meetingUrl: null, active, defaultEventDurationMinutes: 60,
+    availabilityWindows: [{ weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' }],
+  });
+
+  it('opens the Client and Activity a reminder email links to once the session loads', () => {
+    window.history.replaceState({}, '', '/dashboard?client=client-1&activity=activity-1');
+    try {
+      const { component } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+
+      expect(component.activeView()).toBe('clients');
+      expect(component.openClientId()).toBe('client-1');
+      expect(component.openActivityId()).toBe('activity-1');
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
+
+  it('shows only active lawyers in Equipo but keeps the ones who left for Client history', () => {
+    const { component, http } = consoleWith([
+      lawyer('lawyer-ana', 'Ana Abogada', true),
+      lawyer('lawyer-rita', 'Rita Retirada', false),
+    ]);
+
+    expect(component.activeView()).toBe('inbox');
+    expect(component.settingsForm.lawyers.map((form) => form.id)).toEqual(['lawyer-ana']);
+    expect(component.savedLawyers().map((saved) => saved.id)).toEqual(['lawyer-ana', 'lawyer-rita']);
+
+    component.saveSettings();
+
+    expect(http.expectOne('/api/tenant/settings').request.body.lawyers.map((sent: { id: string }) => sent.id))
+      .toEqual(['lawyer-ana']);
+  });
+
   it('sends the automatic-answers switch with the settings', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);

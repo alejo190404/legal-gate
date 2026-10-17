@@ -409,6 +409,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly savedLawyers = computed(() => this.tenantSettings()?.lawyers ?? []);
   readonly openClientId = signal<string | null>(null);
   readonly openActivityId = signal<string | null>(null);
+  private linkedClientId: string | null = null;
   // App-kit navigation: a Workspace group and a Configure group, mirroring the
   // "Firm Console" in Claude Design. `wip` screens render the design-system
   // Work-in-progress placeholder instead of a built feature.
@@ -490,12 +491,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       return;
     }
     this.sessionEmail.set(user.email);
-    // Reminder emails link here with ?client=<id>&activity=<id>; the Client opens once the console is up.
+    // Reminder emails link here with ?client=<id>&activity=<id>; the Client opens once the session loads.
     const link = new URLSearchParams(window.location.search);
-    const linkedClient = link.get('client');
-    if (linkedClient) {
+    this.linkedClientId = link.get('client');
+    if (this.linkedClientId) {
       this.openActivityId.set(link.get('activity'));
-      this.openClient(linkedClient);
     }
     if (this.auth.hasOrganization()) {
       this.view.set('loading');
@@ -594,6 +594,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         this.sessionEmail.set(this.auth.user()?.email ?? '');
         this.userDisplayName.set(session.displayName ?? '');
         this.activeView.set('inbox');
+        if (this.linkedClientId) {
+          this.openClient(this.linkedClientId);
+          this.linkedClientId = null;
+        }
         this.selectedConsultationId.set(null);
         this.inboxFilter.set('all');
         this.isConsoleMenuOpen.set(false);
@@ -1973,8 +1977,10 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   }
 
   private lawyerFormsFrom(settings: TenantSettingsResponse): LawyerForm[] {
-    const lawyers = settings.lawyers?.length
-      ? settings.lawyers
+    // Lawyers who left the firm stay in the settings for Client history, but not in Equipo.
+    const team = settings.lawyers?.filter((lawyer) => lawyer.active !== false) ?? [];
+    const lawyers = team.length
+      ? team
       : [
           {
             id: this.cryptoId(),

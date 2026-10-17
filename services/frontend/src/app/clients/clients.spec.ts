@@ -214,6 +214,43 @@ describe('ClientsComponent', () => {
     confirmSpy.mockRestore();
   });
 
+  it('clears an Activity error once a later save or close succeeds', () => {
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    component.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
+
+    component.openActivityCreate();
+    component.saveActivity();
+    http.expectOne('/api/clients/client-1/activities').flush(
+      { error: 'scheduled_date_required' }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Indica la fecha de la actividad.');
+
+    component.saveActivity();
+    http.expectOne('/api/clients/client-1/activities').flush({});
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients').flush([client()]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Indica la fecha de la actividad.');
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    component.completeActivity({ id: 'a1', displayName: 'Audiencia' } as any);
+    http.expectOne('/api/clients/client-1/activities/a1/done').flush(
+      { error: 'unknown' }, { status: 500, statusText: 'Server Error' });
+    expect(component.activityError()).toBe('No se pudo cerrar la actividad.');
+    component.completeActivity({ id: 'a1', displayName: 'Audiencia' } as any);
+    http.expectOne('/api/clients/client-1/activities/a1/done').flush({});
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients').flush([client()]);
+    expect(component.activityError()).toBe('');
+    confirmSpy.mockRestore();
+  });
+
   it('deletes a client only after a confirmation that names the diagnostics consequence', () => {
     const { http, component } = setup();
     http.expectOne('/api/clients').flush([client()]);

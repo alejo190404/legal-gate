@@ -340,6 +340,7 @@ export class ClientsComponent implements OnInit {
       : this.http.post<Activity>(this.apiConfig.url(base), payload);
     request.subscribe({
       next: () => {
+        this.activityError.set('');
         this.activityForm.set(null);
         this.loadActivities(client.id);
         this.loadHistory(client.id);
@@ -359,6 +360,7 @@ export class ClientsComponent implements OnInit {
       .post<Activity>(this.apiConfig.url(`/api/clients/${client.id}/activities/${activity.id}/done`), {})
       .subscribe({
         next: () => {
+          this.activityError.set('');
           this.loadActivities(client.id);
           this.loadHistory(client.id);
           this.load();

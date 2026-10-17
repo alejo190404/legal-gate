@@ -93,9 +93,12 @@ public class IntakeService {
 
     public TenantSettingsResponse saveSettings(String tenantId, TenantSettingsRequest request) {
         List<LawyerProfile> lawyers = lawyersFrom(tenantId, request.lawyers(), request.routingRules());
+        List<LawyerProfile> stored = intakeRepository.lawyersForTenant(tenantId);
         // A Client's mail must never reach someone who has left the firm.
-        clientsService.assertLawyersReleasable(tenantId, intakeRepository.lawyersForTenant(tenantId), lawyers);
+        clientsService.assertLawyersReleasable(tenantId, stored, lawyers);
         List<TenantRoutingRule> routingRules = routingRulesFrom(request, lawyers);
+        // Routes may only point at the submitted team, so leavers join the list after routing is built.
+        lawyers = withLeaversDeactivated(stored, lawyers);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
         TenantSettingsResponse current = intakeRepository.settingsFor(tenantId, null);
         boolean automaticAnswers = request.automaticAnswers() != null
@@ -735,6 +738,24 @@ public class IntakeService {
         if (lawyers.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lawyers_required");
         }
+        return List.copyOf(lawyers);
+    }
+
+    /**
+     * A lawyer left out of the team is deactivated, never removed: their Clients' history and finished
+     * Activities still name them. One whose email a submitted lawyer now uses is dropped instead, as before,
+     * since emails are unique per firm.
+     */
+    private static List<LawyerProfile> withLeaversDeactivated(List<LawyerProfile> current, List<LawyerProfile> submitted) {
+        Set<String> ids = submitted.stream().map(LawyerProfile::id).collect(java.util.stream.Collectors.toSet());
+        Set<String> emails = submitted.stream().map(lawyer -> lawyer.email().toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        List<LawyerProfile> lawyers = new ArrayList<>(submitted);
+        current.stream()
+                .filter(lawyer -> !ids.contains(lawyer.id()) && !emails.contains(lawyer.email().toLowerCase(Locale.ROOT)))
+                .map(lawyer -> new LawyerProfile(lawyer.id(), lawyer.displayName(), lawyer.email(), lawyer.meetingUrl(),
+                        false, lawyer.defaultEventDurationMinutes(), lawyer.availabilityWindows()))
+                .forEach(lawyers::add);
         return List.copyOf(lawyers);
     }
 

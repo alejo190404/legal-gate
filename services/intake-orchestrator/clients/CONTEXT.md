@@ -18,7 +18,7 @@ An email address the firm has on file for a Client. A Client may have several â€
 
 ## Responsible Lawyer
 
-The lawyer who owns the relationship with a Client. Client mail LegalGate does not answer on its own goes to them. Always an active lawyer of the firm: a lawyer cannot leave while still responsible for anyone.
+The lawyer who owns the relationship with a Client. Client mail LegalGate does not answer on its own goes to them. Always an active lawyer of the firm: a lawyer cannot leave while still responsible for anyone. A lawyer who leaves is deactivated, never removed: the Clients and Activities they worked on still name them.
 
 ## Assigned Lawyer
 
