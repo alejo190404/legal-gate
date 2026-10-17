@@ -895,7 +895,7 @@
 
           @case ('clients') {
             <app-clients [lawyers]="savedLawyers()" [openClientId]="openClientId()"
-              [openActivityId]="openActivityId()" />
+              [openActivityId]="openActivityId()" (openClientMissing)="closeLinkedClient()" />
           }
 
           @case ('rules') {

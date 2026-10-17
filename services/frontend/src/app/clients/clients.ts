@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Component, ElementRef, OnInit, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
@@ -191,6 +191,9 @@ export class ClientsComponent implements OnInit {
   readonly openClientId = input<string | null>(null);
   /** The Activity a reminder email links to, highlighted once the Client opens. */
   readonly openActivityId = input<string | null>(null);
+  /** The Client to open on arrival isn't one of the firm's, e.g. a reminder link to a deleted Client. */
+  readonly openClientMissing = output<void>();
+  private arriving = true;
 
   readonly clients = signal<Client[]>([]);
   readonly query = signal('');
@@ -244,7 +247,10 @@ export class ClientsComponent implements OnInit {
         const client = wanted && !this.selected() ? clients.find((candidate) => candidate.id === wanted) : null;
         if (client) {
           this.open(client);
+        } else if (wanted && this.arriving) {
+          this.openClientMissing.emit();
         }
+        this.arriving = false;
       },
       error: () => this.errorMessage.set('No se pudieron cargar los clientes.'),
     });

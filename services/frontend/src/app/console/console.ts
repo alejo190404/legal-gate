@@ -915,6 +915,13 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.setView('clients');
   }
 
+  /** A link named a Client the firm doesn't have: start on the inbox instead. */
+  closeLinkedClient(): void {
+    this.openClientId.set(null);
+    this.openActivityId.set(null);
+    this.setView('inbox');
+  }
+
   selectConsultation(id: string): void {
     this.selectedConsultationId.set(id);
     this.isTranscriptOpen.set(false);

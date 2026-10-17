@@ -152,7 +152,7 @@ describe('ConsoleComponent session + billing flow', () => {
       lawyers,
       diagnosticsPrompt: null, nonEngagementNotice: null,
     });
-    return { component: fixture.componentInstance, http };
+    return { fixture, component: fixture.componentInstance, http };
   }
 
   const lawyer = (id: string, displayName: string, active: boolean) => ({
@@ -168,6 +168,23 @@ describe('ConsoleComponent session + billing flow', () => {
       expect(component.activeView()).toBe('clients');
       expect(component.openClientId()).toBe('client-1');
       expect(component.openActivityId()).toBe('activity-1');
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
+
+  it('falls back to the inbox when a reminder link names a Client the firm does not have', () => {
+    window.history.replaceState({}, '', '/dashboard?client=client-gone&activity=activity-1');
+    try {
+      const { fixture, component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+      fixture.detectChanges();
+      http.expectOne('/api/activity-types').flush([]);
+      http.expectOne('/api/clients').flush([]);
+      fixture.detectChanges();
+
+      expect(component.activeView()).toBe('inbox');
+      expect(component.openClientId()).toBeNull();
+      expect(component.openActivityId()).toBeNull();
     } finally {
       window.history.replaceState({}, '', '/');
     }
