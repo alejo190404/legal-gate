@@ -94,7 +94,7 @@
           }
 
           <div class="section-h">Actividades</div>
-          @if (activityError()) {
+          @if (activityError() && !activityForm()) {
             <div class="panel-error"><strong>{{ activityError() }}</strong></div>
           }
           @for (activity of activities(); track activity.id) {
@@ -126,61 +126,7 @@
             <div class="lg-small">Sin actividades registradas.</div>
           }
 
-          @if (activityForm(); as f) {
-            <form class="settings-form" (submit)="saveActivity(); $event.preventDefault()">
-              @if (!f.id) {
-                <div class="form-field">
-                  <label for="activityType">Tipo de actividad</label>
-                  <select id="activityType" name="activityType" [ngModel]="f.activityTypeId"
-                    (ngModelChange)="changeActivityType($event)">
-                    @for (type of offeredTypes(); track type.id) {
-                      <option [value]="type.id">{{ type.name }}</option>
-                    }
-                  </select>
-                </div>
-              }
-              <div class="form-field">
-                <label for="activityLabel">Etiqueta para el cliente (opcional)</label>
-                <input id="activityLabel" name="activityLabel" [(ngModel)]="f.label" />
-              </div>
-              <div class="form-field">
-                <label for="activityStart">Inicio</label>
-                <input id="activityStart" name="activityStart" type="date" [(ngModel)]="f.startDate" />
-              </div>
-              @if (formKind() === 'TURNAROUND') {
-                <div class="form-field">
-                  <label for="activityDue">Fecha límite fijada desde afuera (opcional)</label>
-                  <input id="activityDue" name="activityDue" type="date" [(ngModel)]="f.dueDate" />
-                </div>
-              }
-              @if (formKind() === 'DATED') {
-                <div class="form-field">
-                  <label for="activityScheduled">Fecha</label>
-                  <input id="activityScheduled" name="activityScheduled" type="date" [(ngModel)]="f.scheduledDate" />
-                </div>
-              }
-              @if (formKind() === 'EXTERNAL') {
-                <div class="form-field">
-                  <label for="activityTerm">Término legal (días hábiles, vacío si no hay)</label>
-                  <input id="activityTerm" name="activityTerm" type="number" min="1" max="365" [(ngModel)]="f.termDays" />
-                </div>
-              }
-              <div class="form-field">
-                <label for="activityLawyer">Abogado asignado</label>
-                <select id="activityLawyer" name="activityLawyer" [(ngModel)]="f.assignedLawyerId">
-                  @for (lawyer of activeLawyers(); track lawyer.id) {
-                    <option [value]="lawyer.id">{{ lawyer.displayName }}</option>
-                  }
-                </select>
-              </div>
-              <div style="display: flex; gap: 8px">
-                <button class="btn primary" type="submit">Guardar actividad</button>
-                <button class="btn" type="button" (click)="cancelActivity()">Cancelar</button>
-              </div>
-            </form>
-          } @else {
-            <button class="btn sec wide" type="button" (click)="openActivityCreate()">+ Nueva actividad</button>
-          }
+          <button class="btn sec wide" type="button" (click)="openActivityCreate()">+ Nueva actividad</button>
 
           <div class="section-h">Correspondencia</div>
           @for (entry of correspondence(); track entry.id) {
@@ -293,6 +239,78 @@
       <button class="btn primary" type="submit" [disabled]="isSubmitting()">
         {{ isSubmitting() ? 'Guardando…' : 'Guardar cliente' }}
       </button>
+    </form>
+  </section>
+}
+
+@if (activityForm(); as f) {
+  <div class="modal-backdrop" role="presentation" (click)="cancelActivity()"></div>
+  <section #activityDialog class="tutorial-modal pixel-card" role="dialog" aria-modal="true"
+    aria-labelledby="activity-form-title" tabindex="-1" (keydown.escape)="cancelActivity()">
+    <header>
+      <div>
+        <p class="eyebrow">Actividad</p>
+        <h2 id="activity-form-title">{{ f.id ? 'Editar actividad' : 'Nueva actividad' }}</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" (click)="cancelActivity()">×</button>
+    </header>
+    <form class="settings-form" (submit)="saveActivity(); $event.preventDefault()">
+      @if (!f.id) {
+        <div class="form-field">
+          <label for="activityType">Tipo de actividad</label>
+          <select id="activityType" name="activityType" [ngModel]="f.activityTypeId"
+            (ngModelChange)="changeActivityType($event)">
+            @for (type of offeredTypes(); track type.id) {
+              <option [value]="type.id">{{ type.name }}</option>
+            }
+          </select>
+        </div>
+      }
+      <div class="form-field">
+        <label for="activityLabel">Nombre que ve el cliente (opcional)</label>
+        <input id="activityLabel" name="activityLabel" aria-describedby="activityLabelHint" [(ngModel)]="f.label" />
+        <small id="activityLabelHint" class="lg-small">
+          Así llama el cliente a esta actividad en las respuestas a sus consultas de estado. Si lo dejas vacío, ve el
+          nombre del tipo de actividad.
+        </small>
+      </div>
+      <div class="form-field">
+        <label for="activityStart">Inicio</label>
+        <input id="activityStart" name="activityStart" type="date" [(ngModel)]="f.startDate" />
+      </div>
+      @if (formKind() === 'TURNAROUND') {
+        <div class="form-field">
+          <label for="activityDue">Fecha límite fijada desde afuera (opcional)</label>
+          <input id="activityDue" name="activityDue" type="date" [(ngModel)]="f.dueDate" />
+        </div>
+      }
+      @if (formKind() === 'DATED') {
+        <div class="form-field">
+          <label for="activityScheduled">Fecha</label>
+          <input id="activityScheduled" name="activityScheduled" type="date" [(ngModel)]="f.scheduledDate" />
+        </div>
+      }
+      @if (formKind() === 'EXTERNAL') {
+        <div class="form-field">
+          <label for="activityTerm">Término legal (días hábiles, vacío si no hay)</label>
+          <input id="activityTerm" name="activityTerm" type="number" min="1" max="365" [(ngModel)]="f.termDays" />
+        </div>
+      }
+      <div class="form-field">
+        <label for="activityLawyer">Abogado asignado</label>
+        <select id="activityLawyer" name="activityLawyer" [(ngModel)]="f.assignedLawyerId">
+          @for (lawyer of activeLawyers(); track lawyer.id) {
+            <option [value]="lawyer.id">{{ lawyer.displayName }}</option>
+          }
+        </select>
+      </div>
+      @if (activityError()) {
+        <div class="panel-error"><strong>{{ activityError() }}</strong></div>
+      }
+      <div style="display: flex; gap: 8px">
+        <button class="btn primary" type="submit">Guardar actividad</button>
+        <button class="btn" type="button" (click)="cancelActivity()">Cancelar</button>
+      </div>
     </form>
   </section>
 }

@@ -90,6 +90,19 @@ class ClientsMigrationPostgresTests {
     }
 
     @Test
+    void historyListsTheLatestChangeFirst() {
+        JdbcClientsRepository repository = repository();
+        Client saved = repository.saveClient("tenant-a", client(null, "Acme", LAWYER_A, "gc@acme.co"),
+                List.of(HistoryEntry.of(null, null, "client", null, "Acme", "user_1")));
+
+        repository.saveClient("tenant-a", client(saved.id(), "Acme SAS", LAWYER_A, "gc@acme.co"),
+                List.of(HistoryEntry.of(null, null, "name", "Acme", "Acme SAS", "user_1")));
+
+        assertThat(repository.history("tenant-a", saved.id())).extracting(HistoryEntry::field)
+                .containsExactly("name", "client");
+    }
+
+    @Test
     void theDatabaseHoldsAContactAddressForOneClientPerTenant() throws Exception {
         JdbcClientsRepository repository = repository();
         Client acme = repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());

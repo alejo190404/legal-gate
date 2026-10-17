@@ -85,6 +85,20 @@ class ClientsTests {
     }
 
     @Test
+    void historyListsTheLatestChangeFirst() {
+        ClientsFixtures.saveLawyers(intake, TENANT);
+        Client client = clients.create(TENANT, ADMIN, request("Acme", "ORGANIZATION", List.of("gc@acme.co")));
+
+        clients.update(TENANT, ADMIN, client.id(), new ClientRequest(
+                "Acme SAS", "ORGANIZATION", null, null, null, ClientsFixtures.ANA, List.of("gc@acme.co")));
+
+        assertThat(clients.history(TENANT, client.id())).extracting(HistoryEntry::field)
+                .first().isEqualTo("name");
+        assertThat(clients.history(TENANT, client.id())).extracting(HistoryEntry::field)
+                .last().isIn("client", "contactAddress");
+    }
+
+    @Test
     void editingAClientRecordsEachChangeWithItsOldAndNewValue() {
         ClientsFixtures.saveLawyers(intake, TENANT);
         Client client = clients.create(TENANT, ADMIN, request("Acme", "ORGANIZATION", List.of("gc@acme.co")));

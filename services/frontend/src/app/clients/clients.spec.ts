@@ -214,6 +214,58 @@ describe('ClientsComponent', () => {
     confirmSpy.mockRestore();
   });
 
+  it('edits and creates Activities in a dialog that saving, the backdrop or Escape closes', async () => {
+    const { fixture, http } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+    fixture.componentInstance.open(client());
+    http.expectOne('/api/clients/client-1/activities').flush([
+      { id: 'a1', clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
+        label: 'Contrato de arriendo', displayName: 'Contrato de arriendo', startDate: '2026-09-01', turnaroundDays: 5,
+        dueDate: null, scheduledDate: null, termDays: null, assignedLawyerId: 'lawyer-ana', done: false, doneAt: null,
+        expectedDate: '2026-09-08', overdue: false, termPassed: false },
+    ]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const button = (text: string) =>
+      Array.from(page.querySelectorAll('button')).find((b) => b.textContent!.trim() === text)!;
+    const dialog = () => page.querySelector<HTMLElement>('[role="dialog"]');
+
+    button('Editar').click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(dialog()!.getAttribute('aria-labelledby')).toBe('activity-form-title');
+    expect(dialog()!.textContent).toContain('Editar actividad');
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    expect(page.querySelector<HTMLInputElement>('#activityLabel')!.value).toBe('Contrato de arriendo');
+    expect(page.querySelector('#activityType')).toBeNull();
+    expect(dialog()!.textContent).toContain('consultas de estado');
+
+    dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(dialog()).toBeNull();
+
+    button('+ Nueva actividad').click();
+    fixture.detectChanges();
+    expect(dialog()!.textContent).toContain('Nueva actividad');
+    expect(page.querySelector('#activityType')).not.toBeNull();
+    page.querySelector<HTMLElement>('.modal-backdrop')!.click();
+    fixture.detectChanges();
+    expect(dialog()).toBeNull();
+
+    button('+ Nueva actividad').click();
+    fixture.detectChanges();
+    button('Guardar actividad').click();
+    http.expectOne('/api/clients/client-1/activities').flush({});
+    http.expectOne('/api/clients/client-1/activities').flush([]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients').flush([client()]);
+    fixture.detectChanges();
+    expect(dialog()).toBeNull();
+  });
+
   it('clears an Activity error once a later save or close succeeds', () => {
     const { fixture, http, component } = setup();
     http.expectOne('/api/clients').flush([client()]);

@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
@@ -200,6 +200,9 @@ export class ClientsComponent implements OnInit {
   readonly offeredTypes = computed(() => this.activityTypes().filter((type) => !type.retiredAt));
   readonly activityError = signal('');
   readonly activityForm = signal<ActivityForm | null>(null);
+  private readonly activityDialog = viewChild<ElementRef<HTMLElement>>('activityDialog');
+  // Focus moves into the Activity dialog when it opens.
+  private readonly focusActivityDialog = effect(() => this.activityDialog()?.nativeElement.focus());
   readonly isFormOpen = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly isSubmitting = signal(false);
@@ -316,6 +319,7 @@ export class ClientsComponent implements OnInit {
   }
 
   cancelActivity(): void {
+    this.activityError.set('');
     this.activityForm.set(null);
   }
 

@@ -122,7 +122,7 @@ class JdbcClientsRepository implements ClientsRepository {
                 select h.id, h.client_id, h.activity_id, h.field, h.old_value, h.new_value, h.actor_user_id, h.created_at
                 from activity_history h join tenants t on t.id = h.tenant_id
                 where t.slug = ? and h.client_id = ?
-                order by h.created_at, h.id
+                order by h.created_at desc, h.id desc
                 """, (rs, row) -> new HistoryEntry(rs.getString("id"), rs.getString("client_id"),
                 rs.getString("activity_id"), rs.getString("field"), rs.getString("old_value"),
                 rs.getString("new_value"), rs.getString("actor_user_id"), instant(rs, "created_at")),

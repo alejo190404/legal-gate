@@ -368,6 +368,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     preferredWindow: '',
   };
 
+  private savedSettingsSnapshot = '';
   readonly settingsForm: TenantSettingsForm = {
     lawyers: [this.blankLawyer()],
     routingRules: [
@@ -1142,6 +1143,12 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.settingsForm.nonEngagementNotice = settings.nonEngagementNotice ?? '';
     this.settingsForm.automaticAnswers = settings.automaticAnswers ?? false;
     this.clampActiveIndexes();
+    this.savedSettingsSnapshot = JSON.stringify(this.settingsForm);
+  }
+
+  /** The form holds edits Guardar hasn't sent yet: the last loaded or saved settings differ. */
+  hasUnsavedSettings(): boolean {
+    return this.settingsLoaded() && JSON.stringify(this.settingsForm) !== this.savedSettingsSnapshot;
   }
 
   private lawyersPayload(forms: LawyerForm[]) {
@@ -1170,7 +1177,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       const lawyer = lawyers.find((item) => item.id === rule.lawyerId) ?? lawyers[0];
       const urgencyDefinitions = this.definitionsForSave(rule);
       return {
-        name: rule.name.trim() || `Route ${index + 1}`,
+        name: rule.name.trim() || `Regla ${index + 1}`,
         description: rule.description.trim() || null,
         urgentKeywords: this.csvValues(rule.urgentKeywords),
         consultationWindows: this.csvValues(rule.consultationWindows),
@@ -1298,7 +1305,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.settingsForm.routingRules = [
       ...this.settingsForm.routingRules,
       {
-        name: `Route ${this.settingsForm.routingRules.length + 1}`,
+        name: `Regla ${this.settingsForm.routingRules.length + 1}`,
         description: '',
         lawyerId: lawyer.id,
         destinationEmail: lawyer.email || this.sessionEmail(),
@@ -2033,7 +2040,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         rule.lawyerId ?? this.lawyerIdForEmail(lawyers, rule.destinationEmail) ?? fallbackLawyerId;
       const lawyer = lawyers.find((item) => item.id === lawyerId);
       return {
-        name: rule.name || `Route ${index + 1}`,
+        name: rule.name?.trim() || `Regla ${index + 1}`,
         description: rule.description ?? '',
         lawyerId,
         destinationEmail: rule.destinationEmail ?? lawyer?.email ?? this.sessionEmail(),

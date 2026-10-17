@@ -827,7 +827,7 @@ public class IntakeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "routing_rule_lawyer_required");
         }
         List<UrgencyDefinition> definitions = sanitizeUrgencyDefinitions(rule.urgencyDefinitions(), rule.urgencyLevels());
-        String name = rule.name() == null || rule.name().isBlank() ? "Route " + (index + 1) : rule.name().trim();
+        String name = rule.name() == null || rule.name().isBlank() ? "Regla " + (index + 1) : rule.name().trim();
         return new TenantRoutingRule(
                 name, sanitizeNullable(rule.description()), sanitize(rule.urgentKeywords()), sanitize(rule.consultationWindows()),
                 activeUrgencyNames(definitions), lawyerId, definitions,
@@ -906,7 +906,7 @@ public class IntakeService {
                 String lawyerId = firstNonBlank(rule.lawyerId(), lawyerIdByDestinationEmail(lawyers, rule.destinationEmail()), defaultLawyerId);
                 List<UrgencyDefinition> definitions = sanitizeUrgencyDefinitions(rule.urgencyDefinitions(), rule.urgencyLevels());
                 rules.add(new TenantRoutingRule(
-                        rule.name() == null || rule.name().isBlank() ? "Route " + (index + 1) : rule.name().trim(),
+                        rule.name() == null || rule.name().isBlank() ? "Regla " + (index + 1) : rule.name().trim(),
                         sanitizeNullable(rule.description()), sanitize(rule.urgentKeywords()), sanitize(rule.consultationWindows()),
                         activeUrgencyNames(definitions), lawyerId, definitions,
                         sanitizeEmail(firstNonBlank(rule.destinationEmail(), lawyerEmailFor(lawyers, lawyerId), settings.destinationEmail()))

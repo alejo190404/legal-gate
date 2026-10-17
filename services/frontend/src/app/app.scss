@@ -1070,7 +1070,8 @@ app-console {
     font-weight: 700;
   }
 
-  input,
+  // Checkboxes and radios keep their native size, inline before their label text.
+  input:not([type='checkbox'], [type='radio']),
   select,
   textarea {
     width: 100%;

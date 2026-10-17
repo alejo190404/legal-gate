@@ -81,7 +81,10 @@ public class InMemoryClientsRepository implements ClientsRepository {
 
     @Override
     public List<HistoryEntry> history(String tenantSlug, String clientId) {
-        return tenantHistory(tenantSlug).stream().filter(entry -> clientId.equals(entry.clientId())).toList();
+        // Newest first, ties broken by id like the JDBC repository.
+        return tenantHistory(tenantSlug).stream().filter(entry -> clientId.equals(entry.clientId()))
+                .sorted(Comparator.comparing(HistoryEntry::createdAt).thenComparing(HistoryEntry::id).reversed())
+                .toList();
     }
 
     @Override

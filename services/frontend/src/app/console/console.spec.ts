@@ -228,6 +228,107 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(http.expectOne('/api/tenant/settings').request.body.automaticAnswers).toBe(true);
   });
 
+  describe('Abogados and Reglas pages', () => {
+    const rule = (name: string) => ({
+      name, description: null, urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+      lawyerId: 'lawyer-ana', urgencyDefinitions: [{ name: 'NORMAL', rank: 1, slaDays: 5, active: true }],
+      destinationEmail: 'ana@firm.co',
+    });
+    const lawyer = (id: string, displayName: string) => ({
+      id, displayName, email: `${id}@firm.co`, meetingUrl: null, active: true, defaultEventDurationMinutes: 60,
+      availabilityWindows: [{ weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' }],
+    });
+    const settings = (routingRules: unknown[]) => ({
+      tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
+      destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co', routingRules,
+      lawyers: [lawyer('lawyer-ana', 'Ana Abogada'), lawyer('lawyer-luis', 'Luis Abogado')],
+      diagnosticsPrompt: null, nonEngagementNotice: null,
+    });
+
+    function loadedConsole(routingRules: unknown[] = [rule('Laboral')]) {
+      user.set({ id: 'user_1', email: 'admin@firma.test' });
+      hasOrganization.set(true);
+      const fixture = TestBed.createComponent(ConsoleComponent);
+      const http = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+      http.expectOne('/api/session').flush({
+        userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
+        displayName: 'Firma 1', role: 'firm_admin',
+      });
+      http.expectOne('/api/billing/subscription').flush({
+        billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
+        subscription: null, payments: [], accessEndsAt: null, message: '',
+      });
+      http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+      http.expectOne('/api/tenant/settings').flush(settings(routingRules));
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+      const text = (view: 'team' | 'rules') => {
+        component.activeView.set(view);
+        fixture.detectChanges();
+        return (fixture.nativeElement as HTMLElement).textContent!;
+      };
+      return { fixture, http, component, text };
+    }
+
+    it('shows unsaved changes until a save succeeds, and keeps them when the save is rejected', () => {
+      const { http, component, text } = loadedConsole();
+      expect(text('team')).not.toContain('Cambios sin guardar');
+      expect(text('rules')).not.toContain('Cambios sin guardar');
+
+      component.removeLawyer(1);
+      expect(text('team')).toContain('Cambios sin guardar');
+
+      component.saveSettings();
+      http.expectOne('/api/tenant/settings').flush(
+        { error: 'lawyer_still_in_charge', message: 'Luis Abogado sigue a cargo de: cliente Acme SAS.' },
+        { status: 409, statusText: 'Conflict' },
+      );
+      expect(text('team')).toContain('Cambios sin guardar');
+      expect(text('team')).toContain('Luis Abogado sigue a cargo de: cliente Acme SAS.');
+
+      component.saveSettings();
+      const saved = http.expectOne('/api/tenant/settings');
+      saved.flush({ ...settings(saved.request.body.routingRules), lawyers: saved.request.body.lawyers });
+      expect(text('team')).not.toContain('Cambios sin guardar');
+    });
+
+    it('shows unsaved changes when a rule is added, edited or removed', async () => {
+      const { fixture, component, text } = loadedConsole();
+
+      component.addRoutingRule();
+      expect(text('rules')).toContain('Cambios sin guardar');
+      component.removeRoutingRule(1);
+      expect(text('rules')).not.toContain('Cambios sin guardar');
+      await fixture.whenStable();
+      const keywords = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('#urgentKeywords-0')!;
+      keywords.value = 'tutela';
+      keywords.dispatchEvent(new Event('input'));
+      expect(text('rules')).toContain('Cambios sin guardar');
+    });
+
+    it('names a rule from its card and falls back to "Regla N" when the name is blank', async () => {
+      const { fixture, http, component, text } = loadedConsole([rule('Laboral'), rule('')]);
+      expect(component.settingsForm.routingRules[1].name).toBe('Regla 2');
+      component.addRoutingRule();
+      expect(component.settingsForm.routingRules[2].name).toBe('Regla 3');
+
+      text('rules');
+      component.activeRuleIndex.set(0);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const name = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('#routeName-0')!;
+      expect(name.value).toBe('Laboral');
+      name.value = 'Familia';
+      name.dispatchEvent(new Event('input'));
+      component.settingsForm.routingRules[2].name = '  ';
+
+      component.saveSettings();
+      expect(http.expectOne('/api/tenant/settings').request.body.routingRules.map((sent: { name: string }) => sent.name))
+        .toEqual(['Familia', 'Regla 2', 'Regla 3']);
+    });
+  });
+
   it('routes an organization without entitlement to onboarding before checkout', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
     hasOrganization.set(true);
