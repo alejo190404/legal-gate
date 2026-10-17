@@ -29,6 +29,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -60,6 +62,7 @@ public class ClientsService {
             new ActivityType(null, "Respuesta a derecho de petición", ActivityKind.EXTERNAL, null, 15, null),
             new ActivityType(null, "Registro de marca", ActivityKind.EXTERNAL, null, null, null));
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientsService.class);
     private static final int MAX_DAYS = 365;
 
     private final ClientsRepository clients;
@@ -143,6 +146,7 @@ public class ClientsService {
         try {
             email = clerk.userEmail(actor);
         } catch (RuntimeException e) {
+            LOGGER.warn("Could not resolve History actor {} through Clerk; showing the raw id", actor, e);
             return actor;
         }
         return email.map(address -> lawyers.stream()

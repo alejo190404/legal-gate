@@ -102,7 +102,7 @@
 }
 
 /* Correspondence: what LegalGate did sits beside the subject, colored apart from the Client's own words. */
-.corr-head {
+.correspondence-head {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 12px;
@@ -110,13 +110,13 @@
   justify-content: space-between;
 }
 
-.corr-tags {
+.correspondence-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.tag.meta {
+.tag.handling {
   background: var(--status-classified-bg);
   color: var(--status-classified-fg);
 }

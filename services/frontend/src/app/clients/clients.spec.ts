@@ -33,6 +33,15 @@ function client(overrides: Partial<Client> = {}): Client {
   };
 }
 
+/** A forwarded Client email received on 2026-10-0{n}. */
+function email(n: number) {
+  return {
+    id: `c${n}`, clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: `<m${n}>`, subject: `Correo ${n}`,
+    body: 'Hola', receivedAt: `2026-10-0${n}T15:00:00Z`, intent: 'needs_lawyer', outcome: 'FORWARDED',
+    answerText: null, purgedAt: null,
+  };
+}
+
 describe('ClientsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -198,11 +207,6 @@ describe('ClientsComponent', () => {
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    const email = (n: number) => ({
-      id: `c${n}`, clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: `<m${n}>`, subject: `Correo ${n}`,
-      body: 'Hola', receivedAt: `2026-10-0${n}T15:00:00Z`, intent: 'needs_lawyer', outcome: 'FORWARDED',
-      answerText: null, purgedAt: null,
-    });
     // The server sends newest first.
     http.expectOne('/api/clients/client-1/correspondence').flush([email(4), email(3), email(2), email(1)]);
     fixture.detectChanges();
@@ -231,11 +235,7 @@ describe('ClientsComponent', () => {
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    http.expectOne('/api/clients/client-1/correspondence').flush([
-      { id: 'c1', clientId: 'client-1', contactAddress: 'gc@acme.co', messageId: '<m1>', subject: 'Correo 1',
-        body: 'Hola', receivedAt: '2026-10-01T15:00:00Z', intent: 'needs_lawyer', outcome: 'FORWARDED',
-        answerText: null, purgedAt: null },
-    ]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([email(1)]);
     fixture.detectChanges();
 
     const buttons = [...fixture.nativeElement.querySelectorAll('.detail button')] as HTMLButtonElement[];

@@ -131,7 +131,7 @@
           } @empty {
             <div class="lg-small">Este cliente no ha escrito todavía.</div>
           }
-          @if (correspondence().length > 3) {
+          @if (correspondence().length > latestCorrespondence().length) {
             <button class="btn sec wide" type="button" (click)="isArchiveOpen.set(true)">
               Archivo · {{ correspondence().length }} correos
             </button>
@@ -300,11 +300,11 @@
 <ng-template #correspondenceEntry let-entry>
   <div class="history-row">
     <span class="lbl">{{ formatDateTime(entry.receivedAt) }} · {{ entry.contactAddress }}</span>
-    <div class="corr-head">
+    <div class="correspondence-head">
       <strong>{{ entry.subject || '(sin asunto)' }}</strong>
-      <span class="corr-tags">
-        <span class="tag meta">{{ intentLabel(entry.intent) }}</span>
-        <span class="tag meta">{{ outcomeLabel(entry.outcome) }}</span>
+      <span class="correspondence-tags">
+        <span class="tag handling">{{ intentLabel(entry.intent) }}</span>
+        <span class="tag handling">{{ outcomeLabel(entry.outcome) }}</span>
       </span>
     </div>
     @if (entry.body) {
