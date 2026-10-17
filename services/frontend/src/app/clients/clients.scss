@@ -100,3 +100,23 @@
   outline: 2px solid var(--brand);
   outline-offset: -2px;
 }
+
+/* Correspondence: what LegalGate did sits beside the subject, colored apart from the Client's own words. */
+.corr-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.corr-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag.meta {
+  background: var(--status-classified-bg);
+  color: var(--status-classified-fg);
+}
