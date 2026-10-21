@@ -14,12 +14,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
@@ -180,15 +182,19 @@ class InMemoryIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit) {
+    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String query, String cursor, int limit) {
         Comparator<ConsultationResponse> newestFirst = Comparator.comparing(ConsultationResponse::createdAt)
                 .thenComparing(ConsultationResponse::id).reversed();
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
-        ConsultationResponse afterRow = after == null ? null : new ConsultationResponse(after.get(1), tenantSlug,
-                null, null, null, null, null, null, null, null, null, null, null, null, cursorInstant(after.get(0)));
+        Instant afterCreatedAt = after == null ? null : Page.instant(after.get(0));
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         List<ConsultationResponse> rows = consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
                 .filter(consultation -> stage == null || stage.equals(consultation.stage()))
-                .filter(consultation -> afterRow == null || newestFirst.compare(consultation, afterRow) > 0)
+                .filter(consultation -> needle.isEmpty() || Stream.of(consultation.clientName(),
+                                consultation.clientEmail(), consultation.id(), consultation.summary())
+                        .anyMatch(field -> field != null && field.toLowerCase(Locale.ROOT).contains(needle)))
+                .filter(consultation -> after == null || consultation.createdAt().isBefore(afterCreatedAt)
+                        || consultation.createdAt().equals(afterCreatedAt) && consultation.id().compareTo(after.get(1)) < 0)
                 .sorted(newestFirst)
                 .limit(limit + 1L)
                 .map(this::withDiagnosticsSummary)
@@ -200,14 +206,6 @@ class InMemoryIntakeRepository implements IntakeRepository {
     public Map<String, Long> stageCounts(String tenantSlug) {
         return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
                 .collect(Collectors.groupingBy(ConsultationResponse::stage, Collectors.counting()));
-    }
-
-    private static Instant cursorInstant(String value) {
-        try {
-            return Instant.parse(value);
-        } catch (java.time.format.DateTimeParseException malformed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-        }
     }
 
     /** The JDBC repository joins this in; here the session map stands in for the join. */

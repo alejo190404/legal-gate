@@ -3,6 +3,7 @@ package com.legalgate.intake.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Set;
 
 public record ConsultationResponse(
         String id,
@@ -70,6 +71,10 @@ public record ConsultationResponse(
                 assignedLawyerEmail, classification, notifications, sourceEventId, sourceMessageId, createdAt,
                 eventId, event, null);
     }
+
+    /** Every value {@link #stage()} can return. */
+    public static final Set<String> STAGES = Set.of(
+            "new", "diagnostics", "classified", "scheduled", "confirmed", "unrouted", "rejected", "abandoned");
 
     /** Where this Consultation stands in the firm's workflow (see the Intake glossary). */
     @JsonProperty(value = "stage", access = JsonProperty.Access.READ_ONLY)

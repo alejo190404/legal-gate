@@ -167,6 +167,35 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(status().isBadRequest());
     }
 
+    // In-memory twin of ConsultationPagesPostgresTests' search: same fields, same paging. The chips keep
+    // counting the whole firm while a search is on, so they read the same as the nav's Bandeja total.
+    @Test
+    void bandejaSearchesTheWholeFirmWithinAStageAndTheChipsStillCountEveryone() throws Exception {
+        firm("busqueda");
+        Instant start = Instant.parse("2026-10-01T10:00:00Z");
+        saveConsultation("busqueda", "c-name", "Perez Gomez", "ana@example.com", "Contrato", "LLM_FAILED", start);
+        saveConsultation("busqueda", "c-mail", "Ana", "PEREZ@firma.co", "Contrato", "LLM_FAILED", start.plusSeconds(60));
+        saveConsultation("busqueda", "c-summary", "Ana", "ana@example.com", "Despido de perez", "LLM_FAILED", start.plusSeconds(120));
+        saveConsultation("busqueda", "c-other-stage", "Perez", "ana@example.com", "Contrato", "RECEIVED", start.plusSeconds(180));
+        saveConsultation("busqueda", "c-no-match", "Ana", "ana@example.com", "Contrato", "LLM_FAILED", start.plusSeconds(240));
+
+        asFirm(get("/api/consultations").param("stage", "unrouted").param("q", " pErEz "), "busqueda")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].id").value(org.hamcrest.Matchers.contains("c-summary", "c-mail", "c-name")))
+                .andExpect(jsonPath("$.stageCounts.unrouted").value(4))
+                .andExpect(jsonPath("$.stageCounts.new").value(1));
+        asFirm(get("/api/consultations").param("q", "no-match"), "busqueda")
+                .andExpect(jsonPath("$.items[*].id").value(org.hamcrest.Matchers.contains("c-no-match")));
+    }
+
+    @Test
+    void anUnknownStageIsRejectedRatherThanListedAsEmpty() throws Exception {
+        firm("etapa");
+
+        asFirm(get("/api/consultations").param("stage", "agendadas"), "etapa")
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void aConsultationOpensByIdWhetherOrNotItIsOnALoadedPage() throws Exception {
         firm("directa");
@@ -189,6 +218,13 @@ class IntakeOrchestratorApplicationTests {
     private void saveConsultation(String name, String id, String status, Instant createdAt) {
         repository.saveConsultation("firma-" + name, new ConsultationResponse(id, "firma-" + name, "Ana",
                 "ana@example.com", "Contrato", null, status, "NORMAL", null, null, null, null,
+                null, null, createdAt), List.of());
+    }
+
+    private void saveConsultation(String name, String id, String clientName, String clientEmail, String summary,
+                                  String status, Instant createdAt) {
+        repository.saveConsultation("firma-" + name, new ConsultationResponse(id, "firma-" + name, clientName,
+                clientEmail, summary, null, status, "NORMAL", null, null, null, null,
                 null, null, createdAt), List.of());
     }
 

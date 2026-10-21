@@ -618,7 +618,7 @@
               <pixel-icon name="search" [size]="15" />
               <input
                 [ngModel]="inboxQuery()"
-                (ngModelChange)="inboxQuery.set($event)"
+                (ngModelChange)="searchInbox($event)"
                 name="inboxQuery"
                 placeholder="Buscar por cliente, correo o ID…"
                 aria-label="Buscar consultas"
@@ -647,17 +647,17 @@
             <div class="inbox" [class.split]="selectedConsultation()">
               <div class="list-wrap">
                 <div class="filterbar">
-                  @for (chip of statusChips; track chip.id) {
+                  @for (chip of stageChips; track chip.id) {
                     <button
                       class="fchip"
                       type="button"
-                      [class.on]="inboxFilter() === chip.id"
-                      (click)="setInboxFilter(chip.id)"
+                      [class.on]="stageFilter() === chip.id"
+                      (click)="setStageFilter(chip.id)"
                     >
                       @if (chip.id !== 'all') {
                         <span [class]="'dot st-' + chip.id"></span>
                       }
-                      {{ chip.label }}<span class="n">{{ statusCount(chip.id) }}</span>
+                      {{ chip.label }}<span class="n">{{ stageCount(chip.id) }}</span>
                     </button>
                   }
                   <div class="spacer"></div>
@@ -682,7 +682,7 @@
                     <div class="lg-h4">Cargando consultas…</div>
                     <div class="lg-small">Trayendo la bandeja desde el servicio de intake.</div>
                   </div>
-                } @else if (!filteredConsultations().length) {
+                } @else if (!consultations().length) {
                   <div class="empty">
                     <pixel-icon name="inbox" [size]="48" color="var(--stone-300)" />
                     <div class="lg-h4">No hay consultas en esta vista</div>
@@ -693,7 +693,7 @@
                   </div>
                 } @else {
                   <div class="list">
-                    @for (c of filteredConsultations(); track c.id) {
+                    @for (c of consultations(); track c.id) {
                       <button
                         class="lead"
                         type="button"
@@ -717,7 +717,7 @@
                           </span>
                         </span>
                         <span class="right">
-                          <span [class]="badgeClass(c)"><span class="dot"></span>{{ statusLabel(c) }}</span>
+                          <span [class]="badgeClass(c)"><span class="dot"></span>{{ stageLabel(c) }}</span>
                           <span class="time">{{ formatDate(c.createdAt) }}</span>
                         </span>
                       </button>
@@ -740,7 +740,7 @@
                       </div>
                     </div>
                     <div style="display: flex; gap: 6px; align-items: center">
-                      <span [class]="badgeClass(c)"><span class="dot"></span>{{ statusLabel(c) }}</span>
+                      <span [class]="badgeClass(c)"><span class="dot"></span>{{ stageLabel(c) }}</span>
                       <button class="iconbtn" type="button" (click)="closeDetail()" title="Cerrar" aria-label="Cerrar detalle">
                         <pixel-icon name="x" [size]="15" />
                       </button>

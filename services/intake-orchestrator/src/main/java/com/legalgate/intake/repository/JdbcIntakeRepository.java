@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -577,20 +578,30 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     // Keyset on (created_at, id), newest first: a Consultation arriving mid-paging sorts before the
-    // cursor, so later pages neither skip nor repeat anything.
+    // cursor, so later pages neither skip nor repeat anything. strpos matches the query literally.
     @Override
-    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit) {
+    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String query, String cursor, int limit) {
         StringBuilder sql = new StringBuilder(consultationSelect()).append(" where t.slug = ?");
         List<Object> args = new ArrayList<>(List.of(tenantSlug));
         if (stage != null) {
             sql.append(" and ").append(STAGE_SQL).append(" = ?");
             args.add(stage);
         }
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (!needle.isEmpty()) {
+            sql.append("""
+                     and (strpos(lower(coalesce(c.client_name, '')), ?) > 0
+                       or strpos(lower(coalesce(c.client_email, '')), ?) > 0
+                       or strpos(c.id::text, ?) > 0
+                       or strpos(lower(coalesce(c.summary, '')), ?) > 0)
+                    """);
+            args.addAll(List.of(needle, needle, needle, needle));
+        }
         if (cursor != null) {
             List<String> after = Page.sortKey(cursor, 2);
             sql.append(" and (c.created_at, c.id) < (?, ?)");
-            args.add(cursorTimestamp(after.get(0)));
-            args.add(cursorId(after.get(1)));
+            args.add(Timestamp.from(Page.instant(after.get(0))));
+            args.add(Page.uuid(after.get(1)));
         }
         sql.append(" order by c.created_at desc, c.id desc limit ?");
         args.add(limit + 1);
@@ -599,22 +610,6 @@ class JdbcIntakeRepository implements IntakeRepository {
             return Page.of(jdbcTemplate.query(sql.toString(), this::mapConsultation, args.toArray()), limit,
                     consultation -> List.of(consultation.createdAt().toString(), consultation.id()));
         });
-    }
-
-    private static Timestamp cursorTimestamp(String value) {
-        try {
-            return Timestamp.from(Instant.parse(value));
-        } catch (java.time.format.DateTimeParseException malformed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-        }
-    }
-
-    private static UUID cursorId(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException malformed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-        }
     }
 
     @Override

@@ -5,8 +5,9 @@ import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 import { ActivityTypesComponent } from '../activity-types/activity-types';
-import { ClientsComponent, Page } from '../clients/clients';
+import { ClientsComponent } from '../clients/clients';
 import { EngagementComponent } from '../clients/engagement';
+import { Page } from '../page';
 import { PixelIconComponent } from './pixel-icon';
 import { Subscription } from 'rxjs';
 
@@ -316,11 +317,12 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   /** The Consultation whose detail is open when it isn't on a loaded page. */
   private readonly openedConsultation = signal<Consultation | null>(null);
   private listing?: Subscription;
+  private searchTimer?: ReturnType<typeof setTimeout>;
   readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
   readonly settingsLoaded = signal(false);
   readonly activeView = signal<ConsoleView>('inbox');
   readonly userDisplayName = signal('');
-  readonly inboxFilter = signal<string>('all');
+  readonly stageFilter = signal<string>('all');
   readonly inboxQuery = signal('');
   readonly selectedConsultationId = signal<string | null>(null);
   readonly diagnostics = signal<DiagnosticsView | null>(null);
@@ -402,14 +404,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly totalConsultations = computed(() =>
     Object.values(this.stageCounts()).reduce((sum, count) => sum + count, 0),
   );
-  readonly urgentConsultations = computed(
-    () => this.consultations().filter((consultation) => this.isHighestUrgency(consultation)).length,
-  );
-  readonly queuedNotifications = computed(
-    () =>
-      this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
-  );
-  readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
   readonly configuredIntakeEmail = computed(() => {
     if (!this.settingsLoaded()) {
       return 'Cargando...';
@@ -447,7 +441,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     },
   ];
 
-  readonly statusChips: ReadonlyArray<{ id: string; label: string }> = [
+  readonly stageChips: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'all', label: 'Todas' },
     { id: 'diagnostics', label: 'En diagnostico' },
     { id: 'new', label: 'Nuevas' },
@@ -472,24 +466,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     settings: { crumb: 'Configurar', title: 'Ajustes' },
     billing: { crumb: 'Configurar', title: 'Facturacion' },
   };
-
-  readonly filteredConsultations = computed(() => {
-    const filter = this.inboxFilter();
-    const query = this.inboxQuery().trim().toLowerCase();
-    let list = this.consultations();
-    if (filter !== 'all') {
-      list = list.filter((consultation) => consultation.stage === filter);
-    }
-    if (query) {
-      list = list.filter((consultation) =>
-        [consultation.clientName, consultation.clientEmail, consultation.id, consultation.summary]
-          .join(' ')
-          .toLowerCase()
-          .includes(query),
-      );
-    }
-    return list;
-  });
 
   readonly selectedConsultation = computed(() => {
     const id = this.selectedConsultationId();
@@ -525,6 +501,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     // router tears it down while a poll is still pending.
     this.clearBillingReturnPoll();
     this.stopDemoLoop();
+    clearTimeout(this.searchTimer);
   }
 
   register(): void {
@@ -591,7 +568,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.isConsoleMenuOpen.set(false);
     this.activeView.set('inbox');
     this.selectedConsultationId.set(null);
-    this.inboxFilter.set('all');
+    this.stageFilter.set('all');
     this.isCreateOpen.set(false);
     this.clearConsoleErrors();
     this.auth.signOut();
@@ -612,7 +589,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           this.linkedClientId = null;
         }
         this.selectedConsultationId.set(null);
-        this.inboxFilter.set('all');
+        this.stageFilter.set('all');
         this.isConsoleMenuOpen.set(false);
         this.clearConsoleErrors();
         this.statusMessage.set('Sesion segura iniciada. Validando suscripcion...');
@@ -1020,12 +997,23 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return role === 'CLIENT' ? 'Cliente' : 'LegalGate';
   }
 
-  setInboxFilter(id: string): void {
-    this.inboxFilter.set(id);
+  /** The search box: the server searches the whole firm once typing pauses, from the first page. */
+  searchInbox(value: string): void {
+    this.inboxQuery.set(value);
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.loadConsultations(), 300);
+  }
+
+  // The old Stage's rows and cursor go at once: should the new first page fail, Cargar más must not
+  // page on through the old Stage under the new chip.
+  setStageFilter(id: string): void {
+    this.stageFilter.set(id);
+    this.consultations.set([]);
+    this.nextCursor.set(null);
     this.loadConsultations();
   }
 
-  statusCount(id: string): number {
+  stageCount(id: string): number {
     return id === 'all' ? this.totalConsultations() : (this.stageCounts()[id] ?? 0);
   }
 
@@ -1033,7 +1021,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return 'badge st-' + consultation.stage;
   }
 
-  statusLabel(consultation: Consultation): string {
+  stageLabel(consultation: Consultation): string {
     return (
       {
         new: 'Nuevo',
@@ -1103,17 +1091,28 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.fetchConsultations(null);
   }
 
+  // A search still waiting on the debounce wins: its first page replaces the list.
   loadMore(): void {
-    this.fetchConsultations(this.nextCursor());
+    if (this.searchTimer === undefined) {
+      this.fetchConsultations(this.nextCursor());
+    } else {
+      this.loadConsultations();
+    }
   }
 
-  // Only the newest listing counts: switching chips cancels an in-flight page of the previous one.
+  // Only the newest listing counts: switching chips or searching cancels an in-flight page of the
+  // previous listing, and drops a search still waiting to run.
   private fetchConsultations(cursor: string | null): void {
+    clearTimeout(this.searchTimer);
+    this.searchTimer = undefined;
     this.listing?.unsubscribe();
     this.consultationsErrorMessage.set('');
     let params = new HttpParams();
-    if (this.inboxFilter() !== 'all') {
-      params = params.set('stage', this.inboxFilter());
+    if (this.stageFilter() !== 'all') {
+      params = params.set('stage', this.stageFilter());
+    }
+    if (this.inboxQuery().trim()) {
+      params = params.set('q', this.inboxQuery().trim());
     }
     if (cursor) {
       params = params.set('cursor', cursor);
@@ -1518,25 +1517,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   urgencyLabel(consultation: Consultation): string {
     return consultation.event?.urgencyName ?? consultation.urgency;
-  }
-
-  isHighestUrgency(consultation: Consultation): boolean {
-    const settings = this.tenantSettings();
-    const matchedRule = settings?.routingRules?.find(
-      (rule) => rule.name === consultation.consultationType,
-    );
-    const definitions =
-      matchedRule?.urgencyDefinitions?.filter((definition) => definition.active) ?? [];
-    if (definitions.length) {
-      const highest = [...definitions].sort((a, b) => a.rank - b.rank).at(-1);
-      return consultation.urgency === highest?.name;
-    }
-    const levels = matchedRule?.urgencyLevels?.length
-      ? matchedRule.urgencyLevels
-      : settings?.urgencyLevels?.length
-        ? settings.urgencyLevels
-        : ['NORMAL', 'URGENTE'];
-    return consultation.urgency === levels[levels.length - 1];
   }
 
   priorityLabel(consultation: Consultation): string {

@@ -1,8 +1,11 @@
 package com.legalgate.intake.model;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,6 +45,28 @@ public record Page<T>(List<T> items, String nextCursor) {
         } catch (IllegalArgumentException malformed) {
             // falls through to the 400
         }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
+        throw invalidCursor();
+    }
+
+    /** A sort key part read back as an instant, or 400 invalid_cursor. */
+    public static Instant instant(String part) {
+        try {
+            return Instant.parse(part);
+        } catch (DateTimeParseException malformed) {
+            throw invalidCursor();
+        }
+    }
+
+    /** A sort key part read back as a UUID, or 400 invalid_cursor. */
+    public static UUID uuid(String part) {
+        try {
+            return UUID.fromString(part);
+        } catch (IllegalArgumentException malformed) {
+            throw invalidCursor();
+        }
+    }
+
+    private static ResponseStatusException invalidCursor() {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
     }
 }

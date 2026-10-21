@@ -79,9 +79,9 @@ class ConsultationPagesPostgresTests {
         String middle = save("RECEIVED", START.plusSeconds(60)).id();
         String newest = save("RECEIVED", START.plusSeconds(120)).id();
 
-        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, null, null, 2);
+        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, null, null, null, 2);
         save("RECEIVED", START.plusSeconds(180));
-        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, null, first.nextCursor(), 2);
+        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, null, null, first.nextCursor(), 2);
 
         assertThat(first.items()).extracting(ConsultationResponse::id).containsExactly(newest, middle);
         assertThat(first.nextCursor()).isNotNull();
@@ -96,8 +96,8 @@ class ConsultationPagesPostgresTests {
             ids.add(save("RECEIVED", START).id());
         }
 
-        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, null, null, 2);
-        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, null, first.nextCursor(), 2);
+        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, null, null, null, 2);
+        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, null, null, first.nextCursor(), 2);
 
         List<String> paged = new ArrayList<>(first.items().stream().map(ConsultationResponse::id).toList());
         second.items().forEach(consultation -> paged.add(consultation.id()));
@@ -128,7 +128,7 @@ class ConsultationPagesPostgresTests {
                 "confirmed", 3L, "classified", 2L, "unrouted", 2L, "new", 2L));
         for (String stage : List.of("diagnostics", "rejected", "abandoned", "scheduled", "confirmed", "classified",
                 "unrouted", "new")) {
-            assertThat(repository.consultationsForTenant(TENANT, stage, null, 50).items())
+            assertThat(repository.consultationsForTenant(TENANT, stage, null, null, 50).items())
                     .as(stage)
                     .isNotEmpty()
                     .allSatisfy(consultation -> assertThat(consultation.stage()).isEqualTo(stage));
@@ -142,12 +142,39 @@ class ConsultationPagesPostgresTests {
         String middle = save("LLM_FAILED", START.plusSeconds(120)).id();
         String newest = save("LLM_FAILED", START.plusSeconds(180)).id();
 
-        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, "unrouted", null, 2);
-        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, "unrouted", first.nextCursor(), 2);
+        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, "unrouted", null, null, 2);
+        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, "unrouted", null, first.nextCursor(), 2);
 
         assertThat(first.items()).extracting(ConsultationResponse::id).containsExactly(newest, middle);
         assertThat(second.items()).extracting(ConsultationResponse::id).containsExactly(oldest);
         assertThat(second.nextCursor()).isNull();
+    }
+
+    // Bandeja's search box: the whole firm, not just the loaded pages, by client, mail, id or summary.
+    @Test
+    void searchRunsInTheDatabaseWithTheStageAndPagesTheSameWay() {
+        String byName = save("LLM_FAILED", START, "Perez Gomez", "ana@example.com", "Contrato").id();
+        String byMail = save("LLM_FAILED", START.plusSeconds(60), "Ana", "PEREZ@firma.co", "Contrato").id();
+        String bySummary = save("LLM_FAILED", START.plusSeconds(120), "Ana", "ana@example.com", "Despido de perez").id();
+        save("RECEIVED", START.plusSeconds(180), "Perez", "ana@example.com", "Contrato");
+        save("LLM_FAILED", START.plusSeconds(240), "Ana", "ana@example.com", "Contrato");
+        String byId = save("LLM_FAILED", START.plusSeconds(300), "Ana", "ana@example.com", "Contrato").id();
+
+        Page<ConsultationResponse> first = repository.consultationsForTenant(TENANT, "unrouted", " pErEz ", null, 2);
+        Page<ConsultationResponse> second = repository.consultationsForTenant(TENANT, "unrouted", " pErEz ", first.nextCursor(), 2);
+
+        assertThat(first.items()).extracting(ConsultationResponse::id).containsExactly(bySummary, byMail);
+        assertThat(second.items()).extracting(ConsultationResponse::id).containsExactly(byName);
+        assertThat(second.nextCursor()).isNull();
+        assertThat(repository.consultationsForTenant(TENANT, null, byId.substring(0, 8), null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(byId);
+        assertThat(repository.consultationsForTenant(TENANT, null, "100%", null, 50).items()).isEmpty();
+    }
+
+    private ConsultationResponse save(String status, Instant createdAt, String clientName, String clientEmail, String summary) {
+        return repository.saveConsultation(TENANT, new ConsultationResponse(UUID.randomUUID().toString(), TENANT,
+                clientName, clientEmail, summary, null, status, "NORMAL", null, null, null, null, null,
+                null, createdAt));
     }
 
     private ConsultationResponse save(String status, Instant createdAt) {

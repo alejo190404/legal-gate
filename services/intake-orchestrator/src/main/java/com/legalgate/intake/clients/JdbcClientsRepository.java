@@ -24,11 +24,9 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 @Repository
 @ConditionalOnProperty(name = "legalgate.intake.persistence", havingValue = "jdbc")
@@ -70,12 +68,8 @@ class JdbcClientsRepository implements ClientsRepository {
         }
         if (cursor != null) {
             List<String> after = Page.sortKey(cursor, 2);
-            UUID afterId = uuid(after.get(1));
-            if (afterId == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-            }
             sql.append(" and (lower(c.name), c.id) > (lower(?), ?)");
-            args.addAll(List.of(after.get(0), afterId));
+            args.addAll(List.of(after.get(0), Page.uuid(after.get(1))));
         }
         sql.append(" order by lower(c.name), c.id limit ?");
         args.add(limit + 1);

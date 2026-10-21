@@ -248,7 +248,7 @@ class DiagnosticsTests {
                 reply(pending, "El 3 de marzo.", "<m-7-reply@example.com>"));
 
         assertThat(afterReply.id()).isEqualTo(pending.id());
-        assertThat(repository.consultationsForTenant(TENANT, null, null, 50).items()).hasSize(1);
+        assertThat(repository.consultationsForTenant(TENANT, null, null, null, 50).items()).hasSize(1);
         // The transcript keeps the letter that went out, not the model's bare question.
         assertThat(sent).contains("Fecha?").contains("Cordialmente,");
         assertThat(transcript(pending))
@@ -271,7 +271,7 @@ class DiagnosticsTests {
         classifier.verdicts.add(verdict("ask", "Fecha?", "Falta la fecha.", "Despido sin fecha."));
         diagnostics.processDueDiagnostics();
 
-        assertThat(repository.consultationsForTenant(TENANT, null, null, 50).items())
+        assertThat(repository.consultationsForTenant(TENANT, null, null, null, 50).items())
                 .singleElement()
                 .extracting(ConsultationResponse::diagnosticsSummary)
                 .isEqualTo("Despido sin fecha.");
@@ -322,7 +322,7 @@ class DiagnosticsTests {
         diagnostics.expireSilentDiagnostics();
 
         assertThat(reload(pending).status()).isEqualTo("DIAGNOSTICS_ABANDONED");
-        assertThat(repository.consultationsForTenant(TENANT, null, null, 50).items()).hasSize(1);
+        assertThat(repository.consultationsForTenant(TENANT, null, null, null, 50).items()).hasSize(1);
     }
 
     @Test

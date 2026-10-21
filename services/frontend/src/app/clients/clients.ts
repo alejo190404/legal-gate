@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
 import { PixelIconComponent } from '../console/pixel-icon';
+import { Page } from '../page';
 
 export interface Lawyer {
   id: string | null;
@@ -27,12 +28,6 @@ export interface Client {
   openActivities: number;
   createdAt: string;
   updatedAt: string;
-}
-
-/** A page of a cursor-paged list; pass nextCursor back as ?cursor= for the page after it. */
-export interface Page<T> {
-  items: T[];
-  nextCursor: string | null;
 }
 
 export interface HistoryEntry {
@@ -261,14 +256,17 @@ export class ClientsComponent implements OnInit {
     this.fetch(null);
   }
 
+  // A search still waiting on the debounce wins: its first page replaces the list rather than the
+  // old search's cursor being sent with the new query.
   loadMore(): void {
-    this.fetch(this.nextCursor());
+    this.fetch(this.searchTimer === undefined ? this.nextCursor() : null);
   }
 
   // Only the newest listing counts: a pending search is dropped and an in-flight answer cancelled,
   // so a slow answer to an older search, or a page of it, never lands on the newer one.
   private fetch(cursor: string | null): void {
     clearTimeout(this.searchTimer);
+    this.searchTimer = undefined;
     this.listing?.unsubscribe();
     let params = new HttpParams();
     if (this.query().trim()) {

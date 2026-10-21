@@ -113,6 +113,20 @@ describe('ClientsComponent', () => {
     expect(component.clients().map((c) => c.name)).toEqual(['Beta']);
   });
 
+  it('runs a search still waiting on the debounce when Cargar más is clicked, instead of paging the old one', () => {
+    vi.useFakeTimers();
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: 'after-acme' });
+    fixture.detectChanges();
+
+    component.search('beta');
+    loadMoreButton(fixture)!.click();
+    http.expectOne('/api/clients?q=beta').flush({ items: [client({ id: 'client-2', name: 'Beta' })], nextCursor: null });
+    vi.advanceTimersByTime(300);
+    http.expectNone((request) => request.url === '/api/clients');
+    expect(component.clients().map((c) => c.name)).toEqual(['Beta']);
+  });
+
   it('opens a linked Client and highlights its Activity without looking for it in the list', () => {
     const fixture = TestBed.createComponent(ClientsComponent);
     fixture.componentRef.setInput('openClientId', 'client-77');

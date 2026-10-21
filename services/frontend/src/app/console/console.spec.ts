@@ -36,7 +36,10 @@ describe('ConsoleComponent session + billing flow', () => {
     }).compileComponents();
   });
 
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => {
+    vi.useRealTimers();
+    TestBed.inject(HttpTestingController).verify();
+  });
 
   it('restores an organization session and only calls tenant-neutral APIs', () => {
     user.set({ id: 'user_1', email: 'admin@firma.test' });
@@ -627,13 +630,13 @@ describe('ConsoleComponent session + billing flow', () => {
         stageCounts: { rejected: 3, scheduled: 120 },
       });
 
-      expect(component.statusCount('all')).toBe(123);
-      expect(component.statusCount('scheduled')).toBe(120);
-      expect(component.statusCount('rejected')).toBe(3);
-      expect(component.statusCount('new')).toBe(0);
+      expect(component.stageCount('all')).toBe(123);
+      expect(component.stageCount('scheduled')).toBe(120);
+      expect(component.stageCount('rejected')).toBe(3);
+      expect(component.stageCount('new')).toBe(0);
       expect(component.navCount('inbox')).toBe(123);
-      expect(component.statusLabel(component.filteredConsultations()[0])).toBe('Rechazado');
-      expect(component.badgeClass(component.filteredConsultations()[0])).toBe('badge st-rejected');
+      expect(component.stageLabel(component.consultations()[0])).toBe('Rechazado');
+      expect(component.badgeClass(component.consultations()[0])).toBe('badge st-rejected');
     });
 
     it('"Cargar más" appends the next page and disappears after the last', () => {
@@ -647,8 +650,8 @@ describe('ConsoleComponent session + billing flow', () => {
       http.expectOne(listRequest({ cursor: 'cursor-1' })).flush({ items: [consultation('c-1')], nextCursor: null });
       fixture.detectChanges();
 
-      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
-      expect(component.statusCount('all')).toBe(2);
+      expect(component.consultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
+      expect(component.stageCount('all')).toBe(2);
       expect(loadMoreButton()).toBeUndefined();
     });
 
@@ -658,7 +661,7 @@ describe('ConsoleComponent session + billing flow', () => {
         stageCounts: { new: 1, scheduled: 70 },
       });
 
-      component.setInboxFilter('scheduled');
+      component.setStageFilter('scheduled');
       http.expectOne(listRequest({ stage: 'scheduled' })).flush({
         items: [consultation('c-2', 'scheduled')], nextCursor: 'cursor-scheduled', stageCounts: { new: 1, scheduled: 70 },
       });
@@ -666,11 +669,59 @@ describe('ConsoleComponent session + billing flow', () => {
       http.expectOne(listRequest({ stage: 'scheduled', cursor: 'cursor-scheduled' })).flush({
         items: [consultation('c-1', 'scheduled')], nextCursor: null,
       });
-      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
+      expect(component.consultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
 
-      component.setInboxFilter('all');
+      component.setStageFilter('all');
       http.expectOne(listRequest({})).flush({ items: [consultation('c-3')], nextCursor: null, stageCounts: { new: 1 } });
-      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-3']);
+      expect(component.consultations().map((c) => c.id)).toEqual(['c-3']);
+    });
+
+    it('searches the whole firm on the server once typing pauses, within the chosen Stage, from the first page', () => {
+      vi.useFakeTimers();
+      const { http, component } = openBandeja({
+        items: [consultation('c-2')], nextCursor: 'cursor-all', stageCounts: { new: 2, unrouted: 9 },
+      });
+      component.setStageFilter('unrouted');
+      http.expectOne(listRequest({ stage: 'unrouted' })).flush({
+        items: [consultation('c-u2', 'unrouted')], nextCursor: 'cursor-unrouted', stageCounts: { new: 2, unrouted: 9 },
+      });
+
+      component.searchInbox('pe');
+      component.searchInbox(' perez ');
+      vi.advanceTimersByTime(299);
+      http.expectNone(listRequest({ stage: 'unrouted', q: 'perez' }));
+      vi.advanceTimersByTime(1);
+      // The server matched it on a field this page never had loaded: the search is not over loaded rows.
+      http.expectOne(listRequest({ stage: 'unrouted', q: 'perez' })).flush({
+        items: [consultation('c-u9', 'unrouted')], nextCursor: 'cursor-perez', stageCounts: { new: 2, unrouted: 9 },
+      });
+      expect(component.consultations().map((c) => c.id)).toEqual(['c-u9']);
+
+      component.loadMore();
+      http.expectOne(listRequest({ stage: 'unrouted', q: 'perez', cursor: 'cursor-perez' })).flush({
+        items: [consultation('c-u1', 'unrouted')], nextCursor: 'cursor-perez-2',
+      });
+      expect(component.consultations().map((c) => c.id)).toEqual(['c-u9', 'c-u1']);
+
+      // A search still waiting on the debounce wins over Cargar más.
+      component.searchInbox('gomez');
+      component.loadMore();
+      http.expectOne(listRequest({ stage: 'unrouted', q: 'gomez' })).flush({ items: [], nextCursor: null });
+      vi.advanceTimersByTime(300);
+      expect(component.consultations()).toEqual([]);
+    });
+
+    it("drops the old Stage's rows on a chip change, so a failed first page can't page on into them", () => {
+      const { fixture, http, component } = openBandeja({
+        items: [consultation('c-2')], nextCursor: 'cursor-all', stageCounts: { new: 2, scheduled: 1 },
+      });
+
+      component.setStageFilter('scheduled');
+      http.expectOne(listRequest({ stage: 'scheduled' })).flush({ error: 'boom' }, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect(component.consultations()).toEqual([]);
+      expect(component.nextCursor()).toBeNull();
     });
 
     it('opens a Consultation that is not on a loaded page', () => {
@@ -681,7 +732,7 @@ describe('ConsoleComponent session + billing flow', () => {
       http.expectOne('/api/consultations/c-old/diagnostics').flush(null, { status: 404, statusText: 'Not Found' });
 
       expect(component.selectedConsultation()?.id).toBe('c-old');
-      expect(component.statusLabel(component.selectedConsultation()!)).toBe('Agendado');
+      expect(component.stageLabel(component.selectedConsultation()!)).toBe('Agendado');
     });
   });
 });
