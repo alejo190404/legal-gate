@@ -136,6 +136,69 @@ class IntakeOrchestratorApplicationTests {
                         .header("X-LegalGate-Organization-Id", "org_stage")
                         .header("X-LegalGate-Role", "firm_admin"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.consultations[0].stage").value("diagnostics"));
+                .andExpect(jsonPath("$.items[0].stage").value("diagnostics"));
+    }
+
+    @Test
+    void bandejaComesFiftyAtATimeAndItsFirstPageCountsEveryStage() throws Exception {
+        firm("bandeja");
+        for (int minute = 0; minute < 51; minute++) {
+            saveConsultation("bandeja", "c-new-" + minute, "RECEIVED", Instant.parse("2026-10-01T10:00:00Z").plusSeconds(60L * minute));
+        }
+        saveConsultation("bandeja", "c-diag", "DIAGNOSTICS_PENDING", Instant.parse("2026-09-01T10:00:00Z"));
+
+        String nextCursor = com.jayway.jsonpath.JsonPath.read(asFirm(get("/api/consultations"), "bandeja")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(50))
+                .andExpect(jsonPath("$.items[0].id").value("c-new-50"))
+                .andExpect(jsonPath("$.stageCounts.new").value(51))
+                .andExpect(jsonPath("$.stageCounts.diagnostics").value(1))
+                .andReturn().getResponse().getContentAsString(), "$.nextCursor");
+
+        asFirm(get("/api/consultations").param("cursor", nextCursor), "bandeja")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].id").value(org.hamcrest.Matchers.contains("c-new-0", "c-diag")))
+                .andExpect(jsonPath("$.nextCursor").doesNotExist())
+                .andExpect(jsonPath("$.stageCounts").doesNotExist());
+        asFirm(get("/api/consultations").param("stage", "diagnostics"), "bandeja")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].id").value(org.hamcrest.Matchers.contains("c-diag")));
+        asFirm(get("/api/consultations").param("cursor", "not-a-cursor"), "bandeja")
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void aConsultationOpensByIdWhetherOrNotItIsOnALoadedPage() throws Exception {
+        firm("directa");
+        saveConsultation("directa", "c-directa", "RECEIVED", Instant.parse("2026-10-01T10:00:00Z"));
+
+        asFirm(get("/api/consultations/c-directa"), "directa")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("c-directa"))
+                .andExpect(jsonPath("$.stage").value("new"));
+        asFirm(get("/api/consultations/c-missing"), "directa")
+                .andExpect(status().isNotFound());
+    }
+
+    private void firm(String name) {
+        TenantProvisioning pending = repository.startTenantProvisioning(
+                "user_" + name, "Firma " + name, "firma-" + name, "firma-" + name + "@intake.legal-gate.co");
+        repository.activateTenantProvisioning(pending.id(), pending.slug(), "org_" + name);
+    }
+
+    private void saveConsultation(String name, String id, String status, Instant createdAt) {
+        repository.saveConsultation("firma-" + name, new ConsultationResponse(id, "firma-" + name, "Ana",
+                "ana@example.com", "Contrato", null, status, "NORMAL", null, null, null, null,
+                null, null, createdAt), List.of());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions asFirm(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, String name) throws Exception {
+        return mockMvc.perform(request
+                .header("X-LegalGate-Service-Token", SERVICE_TOKEN)
+                .header("X-LegalGate-User-Id", "user_" + name)
+                .header("X-LegalGate-Session-Id", "session_" + name)
+                .header("X-LegalGate-Organization-Id", "org_" + name)
+                .header("X-LegalGate-Role", "firm_admin"));
     }
 }

@@ -45,7 +45,7 @@ class ClientMailTests extends ClientsSeam {
         router.receive(mail("GC@Acme.co", "Acme <gc@acme.co>", "<c-1@acme.co>"));
         clientMail.processDueClientMail();
 
-        assertThat(intake.consultationsForTenant(TENANT).consultations()).isEmpty();
+        assertThat(intake.consultationsForTenant(TENANT, null, null, 50).items()).isEmpty();
         assertThat(queued()).extracting(NotificationOutboxItem::type)
                 .containsExactlyInAnyOrder("CLIENT_MAIL_FORWARD", "CLIENT_RECEIPT")
                 .doesNotContain("NON_ENGAGEMENT_NOTICE");
@@ -57,7 +57,7 @@ class ClientMailTests extends ClientsSeam {
 
         router.receive(mail("ceo@acme.co", "CEO <ceo@acme.co>", "<c-2@acme.co>"));
 
-        assertThat(intake.consultationsForTenant(TENANT).consultations()).isEmpty();
+        assertThat(intake.consultationsForTenant(TENANT, null, null, 50).items()).isEmpty();
         assertThat(clients.correspondence(TENANT, acme.id())).hasSize(1);
     }
 

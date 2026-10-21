@@ -37,6 +37,7 @@ import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.mail.InboundEmailReceived;
 import com.legalgate.intake.model.ClassificationResult;
 import com.legalgate.intake.model.ConsultationListResponse;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.CreateConsultationRequest;
 import com.legalgate.intake.model.EventResponse;
@@ -213,8 +214,18 @@ public class IntakeService {
         );
     }
 
-    public ConsultationListResponse consultationsForTenant(String tenantId) {
-        return intakeRepository.consultationsForTenant(tenantId);
+    static final int PAGE_SIZE = 50;
+
+    /** A page of Bandeja, newest first; {@code cursor} is the previous page's nextCursor, null for the first. */
+    public ConsultationListResponse consultationsForTenant(String tenantId, String stage, String cursor) {
+        Page<ConsultationResponse> page = intakeRepository.consultationsForTenant(tenantId, stage, cursor, PAGE_SIZE);
+        return new ConsultationListResponse(page.items(), page.nextCursor(),
+                cursor == null ? intakeRepository.stageCounts(tenantId) : null);
+    }
+
+    public ConsultationResponse consultation(String tenantId, String consultationId) {
+        return intakeRepository.consultationById(tenantId, consultationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "consultation_not_found"));
     }
 
     /**

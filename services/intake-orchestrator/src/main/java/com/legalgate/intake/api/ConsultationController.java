@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -50,10 +51,22 @@ public class ConsultationController {
 
     @GetMapping("/api/consultations")
     public ConsultationListResponse consultationsForTenant(
-            @RequestHeader("X-LegalGate-Organization-Id") String organizationId
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @RequestParam(required = false) String stage,
+            @RequestParam(required = false) String cursor
     ) {
         String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
-        return intakeService.consultationsForTenant(tenantId);
+        return intakeService.consultationsForTenant(tenantId, stage, cursor);
+    }
+
+    /** One Consultation, for opening it directly when it is not on a loaded Bandeja page. */
+    @GetMapping("/api/consultations/{consultationId}")
+    public ConsultationResponse consultation(
+            @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
+            @PathVariable String consultationId
+    ) {
+        String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
+        return intakeService.consultation(tenantId, consultationId);
     }
 
     /** The transcript, verdict, reason and Prompt snapshot behind one Consultation's Diagnostics. */

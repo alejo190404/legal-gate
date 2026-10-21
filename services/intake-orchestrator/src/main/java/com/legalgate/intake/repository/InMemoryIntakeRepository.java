@@ -1,6 +1,6 @@
 package com.legalgate.intake.repository;
 
-import com.legalgate.intake.model.ConsultationListResponse;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.DiagnosticsMessage;
 import com.legalgate.intake.model.DiagnosticsSession;
@@ -12,11 +12,14 @@ import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
@@ -177,9 +180,34 @@ class InMemoryIntakeRepository implements IntakeRepository {
     }
 
     @Override
-    public ConsultationListResponse consultationsForTenant(String tenantSlug) {
-        return new ConsultationListResponse(tenantSlug, consultationsByTenant.getOrDefault(tenantSlug, List.of())
-                .stream().map(this::withDiagnosticsSummary).toList());
+    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit) {
+        Comparator<ConsultationResponse> newestFirst = Comparator.comparing(ConsultationResponse::createdAt)
+                .thenComparing(ConsultationResponse::id).reversed();
+        List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
+        ConsultationResponse afterRow = after == null ? null : new ConsultationResponse(after.get(1), tenantSlug,
+                null, null, null, null, null, null, null, null, null, null, null, null, cursorInstant(after.get(0)));
+        List<ConsultationResponse> rows = consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+                .filter(consultation -> stage == null || stage.equals(consultation.stage()))
+                .filter(consultation -> afterRow == null || newestFirst.compare(consultation, afterRow) > 0)
+                .sorted(newestFirst)
+                .limit(limit + 1L)
+                .map(this::withDiagnosticsSummary)
+                .toList();
+        return Page.of(rows, limit, consultation -> List.of(consultation.createdAt().toString(), consultation.id()));
+    }
+
+    @Override
+    public Map<String, Long> stageCounts(String tenantSlug) {
+        return consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
+                .collect(Collectors.groupingBy(ConsultationResponse::stage, Collectors.counting()));
+    }
+
+    private static Instant cursorInstant(String value) {
+        try {
+            return Instant.parse(value);
+        } catch (java.time.format.DateTimeParseException malformed) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
+        }
     }
 
     /** The JDBC repository joins this in; here the session map stands in for the join. */

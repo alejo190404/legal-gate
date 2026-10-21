@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legalgate.intake.classifier.ConsultationClassifierRequest;
 import com.legalgate.intake.model.ClassificationResult;
-import com.legalgate.intake.model.ConsultationListResponse;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.DiagnosticsMessage;
 import com.legalgate.intake.model.DiagnosticsSession;
@@ -22,7 +22,10 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Time;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -298,13 +301,16 @@ class JdbcIntakeRepository implements IntakeRepository {
 
     @Override
     public Optional<ConsultationResponse> consultationById(String tenantSlug, String consultationId) {
-        if (consultationId == null || consultationId.isBlank()) {
-            return Optional.empty();
+        UUID id;
+        try {
+            id = UUID.fromString(consultationId);
+        } catch (IllegalArgumentException | NullPointerException notAnId) {
+            return Optional.empty(); // the console may open any id it was linked to
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.id = ?",
-                            this::mapConsultation, tenantSlug, UUID.fromString(consultationId))
+                            this::mapConsultation, tenantSlug, id)
                     .stream()
                     .findFirst();
         });
@@ -527,17 +533,88 @@ class JdbcIntakeRepository implements IntakeRepository {
         return value == null ? null : value.toInstant();
     }
 
+    /**
+     * ConsultationResponse.stage() in SQL, over consultations c, events e and lawyers l, so Bandeja can
+     * filter and count by Stage in the database. Change both together: ConsultationPagesPostgresTests
+     * runs every Stage rule through each.
+     */
+    private static final String STAGE_SQL = """
+            (case
+               when upper(coalesce(c.status, '')) = 'DIAGNOSTICS_PENDING' then 'diagnostics'
+               when upper(coalesce(c.status, '')) = 'DIAGNOSTICS_REJECTED' then 'rejected'
+               when upper(coalesce(c.status, '')) = 'DIAGNOSTICS_ABANDONED' then 'abandoned'
+               when e.scheduled_start is not null then
+                 case when e.scheduled_within_sla is true
+                        or upper(coalesce(e.status, '')) like '%CONFIRM%'
+                        or upper(coalesce(c.status, '')) like '%CONFIRM%'
+                      then 'confirmed' else 'scheduled' end
+               when coalesce(l.display_name, '') <> '' or coalesce(l.email, '') <> ''
+                    or coalesce(c.assigned_lawyer_email, '') <> '' then 'classified'
+               when (c.classification ->> 'confidence')::numeric < 0.5 then 'unrouted'
+               when upper(coalesce(c.status, '')) like '%UNROUT%'
+                    or upper(coalesce(c.status, '')) like '%FAIL%' then 'unrouted'
+               else 'new'
+             end)""";
+
     @Override
-    public ConsultationListResponse consultationsForTenant(String tenantSlug) {
+    public Map<String, Long> stageCounts(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            List<ConsultationResponse> consultations = jdbcTemplate.query(
-                    consultationSelect() + " where t.slug = ? order by c.created_at asc",
-                    this::mapConsultation,
-                    tenantSlug
-            );
-            return new ConsultationListResponse(tenantSlug, consultations);
+            Map<String, Long> counts = new HashMap<>();
+            jdbcTemplate.query("select " + STAGE_SQL + """
+                     as stage, count(*) as total
+                    from consultations c
+                    join tenants t on t.id = c.tenant_id
+                    left join events e on e.id = c.event_id
+                    left join lawyers l on l.id = e.lawyer_id
+                    where t.slug = ?
+                    group by 1
+                    """, row -> {
+                counts.put(row.getString("stage"), row.getLong("total"));
+            }, tenantSlug);
+            return counts;
         });
+    }
+
+    // Keyset on (created_at, id), newest first: a Consultation arriving mid-paging sorts before the
+    // cursor, so later pages neither skip nor repeat anything.
+    @Override
+    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit) {
+        StringBuilder sql = new StringBuilder(consultationSelect()).append(" where t.slug = ?");
+        List<Object> args = new ArrayList<>(List.of(tenantSlug));
+        if (stage != null) {
+            sql.append(" and ").append(STAGE_SQL).append(" = ?");
+            args.add(stage);
+        }
+        if (cursor != null) {
+            List<String> after = Page.sortKey(cursor, 2);
+            sql.append(" and (c.created_at, c.id) < (?, ?)");
+            args.add(cursorTimestamp(after.get(0)));
+            args.add(cursorId(after.get(1)));
+        }
+        sql.append(" order by c.created_at desc, c.id desc limit ?");
+        args.add(limit + 1);
+        return transactionTemplate.execute(status -> {
+            setTenantContext(tenantSlug);
+            return Page.of(jdbcTemplate.query(sql.toString(), this::mapConsultation, args.toArray()), limit,
+                    consultation -> List.of(consultation.createdAt().toString(), consultation.id()));
+        });
+    }
+
+    private static Timestamp cursorTimestamp(String value) {
+        try {
+            return Timestamp.from(Instant.parse(value));
+        } catch (java.time.format.DateTimeParseException malformed) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
+        }
+    }
+
+    private static UUID cursorId(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException malformed) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
+        }
     }
 
     @Override
