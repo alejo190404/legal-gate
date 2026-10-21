@@ -1,5 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Component, ElementRef, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
@@ -185,6 +187,9 @@ const FIELD_LABELS: Record<string, string> = {
 export class ClientsComponent implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly apiConfig = inject(ApiConfigService);
+  private readonly destroyRef = inject(DestroyRef);
+  private searchTimer?: ReturnType<typeof setTimeout>;
+  private listing?: Subscription;
 
   readonly lawyers = input<Lawyer[]>([]);
   /** A Client to open on arrival, e.g. from a Consultation's Engagement. */
@@ -224,6 +229,7 @@ export class ClientsComponent implements OnInit {
   readonly activeLawyers = computed(() => this.lawyers().filter((lawyer) => lawyer.active && lawyer.id));
 
   ngOnInit(): void {
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchTimer));
     this.load();
     this.http.get<ActivityType[]>(this.apiConfig.url('/api/activity-types')).subscribe({
       next: (types) => this.activityTypes.set(types),
@@ -231,7 +237,11 @@ export class ClientsComponent implements OnInit {
     });
   }
 
+  // Only the newest listing counts: a pending search is dropped and an in-flight answer cancelled,
+  // so a slow answer to an older search never overwrites the newer one.
   load(): void {
+    clearTimeout(this.searchTimer);
+    this.listing?.unsubscribe();
     let params = new HttpParams();
     if (this.query().trim()) {
       params = params.set('q', this.query().trim());
@@ -239,26 +249,30 @@ export class ClientsComponent implements OnInit {
     if (this.idleOnly()) {
       params = params.set('idle', 'true');
     }
-    this.http.get<Client[]>(this.apiConfig.url('/api/clients'), { params }).subscribe({
-      next: (clients) => {
-        this.clients.set(clients);
-        this.errorMessage.set('');
-        const wanted = this.openClientId();
-        const client = wanted && !this.selected() ? clients.find((candidate) => candidate.id === wanted) : null;
-        if (client) {
-          this.open(client);
-        } else if (wanted && this.arriving) {
-          this.openClientMissing.emit();
-        }
-        this.arriving = false;
-      },
-      error: () => this.errorMessage.set('No se pudieron cargar los clientes.'),
-    });
+    this.listing = this.http
+      .get<Client[]>(this.apiConfig.url('/api/clients'), { params })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (clients) => {
+          this.clients.set(clients);
+          this.errorMessage.set('');
+          const wanted = this.openClientId();
+          const client = wanted && !this.selected() ? clients.find((candidate) => candidate.id === wanted) : null;
+          if (client) {
+            this.open(client);
+          } else if (wanted && this.arriving) {
+            this.openClientMissing.emit();
+          }
+          this.arriving = false;
+        },
+        error: () => this.errorMessage.set('No se pudieron cargar los clientes.'),
+      });
   }
 
   search(value: string): void {
     this.query.set(value);
-    this.load();
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.load(), 300);
   }
 
   toggleIdle(): void {

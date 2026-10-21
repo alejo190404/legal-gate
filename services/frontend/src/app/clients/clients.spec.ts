@@ -50,7 +50,10 @@ describe('ClientsComponent', () => {
     }).compileComponents();
   });
 
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => {
+    vi.useRealTimers();
+    TestBed.inject(HttpTestingController).verify();
+  });
 
   function setup() {
     const fixture = TestBed.createComponent(ClientsComponent);
@@ -61,7 +64,27 @@ describe('ClientsComponent', () => {
     return { fixture, http, component: fixture.componentInstance };
   }
 
+  it('searches once typing pauses and drops the answer to an older search', () => {
+    vi.useFakeTimers();
+    const { http, component } = setup();
+    http.expectOne('/api/clients').flush([client()]);
+
+    component.search('a');
+    component.search('ac');
+    vi.advanceTimersByTime(299);
+    http.expectNone((request) => request.url === '/api/clients');
+    vi.advanceTimersByTime(1);
+    const older = http.expectOne('/api/clients?q=ac');
+
+    component.search('acme');
+    vi.advanceTimersByTime(300);
+    expect(older.cancelled).toBe(true);
+    http.expectOne('/api/clients?q=acme').flush([client({ name: 'Acme Legal' })]);
+    expect(component.clients().map((c) => c.name)).toEqual(['Acme Legal']);
+  });
+
   it('lists clients and searches and filters them on the server', () => {
+    vi.useFakeTimers();
     const { fixture, http, component } = setup();
     http.expectOne('/api/clients').flush([client()]);
     fixture.detectChanges();
@@ -70,6 +93,7 @@ describe('ClientsComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('gc@acme.co');
 
     component.search('acme');
+    vi.advanceTimersByTime(300);
     http.expectOne('/api/clients?q=acme').flush([client()]);
     component.toggleIdle();
     http.expectOne('/api/clients?q=acme&idle=true').flush([]);
