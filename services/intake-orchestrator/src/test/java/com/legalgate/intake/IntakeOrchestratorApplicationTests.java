@@ -8,9 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.ClerkClient;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -116,5 +118,24 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(status().isBadGateway())
                 .andExpect(result -> assertThat(((ResponseStatusException) result.getResolvedException()).getReason())
                         .isEqualTo("auth_provisioning_failed"));
+    }
+
+    @Test
+    void theConsultationListCarriesEachConsultationsStage() throws Exception {
+        TenantProvisioning pending = repository.startTenantProvisioning(
+                "user_stage", "Firma Stage", "firma-stage", "firma-stage@intake.legal-gate.co");
+        repository.activateTenantProvisioning(pending.id(), pending.slug(), "org_stage");
+        repository.saveConsultation("firma-stage", new ConsultationResponse("c-stage", "firma-stage", "Ana",
+                "ana@example.com", "Contrato", null, "DIAGNOSTICS_PENDING", "NORMAL", null, null, null, null,
+                null, null, Instant.parse("2026-10-01T10:00:00Z")), List.of());
+
+        mockMvc.perform(get("/api/consultations")
+                        .header("X-LegalGate-Service-Token", SERVICE_TOKEN)
+                        .header("X-LegalGate-User-Id", "user_stage")
+                        .header("X-LegalGate-Session-Id", "session_stage")
+                        .header("X-LegalGate-Organization-Id", "org_stage")
+                        .header("X-LegalGate-Role", "firm_admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consultations[0].stage").value("diagnostics"));
     }
 }
