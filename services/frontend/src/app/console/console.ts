@@ -317,6 +317,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   /** The Consultation whose detail is open when it isn't on a loaded page. */
   private readonly openedConsultation = signal<Consultation | null>(null);
   private listing?: Subscription;
+  private searchTimer?: ReturnType<typeof setTimeout>;
   readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
   readonly settingsLoaded = signal(false);
   readonly activeView = signal<ConsoleView>('inbox');
@@ -474,24 +475,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     billing: { crumb: 'Configurar', title: 'Facturacion' },
   };
 
-  readonly filteredConsultations = computed(() => {
-    const filter = this.stageFilter();
-    const query = this.inboxQuery().trim().toLowerCase();
-    let list = this.consultations();
-    if (filter !== 'all') {
-      list = list.filter((consultation) => consultation.stage === filter);
-    }
-    if (query) {
-      list = list.filter((consultation) =>
-        [consultation.clientName, consultation.clientEmail, consultation.id, consultation.summary]
-          .join(' ')
-          .toLowerCase()
-          .includes(query),
-      );
-    }
-    return list;
-  });
-
   readonly selectedConsultation = computed(() => {
     const id = this.selectedConsultationId();
     if (!id) return null;
@@ -526,6 +509,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     // router tears it down while a poll is still pending.
     this.clearBillingReturnPoll();
     this.stopDemoLoop();
+    clearTimeout(this.searchTimer);
   }
 
   register(): void {
@@ -1021,8 +1005,19 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return role === 'CLIENT' ? 'Cliente' : 'LegalGate';
   }
 
+  /** The search box: the server searches the whole firm once typing pauses, from the first page. */
+  searchInbox(value: string): void {
+    this.inboxQuery.set(value);
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.loadConsultations(), 300);
+  }
+
+  // The old Stage's rows and cursor go at once: should the new first page fail, Cargar más must not
+  // page on through the old Stage under the new chip.
   setStageFilter(id: string): void {
     this.stageFilter.set(id);
+    this.consultations.set([]);
+    this.nextCursor.set(null);
     this.loadConsultations();
   }
 
@@ -1104,17 +1099,28 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.fetchConsultations(null);
   }
 
+  // A search still waiting on the debounce wins: its first page replaces the list.
   loadMore(): void {
-    this.fetchConsultations(this.nextCursor());
+    if (this.searchTimer === undefined) {
+      this.fetchConsultations(this.nextCursor());
+    } else {
+      this.loadConsultations();
+    }
   }
 
-  // Only the newest listing counts: switching chips cancels an in-flight page of the previous one.
+  // Only the newest listing counts: switching chips or searching cancels an in-flight page of the
+  // previous listing, and drops a search still waiting to run.
   private fetchConsultations(cursor: string | null): void {
+    clearTimeout(this.searchTimer);
+    this.searchTimer = undefined;
     this.listing?.unsubscribe();
     this.consultationsErrorMessage.set('');
     let params = new HttpParams();
     if (this.stageFilter() !== 'all') {
       params = params.set('stage', this.stageFilter());
+    }
+    if (this.inboxQuery().trim()) {
+      params = params.set('q', this.inboxQuery().trim());
     }
     if (cursor) {
       params = params.set('cursor', cursor);

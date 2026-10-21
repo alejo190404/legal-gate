@@ -618,7 +618,7 @@
               <pixel-icon name="search" [size]="15" />
               <input
                 [ngModel]="inboxQuery()"
-                (ngModelChange)="inboxQuery.set($event)"
+                (ngModelChange)="searchInbox($event)"
                 name="inboxQuery"
                 placeholder="Buscar por cliente, correo o ID…"
                 aria-label="Buscar consultas"
@@ -682,7 +682,7 @@
                     <div class="lg-h4">Cargando consultas…</div>
                     <div class="lg-small">Trayendo la bandeja desde el servicio de intake.</div>
                   </div>
-                } @else if (!filteredConsultations().length) {
+                } @else if (!consultations().length) {
                   <div class="empty">
                     <pixel-icon name="inbox" [size]="48" color="var(--stone-300)" />
                     <div class="lg-h4">No hay consultas en esta vista</div>
@@ -693,7 +693,7 @@
                   </div>
                 } @else {
                   <div class="list">
-                    @for (c of filteredConsultations(); track c.id) {
+                    @for (c of consultations(); track c.id) {
                       <button
                         class="lead"
                         type="button"
