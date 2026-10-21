@@ -578,4 +578,46 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(component.billingError()).toBe('');
     expect(component.view()).toBe('console');
   });
+
+  it('sorts Bandeja by the Stage each Consultation reports', () => {
+    user.set({ id: 'user_1', email: 'admin@firma.test' });
+    hasOrganization.set(true);
+    const fixture = TestBed.createComponent(ConsoleComponent);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http.expectOne('/api/session').flush({
+      userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
+      displayName: 'Firma 1', role: 'firm_admin',
+    });
+    http.expectOne('/api/billing/subscription').flush({
+      billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
+      subscription: null, payments: [], accessEndsAt: null, message: '',
+    });
+    // Nothing in these fields says rejected or scheduled; only the reported Stage does.
+    const consultation = (id: string, stage: string) => ({
+      id, tenantId: 'firma-1', clientName: 'Ana', clientEmail: 'ana@example.com', summary: 'Contrato',
+      preferredWindow: null, status: 'RECEIVED', urgency: 'NORMAL', consultationType: null,
+      assignedLawyerEmail: null, classification: null, notifications: null, sourceEventId: null,
+      sourceMessageId: null, createdAt: '2026-10-01T10:00:00Z', eventId: null, event: null,
+      diagnosticsSummary: null, stage,
+    });
+    http.expectOne('/api/consultations').flush({
+      tenantId: 'firma-1',
+      consultations: [consultation('c-1', 'rejected'), consultation('c-2', 'scheduled'), consultation('c-3', 'scheduled')],
+    });
+    http.expectOne('/api/tenant/settings').flush({
+      tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: [],
+      destinationEmail: null, intakeEmail: 'firma-1@intake.legal-gate.co', routingRules: [], lawyers: [],
+    });
+    const component = fixture.componentInstance;
+
+    expect(component.statusCount('all')).toBe(3);
+    expect(component.statusCount('scheduled')).toBe(2);
+    expect(component.statusCount('rejected')).toBe(1);
+    expect(component.statusCount('new')).toBe(0);
+    component.inboxFilter.set('rejected');
+    expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-1']);
+    expect(component.statusLabel(component.filteredConsultations()[0])).toBe('Rechazado');
+    expect(component.badgeClass(component.filteredConsultations()[0])).toBe('badge st-rejected');
+  });
 });

@@ -73,6 +73,8 @@ interface Consultation {
   eventId: string | null;
   event: EventDetails | null;
   diagnosticsSummary: string | null;
+  /** Where the Consultation stands in the firm's workflow, as the server derives it. */
+  stage: string;
 }
 
 interface ConsultationListResponse {
@@ -468,7 +470,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     const query = this.inboxQuery().trim().toLowerCase();
     let list = this.consultations();
     if (filter !== 'all') {
-      list = list.filter((consultation) => this.statusKey(consultation) === filter);
+      list = list.filter((consultation) => consultation.stage === filter);
     }
     if (query) {
       list = list.filter((consultation) =>
@@ -991,47 +993,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   statusCount(id: string): number {
     const all = this.consultations();
-    return id === 'all' ? all.length : all.filter((consultation) => this.statusKey(consultation) === id).length;
-  }
-
-  // Derive one of the design-system workflow stages from the real consultation
-  // fields (event schedule + assignment + classification confidence).
-  statusKey(consultation: Consultation): string {
-    const event = consultation.event;
-    const eventStatus = (event?.status ?? '').toUpperCase();
-    const consultationStatus = (consultation.status ?? '').toUpperCase();
-    // Diagnostics states are authoritative: these consultations have no event by design.
-    if (consultationStatus === 'DIAGNOSTICS_PENDING') {
-      return 'diagnostics';
-    }
-    if (consultationStatus === 'DIAGNOSTICS_REJECTED') {
-      return 'rejected';
-    }
-    if (consultationStatus === 'DIAGNOSTICS_ABANDONED') {
-      return 'abandoned';
-    }
-    if (event?.scheduledStart) {
-      return event.scheduledWithinSla === true ||
-        eventStatus.includes('CONFIRM') ||
-        consultationStatus.includes('CONFIRM')
-        ? 'confirmed'
-        : 'scheduled';
-    }
-    if (event?.lawyerDisplayName || event?.lawyerEmail || consultation.assignedLawyerEmail) {
-      return 'classified';
-    }
-    const confidence = consultation.classification?.confidence;
-    if (confidence != null && confidence < 0.5) {
-      return 'unrouted';
-    }
-    if (consultationStatus.includes('UNROUT') || consultationStatus.includes('FAIL')) {
-      return 'unrouted';
-    }
-    return 'new';
+    return id === 'all' ? all.length : all.filter((consultation) => consultation.stage === id).length;
   }
 
   badgeClass(consultation: Consultation): string {
-    return 'badge st-' + this.statusKey(consultation);
+    return 'badge st-' + consultation.stage;
   }
 
   statusLabel(consultation: Consultation): string {
@@ -1045,7 +1011,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         unrouted: 'Sin ruta',
         rejected: 'Rechazado',
         abandoned: 'Sin respuesta',
-      }[this.statusKey(consultation)] ?? 'Nuevo'
+      }[consultation.stage] ?? 'Nuevo'
     );
   }
 
