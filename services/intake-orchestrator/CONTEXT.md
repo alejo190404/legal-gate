@@ -6,6 +6,11 @@ Ubiquitous language for the intake context. Glossary only: no implementation det
 
 A potential client's legal matter as it enters a firm. Created from an inbound email to the firm's intake address, or entered directly in the console by firm staff.
 
+## Stage
+
+Where a Consultation stands in the firm's workflow: under Diagnostics, new, classified, scheduled, confirmed, unrouted, rejected or abandoned. Derived from the Consultation's status, its Event, its assignment and its Classification; never recorded on its own. It is what the firm sorts its incoming matters by.
+_Avoid_: status (the recorded state a Stage is derived from), inbox state
+
 ## Diagnostics
 
 The exchange that happens **before** a Consultation is worth scheduling: LegalGate replies to the potential client, asks for what the firm needs to assess the matter, and decides whether the matter is one the firm takes.
