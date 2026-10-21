@@ -1,8 +1,9 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { ApiConfigService } from '../config/api-config.service';
-import { Client, ClientForm, Lawyer, blankClientForm, clientErrorMessage, clientPayload } from './clients';
+import { Client, ClientForm, Lawyer, Page, blankClientForm, clientErrorMessage, clientPayload } from './clients';
 
 interface Engagement {
   consultationId: string;
@@ -32,6 +33,7 @@ export class EngagementComponent {
 
   readonly engagement = signal<Engagement | null>(null);
   readonly clients = signal<Client[]>([]);
+  private finding?: Subscription;
   readonly isOpen = signal(false);
   readonly mode = signal<'new' | 'existing'>('new');
   readonly existingClientId = signal('');
@@ -61,13 +63,22 @@ export class EngagementComponent {
       contactAddresses: draft?.contactAddresses.length ? [...draft.contactAddresses] : [''],
     };
     this.mode.set('new');
-    this.existingClientId.set('');
     this.formError.set('');
     this.isOpen.set(true);
-    this.http.get<Client[]>(this.apiConfig.url('/api/clients')).subscribe({
-      next: (clients) => this.clients.set(clients),
-      error: () => this.clients.set([]),
-    });
+    this.findClients('');
+  }
+
+  /** The first page of Clients matching `query`; a newer search cancels an older one still in flight. */
+  findClients(query: string): void {
+    this.finding?.unsubscribe();
+    this.existingClientId.set('');
+    const q = query.trim();
+    this.finding = this.http
+      .get<Page<Client>>(this.apiConfig.url('/api/clients'), { params: q ? { q } : {} })
+      .subscribe({
+        next: (page) => this.clients.set(page.items),
+        error: () => this.clients.set([]),
+      });
   }
 
   close(): void {

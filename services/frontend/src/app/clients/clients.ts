@@ -29,6 +29,12 @@ export interface Client {
   updatedAt: string;
 }
 
+/** A page of a cursor-paged list; pass nextCursor back as ?cursor= for the page after it. */
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
 export interface HistoryEntry {
   id: string;
   clientId: string;
@@ -198,9 +204,10 @@ export class ClientsComponent implements OnInit {
   readonly openActivityId = input<string | null>(null);
   /** The Client to open on arrival isn't one of the firm's, e.g. a reminder link to a deleted Client. */
   readonly openClientMissing = output<void>();
-  private arriving = true;
 
   readonly clients = signal<Client[]>([]);
+  /** Where the next page starts; null once the last page is loaded. */
+  readonly nextCursor = signal<string | null>(null);
   readonly query = signal('');
   readonly idleOnly = signal(false);
   readonly selected = signal<Client | null>(null);
@@ -235,11 +242,32 @@ export class ClientsComponent implements OnInit {
       next: (types) => this.activityTypes.set(types),
       error: () => this.activityTypes.set([]),
     });
+    // A linked Client may sit on any page, so it is fetched on its own rather than looked for in the list.
+    const linked = this.openClientId();
+    if (linked) {
+      this.http.get<Client>(this.apiConfig.url(`/api/clients/${linked}`)).subscribe({
+        next: (client) => this.open(client),
+        error: (error: HttpErrorResponse) => {
+          if (error.status === 404) {
+            this.openClientMissing.emit();
+          }
+        },
+      });
+    }
+  }
+
+  /** The first page of the current search and filter. */
+  load(): void {
+    this.fetch(null);
+  }
+
+  loadMore(): void {
+    this.fetch(this.nextCursor());
   }
 
   // Only the newest listing counts: a pending search is dropped and an in-flight answer cancelled,
-  // so a slow answer to an older search never overwrites the newer one.
-  load(): void {
+  // so a slow answer to an older search, or a page of it, never lands on the newer one.
+  private fetch(cursor: string | null): void {
     clearTimeout(this.searchTimer);
     this.listing?.unsubscribe();
     let params = new HttpParams();
@@ -249,21 +277,17 @@ export class ClientsComponent implements OnInit {
     if (this.idleOnly()) {
       params = params.set('idle', 'true');
     }
+    if (cursor) {
+      params = params.set('cursor', cursor);
+    }
     this.listing = this.http
-      .get<Client[]>(this.apiConfig.url('/api/clients'), { params })
+      .get<Page<Client>>(this.apiConfig.url('/api/clients'), { params })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (clients) => {
-          this.clients.set(clients);
+        next: (page) => {
+          this.clients.update((loaded) => (cursor ? [...loaded, ...page.items] : page.items));
+          this.nextCursor.set(page.nextCursor);
           this.errorMessage.set('');
-          const wanted = this.openClientId();
-          const client = wanted && !this.selected() ? clients.find((candidate) => candidate.id === wanted) : null;
-          if (client) {
-            this.open(client);
-          } else if (wanted && this.arriving) {
-            this.openClientMissing.emit();
-          }
-          this.arriving = false;
         },
         error: () => this.errorMessage.set('No se pudieron cargar los clientes.'),
       });
@@ -271,8 +295,6 @@ export class ClientsComponent implements OnInit {
 
   search(value: string): void {
     this.query.set(value);
-    // A filtered listing can't tell whether a linked Client exists, so searching ends the arrival.
-    this.arriving = false;
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => this.load(), 300);
   }

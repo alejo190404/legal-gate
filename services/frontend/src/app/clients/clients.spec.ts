@@ -42,6 +42,12 @@ function email(n: number) {
   };
 }
 
+function loadMoreButton(fixture: { nativeElement: HTMLElement }): HTMLButtonElement | undefined {
+  return Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === 'Cargar más',
+  ) as HTMLButtonElement | undefined;
+}
+
 describe('ClientsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -67,7 +73,7 @@ describe('ClientsComponent', () => {
   it('searches once typing pauses and drops the answer to an older search', () => {
     vi.useFakeTimers();
     const { http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
 
     component.search('a');
     component.search('ac');
@@ -79,33 +85,76 @@ describe('ClientsComponent', () => {
     component.search('acme');
     vi.advanceTimersByTime(300);
     expect(older.cancelled).toBe(true);
-    http.expectOne('/api/clients?q=acme').flush([client({ name: 'Acme Legal' })]);
+    http.expectOne('/api/clients?q=acme').flush({ items: [client({ name: 'Acme Legal' })], nextCursor: null });
     expect(component.clients().map((c) => c.name)).toEqual(['Acme Legal']);
   });
 
-  it('does not call a linked client missing when a search cancels the arrival listing', () => {
+  it('appends the next page on Cargar más and starts again from the first page on a new search', () => {
     vi.useFakeTimers();
+    const { fixture, http, component } = setup();
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: 'after-acme' });
+    fixture.detectChanges();
+
+    loadMoreButton(fixture)!.click();
+    http.expectOne('/api/clients?cursor=after-acme').flush({ items: [client({ id: 'client-2', name: 'Beta' })], nextCursor: null });
+    fixture.detectChanges();
+    expect(component.clients().map((c) => c.name)).toEqual(['Acme SAS', 'Beta']);
+    expect(loadMoreButton(fixture)).toBeUndefined();
+
+    component.toggleIdle();
+    http.expectOne('/api/clients?idle=true').flush({ items: [client()], nextCursor: 'after-acme' });
+    fixture.detectChanges();
+    loadMoreButton(fixture)!.click();
+    const more = http.expectOne('/api/clients?idle=true&cursor=after-acme');
+    component.search('beta');
+    vi.advanceTimersByTime(300);
+    expect(more.cancelled).toBe(true);
+    http.expectOne('/api/clients?q=beta&idle=true').flush({ items: [client({ id: 'client-2', name: 'Beta' })], nextCursor: null });
+    expect(component.clients().map((c) => c.name)).toEqual(['Beta']);
+  });
+
+  it('opens a linked Client and highlights its Activity without looking for it in the list', () => {
     const fixture = TestBed.createComponent(ClientsComponent);
-    fixture.componentRef.setInput('openClientId', 'client-1');
+    fixture.componentRef.setInput('openClientId', 'client-77');
+    fixture.componentRef.setInput('openActivityId', 'activity-1');
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http.expectOne('/api/activity-types').flush(TYPES);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: 'after-acme' });
+    http.expectOne('/api/clients/client-77').flush(client({ id: 'client-77', name: 'Zeta Ltda' }));
+    http.expectOne('/api/clients/client-77/activities').flush([{
+      id: 'activity-1', clientId: 'client-77', activityTypeId: 'type-draft', typeName: 'Redacción de contrato',
+      kind: 'TURNAROUND', label: null, displayName: 'Redacción de contrato', startDate: '2026-10-01', turnaroundDays: 5,
+      dueDate: null, scheduledDate: null, termDays: null, assignedLawyerId: 'lawyer-ana', done: false, doneAt: null,
+      expectedDate: '2026-10-08', overdue: false, termPassed: false,
+    }]);
+    http.expectOne('/api/clients/client-77/history').flush([]);
+    http.expectOne('/api/clients/client-77/correspondence').flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selected()?.name).toBe('Zeta Ltda');
+    expect(fixture.nativeElement.querySelector('.linked')?.textContent).toContain('Redacción de contrato');
+  });
+
+  it('reports a linked Client that no longer exists as missing', () => {
+    const fixture = TestBed.createComponent(ClientsComponent);
+    fixture.componentRef.setInput('openClientId', 'client-gone');
     const http = TestBed.inject(HttpTestingController);
     const missing = vi.fn();
     fixture.componentInstance.openClientMissing.subscribe(missing);
     fixture.detectChanges();
     http.expectOne('/api/activity-types').flush(TYPES);
-    const arrival = http.expectOne('/api/clients');
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
+    http.expectOne('/api/clients/client-gone').flush({ error: 'client_not_found' }, { status: 404, statusText: 'Not Found' });
 
-    fixture.componentInstance.search('otro');
-    vi.advanceTimersByTime(300);
-    expect(arrival.cancelled).toBe(true);
-    http.expectOne('/api/clients?q=otro').flush([]);
-
-    expect(missing).not.toHaveBeenCalled();
+    expect(missing).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.selected()).toBeNull();
   });
 
   it('lists clients and searches and filters them on the server', () => {
     vi.useFakeTimers();
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Acme SAS');
@@ -113,9 +162,9 @@ describe('ClientsComponent', () => {
 
     component.search('acme');
     vi.advanceTimersByTime(300);
-    http.expectOne('/api/clients?q=acme').flush([client()]);
+    http.expectOne('/api/clients?q=acme').flush({ items: [client()], nextCursor: null });
     component.toggleIdle();
-    http.expectOne('/api/clients?q=acme&idle=true').flush([]);
+    http.expectOne('/api/clients?q=acme&idle=true').flush({ items: [], nextCursor: null });
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('No hay clientes en esta vista');
@@ -123,7 +172,7 @@ describe('ClientsComponent', () => {
 
   it('creates a client with only active lawyers offered as responsible', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([]);
+    http.expectOne('/api/clients').flush({ items: [], nextCursor: null });
 
     component.openCreate();
     fixture.detectChanges();
@@ -149,7 +198,7 @@ describe('ClientsComponent', () => {
       contactAddresses: ['gc@acme.co'],
     });
     request.flush(client());
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
     http.expectOne('/api/clients/client-1/correspondence').flush([]);
@@ -160,7 +209,7 @@ describe('ClientsComponent', () => {
 
   it('names the client that already holds a contact address', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([]);
+    http.expectOne('/api/clients').flush({ items: [], nextCursor: null });
 
     component.openCreate();
     component.form.name = 'Otro';
@@ -178,7 +227,7 @@ describe('ClientsComponent', () => {
 
   it('marks contact address changes in the history', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
 
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
@@ -200,7 +249,7 @@ describe('ClientsComponent', () => {
 
   it('names who made each History change instead of their user id', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([
@@ -220,7 +269,7 @@ describe('ClientsComponent', () => {
 
   it('shows each Client email with what LegalGate did and the exact answer', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
 
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
@@ -246,7 +295,7 @@ describe('ClientsComponent', () => {
 
   it('shows the 3 latest emails inline and the full correspondence in the Archivo dialog', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
@@ -274,7 +323,7 @@ describe('ClientsComponent', () => {
 
   it('offers no Archivo when the Client has written 3 times or fewer', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
@@ -287,7 +336,7 @@ describe('ClientsComponent', () => {
 
   it('opens an activity with only offered types and the type term, shows overdue work, and closes it after confirming', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([
       { id: 'a1', clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
@@ -316,7 +365,7 @@ describe('ClientsComponent', () => {
     create.flush({});
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     component.completeActivity({ id: 'a1', displayName: 'Contrato de arriendo' } as any);
@@ -329,7 +378,7 @@ describe('ClientsComponent', () => {
 
   it('edits and creates Activities in a dialog that saving, the backdrop or Escape closes', async () => {
     const { fixture, http } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.componentInstance.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([
       { id: 'a1', clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
@@ -374,14 +423,14 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients/client-1/activities').flush({});
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.detectChanges();
     expect(dialog()).toBeNull();
   });
 
   it('clears an Activity error once a later save or close succeeds', () => {
     const { fixture, http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     component.open(client());
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
@@ -398,7 +447,7 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients/client-1/activities').flush({});
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).not.toContain('Indica la fecha de la actividad.');
 
@@ -411,14 +460,14 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients/client-1/activities/a1/done').flush({});
     http.expectOne('/api/clients/client-1/activities').flush([]);
     http.expectOne('/api/clients/client-1/history').flush([]);
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     expect(component.activityError()).toBe('');
     confirmSpy.mockRestore();
   });
 
   it('deletes a client only after a confirmation that names the diagnostics consequence', () => {
     const { http, component } = setup();
-    http.expectOne('/api/clients').flush([client()]);
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     component.deleteClient(client());
@@ -430,7 +479,7 @@ describe('ClientsComponent', () => {
     const request = http.expectOne('/api/clients/client-1');
     expect(request.request.method).toBe('DELETE');
     request.flush(null);
-    http.expectOne('/api/clients').flush([]);
+    http.expectOne('/api/clients').flush({ items: [], nextCursor: null });
     confirmSpy.mockRestore();
   });
 });
