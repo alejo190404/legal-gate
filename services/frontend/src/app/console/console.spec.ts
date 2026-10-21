@@ -197,7 +197,8 @@ describe('ConsoleComponent session + billing flow', () => {
       const { fixture, component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
       fixture.detectChanges();
       http.expectOne('/api/activity-types').flush([]);
-      http.expectOne('/api/clients').flush([]);
+      http.expectOne('/api/clients').flush({ items: [], nextCursor: null });
+      http.expectOne('/api/clients/client-gone').flush({ error: 'client_not_found' }, { status: 404, statusText: 'Not Found' });
       fixture.detectChanges();
 
       expect(component.activeView()).toBe('inbox');

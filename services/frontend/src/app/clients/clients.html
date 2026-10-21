@@ -47,6 +47,9 @@
           <div class="lg-small">Registra los clientes que ya tenías o vincula una consulta desde la bandeja.</div>
         </div>
       }
+      @if (nextCursor()) {
+        <button class="btn sec wide" type="button" (click)="loadMore()">Cargar más</button>
+      }
     </div>
 
     @if (selected(); as c) {

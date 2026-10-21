@@ -38,7 +38,7 @@ describe('EngagementComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Vincular como cliente');
 
     component.start();
-    http.expectOne('/api/clients').flush([]);
+    http.expectOne('/api/clients').flush({ items: [], nextCursor: null });
     expect(component.form.name).toBe('Maria');
     expect(component.form.contactAddresses).toEqual(['maria@example.com']);
     expect(component.form.responsibleLawyerId).toBe('lawyer-luis');
@@ -54,20 +54,33 @@ describe('EngagementComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Ver cliente vinculado');
   });
 
-  it('attaches to an existing client', () => {
-    const { http, component } = setup();
+  it('attaches to an existing client, searching for one past the first page', () => {
+    const { fixture, http, component } = setup();
     http.expectOne('/api/consultations/consultation-1/engagement').flush({
       consultationId: 'consultation-1', clientId: null,
       draft: { name: 'Legal', kind: 'PERSON', responsibleLawyerId: 'lawyer-ana', contactAddresses: ['legal@acme.co'] },
     });
 
     component.start();
-    http.expectOne('/api/clients').flush([{ id: 'client-1', name: 'Acme SAS' }]);
+    http.expectOne('/api/clients').flush({ items: [{ id: 'client-1', name: 'Acme SAS' }], nextCursor: 'after-acme' });
     component.mode.set('existing');
-    component.existingClientId.set('client-1');
-    component.submit();
+    fixture.detectChanges();
+    expect(optionNames()).toEqual(['Acme SAS']);
 
-    expect(http.expectOne('/api/consultations/consultation-1/engage').request.body).toEqual({ clientId: 'client-1', client: null });
+    component.findClients(' zeta ');
+    http.expectOne('/api/clients?q=zeta').flush({ items: [{ id: 'client-77', name: 'Zeta Ltda' }], nextCursor: null });
+    fixture.detectChanges();
+    expect(optionNames()).toEqual(['Zeta Ltda']);
+
+    component.existingClientId.set('client-77');
+    component.submit();
+    expect(http.expectOne('/api/consultations/consultation-1/engage').request.body).toEqual({ clientId: 'client-77', client: null });
+
+    function optionNames(): string[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('#engagementClient option:not([disabled])')).map(
+        (option) => (option as HTMLElement).textContent!.trim(),
+      );
+    }
   });
 
   it('links an engaged consultation to its client', () => {

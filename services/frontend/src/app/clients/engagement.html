@@ -31,6 +31,11 @@
 
       @if (mode() === 'existing') {
         <div class="form-field">
+          <label for="engagementClientSearch">Buscar cliente</label>
+          <input id="engagementClientSearch" name="engagementClientSearch" type="search"
+            placeholder="Nombre, correo o documento" (input)="findClients($any($event.target).value)" />
+        </div>
+        <div class="form-field">
           <label for="engagementClient">Cliente</label>
           <select id="engagementClient" name="engagementClient" [ngModel]="existingClientId()"
             (ngModelChange)="existingClientId.set($event)">

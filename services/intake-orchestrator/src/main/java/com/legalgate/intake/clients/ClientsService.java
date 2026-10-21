@@ -13,6 +13,7 @@ import com.legalgate.intake.clients.ClientsModels.EngagementRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.repository.IntakeRepository;
 import com.legalgate.intake.service.BusinessDays;
@@ -117,17 +118,11 @@ public class ClientsService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "client_not_found"));
     }
 
-    // ponytail: filters the whole tenant's list in memory; move the match into SQL if a firm's
-    // Client list ever grows past a few thousand.
-    public List<Client> search(String tenant, String query, boolean idleOnly) {
-        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
-        return clients.clients(tenant).stream()
-                .filter(client -> !idleOnly || client.openActivities() == 0)
-                .filter(client -> needle.isEmpty()
-                        || client.name().toLowerCase(Locale.ROOT).contains(needle)
-                        || (client.idNumber() != null && client.idNumber().toLowerCase(Locale.ROOT).contains(needle))
-                        || client.contactAddresses().stream().anyMatch(address -> address.contains(needle)))
-                .toList();
+    static final int PAGE_SIZE = 50;
+
+    /** A page of the firm's Clients by name; {@code cursor} is the previous page's nextCursor, null for the first. */
+    public Page<Client> search(String tenant, String query, boolean idleOnly, String cursor) {
+        return clients.clients(tenant, query, idleOnly, cursor, PAGE_SIZE);
     }
 
     // ponytail: resolves actor names one Clerk call at a time, so a Clerk outage costs roughly
