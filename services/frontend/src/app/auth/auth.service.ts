@@ -15,7 +15,11 @@ export interface AuthenticatedUser {
 export class AuthService {
   private clerk: Clerk | null = null;
   private readonly organizationId = signal<string | null>(null);
-  readonly user = signal<AuthenticatedUser | null>(null);
+  // sync() runs on every API request and builds a fresh object; compare by value so readers
+  // of user() only re-run when the signed-in user actually changes.
+  readonly user = signal<AuthenticatedUser | null>(null, {
+    equal: (a, b) => a?.id === b?.id && a?.email === b?.email,
+  });
   readonly authenticated = computed(() => this.user() !== null);
   readonly hasOrganization = computed(() => this.organizationId() !== null);
 
