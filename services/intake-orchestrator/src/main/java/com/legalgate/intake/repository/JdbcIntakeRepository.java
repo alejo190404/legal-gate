@@ -174,7 +174,6 @@ class JdbcIntakeRepository implements IntakeRepository {
     public TenantSettingsResponse settingsFor(String tenantSlug, TenantSettingsResponse defaultSettings) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             List<TenantSettingsResponse> settings = jdbcTemplate.query("""
                     select t.slug, s.urgent_keywords, s.consultation_windows, s.urgency_levels,
                            s.destination_email, s.intake_email, s.routing_rules,
@@ -207,7 +206,6 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.source_message_id = ?", this::mapConsultation, tenantSlug, sourceMessageId)
                     .stream()
                     .findFirst();
@@ -305,7 +303,6 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.id = ?",
                             this::mapConsultation, tenantSlug, UUID.fromString(consultationId))
                     .stream()
@@ -534,7 +531,6 @@ class JdbcIntakeRepository implements IntakeRepository {
     public ConsultationListResponse consultationsForTenant(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             List<ConsultationResponse> consultations = jdbcTemplate.query(
                     consultationSelect() + " where t.slug = ? order by c.created_at asc",
                     this::mapConsultation,
@@ -551,7 +547,6 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query(consultationSelect() + " where t.slug = ? and c.event_id = ?", this::mapConsultation, tenantSlug, UUID.fromString(eventId))
                     .stream()
                     .findFirst();
@@ -562,7 +557,6 @@ class JdbcIntakeRepository implements IntakeRepository {
     public List<LawyerProfile> lawyersForTenant(String tenantSlug) {
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return lawyersForCurrentTenant();
         });
     }
@@ -574,7 +568,6 @@ class JdbcIntakeRepository implements IntakeRepository {
         }
         return transactionTemplate.execute(status -> {
             setTenantContext(tenantSlug);
-            ensureTenant(tenantSlug, fallbackDisplayName(tenantSlug));
             return jdbcTemplate.query("""
                     select e.id as event_id_read, e.lawyer_id, l.display_name as lawyer_display_name, l.email as lawyer_email,
                            e.route_name, e.urgency_name, e.sla_days, e.sla_deadline, e.priority_score,
