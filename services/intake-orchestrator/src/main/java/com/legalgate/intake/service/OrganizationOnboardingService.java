@@ -49,7 +49,12 @@ public class OrganizationOnboardingService {
         // One round trip serves both rules: a user with no local tenant must not already belong to
         // an organization, and a retry after a half-finished attempt must adopt the organization
         // that attempt already created instead of making a second one for the same firm.
-        List<String> memberships = clerkClient.organizationMembershipIds(userId);
+        List<String> memberships;
+        try {
+            memberships = clerkClient.organizationMembershipIds(userId);
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "auth_provisioning_failed", exception);
+        }
         if (memberships.size() > 1 || (local == null && !memberships.isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "user_already_has_organization");
         }

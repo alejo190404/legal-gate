@@ -6,10 +6,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.legalgate.intake.config.IntakeProperties;
+import java.net.SocketTimeoutException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -27,13 +29,23 @@ class ClerkClientTests {
         when(properties.clerkSecretKey()).thenReturn("sk_test");
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        return new ClerkClient(builder, properties);
+        return ClerkClient.boundTo(builder, properties);
     }
 
     @Test
     void userEmailMapsProviderFailuresToUnavailable() {
         ClerkClient client = client();
         server.expect(requestTo(BASE_URL + "/users/user_1")).andRespond(withServerError());
+
+        assertThat(client.userEmail("user_1")).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void userEmailMapsATimeoutToUnavailable() {
+        ClerkClient client = client();
+        server.expect(requestTo(BASE_URL + "/users/user_1"))
+                .andRespond(withException(new SocketTimeoutException("Read timed out")));
 
         assertThat(client.userEmail("user_1")).isEmpty();
         server.verify();

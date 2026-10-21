@@ -130,6 +130,9 @@ public class ClientsService {
                 .toList();
     }
 
+    // ponytail: resolves actor names one Clerk call at a time, so a Clerk outage costs roughly
+    // ClerkClient's connect + read timeout per distinct firm user; stop calling Clerk after the
+    // first timeout in a request if Histories with many users get slow.
     public List<HistoryEntry> history(String tenant, String clientId) {
         client(tenant, clientId);
         List<LawyerProfile> lawyers = intake.lawyersForTenant(tenant);

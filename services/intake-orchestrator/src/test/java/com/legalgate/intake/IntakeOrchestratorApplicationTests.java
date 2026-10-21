@@ -1,5 +1,6 @@
 package com.legalgate.intake;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,6 +19,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest(properties = {
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration",
@@ -98,5 +101,20 @@ class IntakeOrchestratorApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.organizationId").value("org_created"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void onboardingReportsBadGatewayWhenClerkCannotListMemberships() throws Exception {
+        when(clerkClient.organizationMembershipIds("user_unreachable"))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+
+        mockMvc.perform(post("/api/onboarding/organization")
+                        .header("X-LegalGate-Service-Token", SERVICE_TOKEN)
+                        .header("X-LegalGate-User-Id", "user_unreachable")
+                        .contentType("application/json")
+                        .content("{\"firmName\":\"Firma Lenta\"}"))
+                .andExpect(status().isBadGateway())
+                .andExpect(result -> assertThat(((ResponseStatusException) result.getResolvedException()).getReason())
+                        .isEqualTo("auth_provisioning_failed"));
     }
 }

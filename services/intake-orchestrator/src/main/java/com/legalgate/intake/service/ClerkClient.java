@@ -8,7 +8,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.StreamSupport;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -16,14 +18,38 @@ import org.springframework.web.client.RestClientException;
 @Service
 public class ClerkClient {
     private static final int PAGE_SIZE = 100;
+    // Short: History waits on Clerk once per firm user while a page loads.
+    private static final int CONNECT_TIMEOUT_MILLIS = 2_000;
+    private static final int READ_TIMEOUT_MILLIS = 3_000;
 
     private final RestClient restClient;
 
+    @Autowired
     public ClerkClient(RestClient.Builder builder, IntakeProperties properties) {
-        this.restClient = builder
+        this(restClient(builder.requestFactory(timeoutRequestFactory()), properties));
+    }
+
+    private ClerkClient(RestClient restClient) {
+        this.restClient = restClient;
+    }
+
+    /** Keeps the builder's own request factory, so a test's mock server stays bound. */
+    static ClerkClient boundTo(RestClient.Builder builder, IntakeProperties properties) {
+        return new ClerkClient(restClient(builder, properties));
+    }
+
+    private static RestClient restClient(RestClient.Builder builder, IntakeProperties properties) {
+        return builder
                 .baseUrl(properties.clerkApiBaseUrl())
                 .defaultHeader("Authorization", "Bearer " + properties.clerkSecretKey())
                 .build();
+    }
+
+    private static SimpleClientHttpRequestFactory timeoutRequestFactory() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+        requestFactory.setReadTimeout(READ_TIMEOUT_MILLIS);
+        return requestFactory;
     }
 
     public boolean hasOrganizationMembership(String userId) {
