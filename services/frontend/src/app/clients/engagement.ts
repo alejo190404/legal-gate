@@ -3,7 +3,8 @@ import { Component, computed, effect, inject, input, output, signal } from '@ang
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ApiConfigService } from '../config/api-config.service';
-import { Client, ClientForm, Lawyer, Page, blankClientForm, clientErrorMessage, clientPayload } from './clients';
+import { Page } from '../page';
+import { Client, ClientForm, Lawyer, blankClientForm, clientErrorMessage, clientPayload } from './clients';
 
 interface Engagement {
   consultationId: string;

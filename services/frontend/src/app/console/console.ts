@@ -5,8 +5,9 @@ import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 import { ActivityTypesComponent } from '../activity-types/activity-types';
-import { ClientsComponent, Page } from '../clients/clients';
+import { ClientsComponent } from '../clients/clients';
 import { EngagementComponent } from '../clients/engagement';
+import { Page } from '../page';
 import { PixelIconComponent } from './pixel-icon';
 import { Subscription } from 'rxjs';
 
@@ -320,7 +321,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly settingsLoaded = signal(false);
   readonly activeView = signal<ConsoleView>('inbox');
   readonly userDisplayName = signal('');
-  readonly inboxFilter = signal<string>('all');
+  readonly stageFilter = signal<string>('all');
   readonly inboxQuery = signal('');
   readonly selectedConsultationId = signal<string | null>(null);
   readonly diagnostics = signal<DiagnosticsView | null>(null);
@@ -447,7 +448,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     },
   ];
 
-  readonly statusChips: ReadonlyArray<{ id: string; label: string }> = [
+  readonly stageChips: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'all', label: 'Todas' },
     { id: 'diagnostics', label: 'En diagnostico' },
     { id: 'new', label: 'Nuevas' },
@@ -474,7 +475,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   };
 
   readonly filteredConsultations = computed(() => {
-    const filter = this.inboxFilter();
+    const filter = this.stageFilter();
     const query = this.inboxQuery().trim().toLowerCase();
     let list = this.consultations();
     if (filter !== 'all') {
@@ -591,7 +592,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.isConsoleMenuOpen.set(false);
     this.activeView.set('inbox');
     this.selectedConsultationId.set(null);
-    this.inboxFilter.set('all');
+    this.stageFilter.set('all');
     this.isCreateOpen.set(false);
     this.clearConsoleErrors();
     this.auth.signOut();
@@ -612,7 +613,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           this.linkedClientId = null;
         }
         this.selectedConsultationId.set(null);
-        this.inboxFilter.set('all');
+        this.stageFilter.set('all');
         this.isConsoleMenuOpen.set(false);
         this.clearConsoleErrors();
         this.statusMessage.set('Sesion segura iniciada. Validando suscripcion...');
@@ -1020,12 +1021,12 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return role === 'CLIENT' ? 'Cliente' : 'LegalGate';
   }
 
-  setInboxFilter(id: string): void {
-    this.inboxFilter.set(id);
+  setStageFilter(id: string): void {
+    this.stageFilter.set(id);
     this.loadConsultations();
   }
 
-  statusCount(id: string): number {
+  stageCount(id: string): number {
     return id === 'all' ? this.totalConsultations() : (this.stageCounts()[id] ?? 0);
   }
 
@@ -1033,7 +1034,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     return 'badge st-' + consultation.stage;
   }
 
-  statusLabel(consultation: Consultation): string {
+  stageLabel(consultation: Consultation): string {
     return (
       {
         new: 'Nuevo',
@@ -1112,8 +1113,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.listing?.unsubscribe();
     this.consultationsErrorMessage.set('');
     let params = new HttpParams();
-    if (this.inboxFilter() !== 'all') {
-      params = params.set('stage', this.inboxFilter());
+    if (this.stageFilter() !== 'all') {
+      params = params.set('stage', this.stageFilter());
     }
     if (cursor) {
       params = params.set('cursor', cursor);

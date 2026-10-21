@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
 import { ApiConfigService } from '../config/api-config.service';
 import { PixelIconComponent } from '../console/pixel-icon';
+import { Page } from '../page';
 
 export interface Lawyer {
   id: string | null;
@@ -27,12 +28,6 @@ export interface Client {
   openActivities: number;
   createdAt: string;
   updatedAt: string;
-}
-
-/** A page of a cursor-paged list; pass nextCursor back as ?cursor= for the page after it. */
-export interface Page<T> {
-  items: T[];
-  nextCursor: string | null;
 }
 
 export interface HistoryEntry {

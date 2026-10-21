@@ -627,12 +627,12 @@ describe('ConsoleComponent session + billing flow', () => {
         stageCounts: { rejected: 3, scheduled: 120 },
       });
 
-      expect(component.statusCount('all')).toBe(123);
-      expect(component.statusCount('scheduled')).toBe(120);
-      expect(component.statusCount('rejected')).toBe(3);
-      expect(component.statusCount('new')).toBe(0);
+      expect(component.stageCount('all')).toBe(123);
+      expect(component.stageCount('scheduled')).toBe(120);
+      expect(component.stageCount('rejected')).toBe(3);
+      expect(component.stageCount('new')).toBe(0);
       expect(component.navCount('inbox')).toBe(123);
-      expect(component.statusLabel(component.filteredConsultations()[0])).toBe('Rechazado');
+      expect(component.stageLabel(component.filteredConsultations()[0])).toBe('Rechazado');
       expect(component.badgeClass(component.filteredConsultations()[0])).toBe('badge st-rejected');
     });
 
@@ -648,7 +648,7 @@ describe('ConsoleComponent session + billing flow', () => {
       fixture.detectChanges();
 
       expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
-      expect(component.statusCount('all')).toBe(2);
+      expect(component.stageCount('all')).toBe(2);
       expect(loadMoreButton()).toBeUndefined();
     });
 
@@ -658,7 +658,7 @@ describe('ConsoleComponent session + billing flow', () => {
         stageCounts: { new: 1, scheduled: 70 },
       });
 
-      component.setInboxFilter('scheduled');
+      component.setStageFilter('scheduled');
       http.expectOne(listRequest({ stage: 'scheduled' })).flush({
         items: [consultation('c-2', 'scheduled')], nextCursor: 'cursor-scheduled', stageCounts: { new: 1, scheduled: 70 },
       });
@@ -668,7 +668,7 @@ describe('ConsoleComponent session + billing flow', () => {
       });
       expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
 
-      component.setInboxFilter('all');
+      component.setStageFilter('all');
       http.expectOne(listRequest({})).flush({ items: [consultation('c-3')], nextCursor: null, stageCounts: { new: 1 } });
       expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-3']);
     });
@@ -681,7 +681,7 @@ describe('ConsoleComponent session + billing flow', () => {
       http.expectOne('/api/consultations/c-old/diagnostics').flush(null, { status: 404, statusText: 'Not Found' });
 
       expect(component.selectedConsultation()?.id).toBe('c-old');
-      expect(component.statusLabel(component.selectedConsultation()!)).toBe('Agendado');
+      expect(component.stageLabel(component.selectedConsultation()!)).toBe('Agendado');
     });
   });
 });
