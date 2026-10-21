@@ -404,14 +404,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly totalConsultations = computed(() =>
     Object.values(this.stageCounts()).reduce((sum, count) => sum + count, 0),
   );
-  readonly urgentConsultations = computed(
-    () => this.consultations().filter((consultation) => this.isHighestUrgency(consultation)).length,
-  );
-  readonly queuedNotifications = computed(
-    () =>
-      this.consultations().filter((consultation) => consultation.notifications.emailQueued).length,
-  );
-  readonly latestConsultation = computed(() => this.consultations()[0] ?? null);
   readonly configuredIntakeEmail = computed(() => {
     if (!this.settingsLoaded()) {
       return 'Cargando...';
@@ -1525,25 +1517,6 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   urgencyLabel(consultation: Consultation): string {
     return consultation.event?.urgencyName ?? consultation.urgency;
-  }
-
-  isHighestUrgency(consultation: Consultation): boolean {
-    const settings = this.tenantSettings();
-    const matchedRule = settings?.routingRules?.find(
-      (rule) => rule.name === consultation.consultationType,
-    );
-    const definitions =
-      matchedRule?.urgencyDefinitions?.filter((definition) => definition.active) ?? [];
-    if (definitions.length) {
-      const highest = [...definitions].sort((a, b) => a.rank - b.rank).at(-1);
-      return consultation.urgency === highest?.name;
-    }
-    const levels = matchedRule?.urgencyLevels?.length
-      ? matchedRule.urgencyLevels
-      : settings?.urgencyLevels?.length
-        ? settings.urgencyLevels
-        : ['NORMAL', 'URGENTE'];
-    return consultation.urgency === levels[levels.length - 1];
   }
 
   priorityLabel(consultation: Consultation): string {
