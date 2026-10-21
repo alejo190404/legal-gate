@@ -189,6 +189,14 @@ class IntakeOrchestratorApplicationTests {
     }
 
     @Test
+    void anUnknownStageIsRejectedRatherThanListedAsEmpty() throws Exception {
+        firm("etapa");
+
+        asFirm(get("/api/consultations").param("stage", "agendadas"), "etapa")
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void aConsultationOpensByIdWhetherOrNotItIsOnALoadedPage() throws Exception {
         firm("directa");
         saveConsultation("directa", "c-directa", "RECEIVED", Instant.parse("2026-10-01T10:00:00Z"));

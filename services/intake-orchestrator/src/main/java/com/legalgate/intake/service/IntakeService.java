@@ -221,6 +221,9 @@ public class IntakeService {
      * {@code query} narrows the page but not {@code stageCounts}, which always count the whole firm.
      */
     public ConsultationListResponse consultationsForTenant(String tenantId, String stage, String query, String cursor) {
+        if (stage != null && !ConsultationResponse.STAGES.contains(stage)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_stage");
+        }
         Page<ConsultationResponse> page = intakeRepository.consultationsForTenant(tenantId, stage, query, cursor, PAGE_SIZE);
         return new ConsultationListResponse(page.items(), page.nextCursor(),
                 cursor == null ? intakeRepository.stageCounts(tenantId) : null);
