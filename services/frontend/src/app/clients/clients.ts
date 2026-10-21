@@ -271,6 +271,8 @@ export class ClientsComponent implements OnInit {
 
   search(value: string): void {
     this.query.set(value);
+    // A filtered listing can't tell whether a linked Client exists, so searching ends the arrival.
+    this.arriving = false;
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => this.load(), 300);
   }

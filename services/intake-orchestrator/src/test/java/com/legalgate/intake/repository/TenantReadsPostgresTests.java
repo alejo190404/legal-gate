@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -19,7 +20,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** Reads never write: the console's list and lookup calls must not upsert the firm's tenant row on every request. */
+/** Reads never write: the console's list and lookup calls must not upsert the Tenant row on every request. */
 @Testcontainers(disabledWithoutDocker = true)
 class TenantReadsPostgresTests {
 
@@ -49,7 +50,7 @@ class TenantReadsPostgresTests {
     }
 
     @Test
-    void readsForAnUnknownFirmFindNothingAndCreateNoTenant() throws Exception {
+    void readsForAnUnknownTenantFindNothingAndCreateNoTenant() throws Exception {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), "intake_app", "intake_app");
         JdbcIntakeRepository repository = new JdbcIntakeRepository(new JdbcTemplate(dataSource),
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)), new ObjectMapper());
@@ -71,7 +72,7 @@ class TenantReadsPostgresTests {
         }
     }
 
-    static Connection ownerConnection() throws Exception {
+    private static Connection ownerConnection() throws SQLException {
         return DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 }

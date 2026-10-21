@@ -83,6 +83,25 @@ describe('ClientsComponent', () => {
     expect(component.clients().map((c) => c.name)).toEqual(['Acme Legal']);
   });
 
+  it('does not call a linked client missing when a search cancels the arrival listing', () => {
+    vi.useFakeTimers();
+    const fixture = TestBed.createComponent(ClientsComponent);
+    fixture.componentRef.setInput('openClientId', 'client-1');
+    const http = TestBed.inject(HttpTestingController);
+    const missing = vi.fn();
+    fixture.componentInstance.openClientMissing.subscribe(missing);
+    fixture.detectChanges();
+    http.expectOne('/api/activity-types').flush(TYPES);
+    const arrival = http.expectOne('/api/clients');
+
+    fixture.componentInstance.search('otro');
+    vi.advanceTimersByTime(300);
+    expect(arrival.cancelled).toBe(true);
+    http.expectOne('/api/clients?q=otro').flush([]);
+
+    expect(missing).not.toHaveBeenCalled();
+  });
+
   it('lists clients and searches and filters them on the server', () => {
     vi.useFakeTimers();
     const { fixture, http, component } = setup();
