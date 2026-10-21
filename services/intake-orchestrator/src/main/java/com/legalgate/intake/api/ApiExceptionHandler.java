@@ -1,6 +1,7 @@
 package com.legalgate.intake.api;
 
 import com.legalgate.intake.clients.LawyerInChargeException;
+import com.legalgate.intake.service.LawyerEmailTakenException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,15 @@ public class ApiExceptionHandler {
                 "error", "lawyer_still_in_charge",
                 "message", exception.getMessage(),
                 "blockers", exception.blockers()
+        ));
+    }
+
+    /** The settings screen says which lawyer already has the email. */
+    @ExceptionHandler(LawyerEmailTakenException.class)
+    public ResponseEntity<Map<String, Object>> handleLawyerEmailTaken(LawyerEmailTakenException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "lawyer_email_taken",
+                "message", exception.getMessage()
         ));
     }
 

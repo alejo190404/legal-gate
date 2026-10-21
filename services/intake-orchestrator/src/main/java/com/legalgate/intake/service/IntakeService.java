@@ -13,9 +13,11 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -96,7 +98,12 @@ public class IntakeService {
         List<LawyerProfile> stored = intakeRepository.lawyersForTenant(tenantId);
         // A Client's mail must never reach someone who has left the firm.
         clientsService.assertLawyersReleasable(tenantId, stored, lawyers);
-        List<TenantRoutingRule> routingRules = routingRulesFrom(request, lawyers);
+        Map<String, String> returning = returningLawyerIds(stored, lawyers);
+        lawyers = lawyers.stream().map(lawyer -> new LawyerProfile(returning.getOrDefault(lawyer.id(), lawyer.id()),
+                lawyer.displayName(), lawyer.email(), lawyer.meetingUrl(), lawyer.active(),
+                lawyer.defaultEventDurationMinutes(), lawyer.availabilityWindows())).toList();
+        assertEmailsFree(stored, lawyers);
+        List<TenantRoutingRule> routingRules = routingRulesFrom(request, lawyers, returning);
         // Routes may only point at the submitted team, so leavers join the list after routing is built.
         lawyers = withLeaversDeactivated(stored, lawyers);
         TenantRoutingRule primaryRule = primaryRoutingRule(routingRules);
@@ -738,21 +745,55 @@ public class IntakeService {
         if (lawyers.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lawyers_required");
         }
+        if (lawyers.stream().map(lawyer -> lawyer.email().toLowerCase(Locale.ROOT)).distinct().count() < lawyers.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "duplicate_lawyer_email");
+        }
         return List.copyOf(lawyers);
     }
 
     /**
-     * A lawyer left out of the team is deactivated, never removed: their Clients' history and finished
-     * Activities still name them. One whose email a submitted lawyer now uses is dropped instead, as before,
-     * since emails are unique per firm.
+     * A lawyer is their email within the firm: a submitted lawyer under a new id whose email a stored lawyer has,
+     * and who is not submitted under their own id, is that lawyer returning. Maps the new id to theirs.
      */
-    private static List<LawyerProfile> withLeaversDeactivated(List<LawyerProfile> current, List<LawyerProfile> submitted) {
+    private static Map<String, String> returningLawyerIds(List<LawyerProfile> stored, List<LawyerProfile> submitted) {
+        Set<String> submittedIds = submitted.stream().map(LawyerProfile::id).collect(java.util.stream.Collectors.toSet());
+        Map<String, String> idByEmail = new HashMap<>();
+        stored.stream().filter(lawyer -> !submittedIds.contains(lawyer.id()))
+                .forEach(lawyer -> idByEmail.put(lawyer.email().toLowerCase(Locale.ROOT), lawyer.id()));
+        Set<String> storedIds = stored.stream().map(LawyerProfile::id).collect(java.util.stream.Collectors.toSet());
+        Map<String, String> returning = new HashMap<>();
+        submitted.stream().filter(lawyer -> !storedIds.contains(lawyer.id()))
+                .forEach(lawyer -> {
+                    String id = idByEmail.get(lawyer.email().toLowerCase(Locale.ROOT));
+                    if (id != null) {
+                        returning.put(lawyer.id(), id);
+                    }
+                });
+        return returning;
+    }
+
+    /** Once returning lawyers have their ids, no submitted lawyer may carry the email of a different stored lawyer. */
+    private static void assertEmailsFree(List<LawyerProfile> stored, List<LawyerProfile> submitted) {
         Set<String> ids = submitted.stream().map(LawyerProfile::id).collect(java.util.stream.Collectors.toSet());
         Set<String> emails = submitted.stream().map(lawyer -> lawyer.email().toLowerCase(Locale.ROOT))
                 .collect(java.util.stream.Collectors.toSet());
+        stored.stream()
+                .filter(lawyer -> !ids.contains(lawyer.id()) && emails.contains(lawyer.email().toLowerCase(Locale.ROOT)))
+                .findFirst()
+                .ifPresent(lawyer -> {
+                    throw new LawyerEmailTakenException(lawyer.email(), lawyer.displayName());
+                });
+    }
+
+    /**
+     * A lawyer left out of the team becomes a Former Lawyer, never removed: their Clients' history and finished
+     * Activities still name them.
+     */
+    private static List<LawyerProfile> withLeaversDeactivated(List<LawyerProfile> current, List<LawyerProfile> submitted) {
+        Set<String> ids = submitted.stream().map(LawyerProfile::id).collect(java.util.stream.Collectors.toSet());
         List<LawyerProfile> lawyers = new ArrayList<>(submitted);
         current.stream()
-                .filter(lawyer -> !ids.contains(lawyer.id()) && !emails.contains(lawyer.email().toLowerCase(Locale.ROOT)))
+                .filter(lawyer -> !ids.contains(lawyer.id()))
                 .map(lawyer -> new LawyerProfile(lawyer.id(), lawyer.displayName(), lawyer.email(), lawyer.meetingUrl(),
                         false, lawyer.defaultEventDurationMinutes(), lawyer.availabilityWindows()))
                 .forEach(lawyers::add);
@@ -803,7 +844,8 @@ public class IntakeService {
         return List.copyOf(sanitized);
     }
 
-    private List<TenantRoutingRule> routingRulesFrom(TenantSettingsRequest request, List<LawyerProfile> lawyers) {
+    private List<TenantRoutingRule> routingRulesFrom(TenantSettingsRequest request, List<LawyerProfile> lawyers,
+            Map<String, String> returning) {
         if (request.routingRules() == null || request.routingRules().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "routing_rules_required");
         }
@@ -813,16 +855,18 @@ public class IntakeService {
         for (int index = 0; index < request.routingRules().size(); index++) {
             TenantRoutingRule rule = request.routingRules().get(index);
             String defaultLawyerId = lawyerIdByEmail.getOrDefault(sanitizeEmail(rule.destinationEmail()), lawyers.get(0).id());
-            rules.add(sanitizeRoutingRule(rule, index, defaultLawyerId, lawyerIds));
+            rules.add(sanitizeRoutingRule(rule, index, defaultLawyerId, lawyerIds, returning));
         }
         return List.copyOf(rules);
     }
 
-    private TenantRoutingRule sanitizeRoutingRule(TenantRoutingRule rule, int index, String defaultLawyerId, Set<String> lawyerIds) {
+    private TenantRoutingRule sanitizeRoutingRule(TenantRoutingRule rule, int index, String defaultLawyerId, Set<String> lawyerIds,
+            Map<String, String> returning) {
         if (rule == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "routing_rule_required");
         }
-        String lawyerId = rule.lawyerId() == null || rule.lawyerId().isBlank() ? defaultLawyerId : rule.lawyerId().trim();
+        String lawyerId = rule.lawyerId() == null || rule.lawyerId().isBlank() ? defaultLawyerId
+                : returning.getOrDefault(rule.lawyerId().trim(), rule.lawyerId().trim());
         if (!lawyerIds.contains(lawyerId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "routing_rule_lawyer_required");
         }

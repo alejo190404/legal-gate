@@ -1269,18 +1269,25 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         },
         error: (error: HttpErrorResponse) => {
           this.handleProtectedError(error, () => {
-            this.settingsErrorMessage.set(
-              error.error?.error === 'lawyer_still_in_charge'
-                ? error.error.message
-                : error.status === 409
-                  ? 'Ese email ya esta configurado para otra firma.'
-                  : 'No se pudo guardar la configuracion. Intenta nuevamente.',
-            );
+            this.settingsErrorMessage.set(this.teamSaveError(error));
             this.isSubmitting.set(false);
           });
         },
       });
   }
+  private teamSaveError(error: HttpErrorResponse): string {
+    const code = error.error?.error;
+    if (code === 'lawyer_still_in_charge' || code === 'lawyer_email_taken') {
+      return error.error.message;
+    }
+    if (code === 'duplicate_lawyer_email') {
+      return 'Dos abogados no pueden tener el mismo email.';
+    }
+    return error.status === 409
+      ? 'Ese email ya esta configurado para otra firma.'
+      : 'No se pudo guardar la configuracion. Intenta nuevamente.';
+  }
+
   copyIntakeEmail(): void {
     const intakeEmail = this.tenantSettings()?.intakeEmail;
     if (!intakeEmail) {
@@ -1746,11 +1753,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
           this.loadBillingPlans();
         },
         error: (error: HttpErrorResponse) => {
-          this.onboardingError.set(
-            error.status === 409
-              ? 'Ese email ya esta configurado para otra firma.'
-              : 'No se pudo guardar la configuracion. Intenta nuevamente.',
-          );
+          this.onboardingError.set(this.teamSaveError(error));
           this.isSubmitting.set(false);
         },
       });

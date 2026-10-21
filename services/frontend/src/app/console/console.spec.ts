@@ -160,6 +160,24 @@ describe('ConsoleComponent session + billing flow', () => {
     availabilityWindows: [{ weekday: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Bogota' }],
   });
 
+  it('says who already has an email, or that two lawyers share one, when the team save is refused', () => {
+    const { component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+
+    component.saveSettings();
+    http.expectOne('/api/tenant/settings').flush(
+      { error: 'lawyer_email_taken', message: 'rita@firm.co ya pertenece a Rita Retirada.' },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    expect(component.settingsErrorMessage()).toBe('rita@firm.co ya pertenece a Rita Retirada.');
+
+    component.saveSettings();
+    http.expectOne('/api/tenant/settings').flush(
+      { error: 'duplicate_lawyer_email', message: 'duplicate_lawyer_email' },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    expect(component.settingsErrorMessage()).toBe('Dos abogados no pueden tener el mismo email.');
+  });
+
   it('opens the Client and Activity a reminder email links to once the session loads', () => {
     window.history.replaceState({}, '', '/dashboard?client=client-1&activity=activity-1');
     try {
