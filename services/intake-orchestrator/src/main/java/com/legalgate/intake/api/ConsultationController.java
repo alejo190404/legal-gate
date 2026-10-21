@@ -53,10 +53,11 @@ public class ConsultationController {
     public ConsultationListResponse consultationsForTenant(
             @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @RequestParam(required = false) String stage,
+            @RequestParam(required = false) String q,
             @RequestParam(required = false) String cursor
     ) {
         String tenantId = tenantContextResolver.requireActiveTenant(organizationId).slug();
-        return intakeService.consultationsForTenant(tenantId, stage, cursor);
+        return intakeService.consultationsForTenant(tenantId, stage, q, cursor);
     }
 
     /** One Consultation, for opening it directly when it is not on a loaded Bandeja page. */

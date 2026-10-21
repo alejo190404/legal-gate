@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -577,14 +578,24 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     // Keyset on (created_at, id), newest first: a Consultation arriving mid-paging sorts before the
-    // cursor, so later pages neither skip nor repeat anything.
+    // cursor, so later pages neither skip nor repeat anything. strpos matches the query literally.
     @Override
-    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit) {
+    public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String query, String cursor, int limit) {
         StringBuilder sql = new StringBuilder(consultationSelect()).append(" where t.slug = ?");
         List<Object> args = new ArrayList<>(List.of(tenantSlug));
         if (stage != null) {
             sql.append(" and ").append(STAGE_SQL).append(" = ?");
             args.add(stage);
+        }
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (!needle.isEmpty()) {
+            sql.append("""
+                     and (strpos(lower(coalesce(c.client_name, '')), ?) > 0
+                       or strpos(lower(coalesce(c.client_email, '')), ?) > 0
+                       or strpos(c.id::text, ?) > 0
+                       or strpos(lower(coalesce(c.summary, '')), ?) > 0)
+                    """);
+            args.addAll(List.of(needle, needle, needle, needle));
         }
         if (cursor != null) {
             List<String> after = Page.sortKey(cursor, 2);

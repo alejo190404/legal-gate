@@ -58,7 +58,7 @@ class TenantReadsPostgresTests {
         String id = UUID.randomUUID().toString();
 
         assertThat(repository.settingsFor(slug, null)).isNull();
-        assertThat(repository.consultationsForTenant(slug, null, null, 50).items()).isEmpty();
+        assertThat(repository.consultationsForTenant(slug, null, null, null, 50).items()).isEmpty();
         assertThat(repository.consultationById(slug, id)).isEmpty();
         assertThat(repository.consultationForEventId(slug, id)).isEmpty();
         assertThat(repository.consultationForSourceMessageId(slug, "<m1@mail>")).isEmpty();

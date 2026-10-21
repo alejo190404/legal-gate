@@ -216,9 +216,12 @@ public class IntakeService {
 
     static final int PAGE_SIZE = 50;
 
-    /** A page of Bandeja, newest first; {@code cursor} is the previous page's nextCursor, null for the first. */
-    public ConsultationListResponse consultationsForTenant(String tenantId, String stage, String cursor) {
-        Page<ConsultationResponse> page = intakeRepository.consultationsForTenant(tenantId, stage, cursor, PAGE_SIZE);
+    /**
+     * A page of Bandeja, newest first; {@code cursor} is the previous page's nextCursor, null for the first.
+     * {@code query} narrows the page but not {@code stageCounts}, which always count the whole firm.
+     */
+    public ConsultationListResponse consultationsForTenant(String tenantId, String stage, String query, String cursor) {
+        Page<ConsultationResponse> page = intakeRepository.consultationsForTenant(tenantId, stage, query, cursor, PAGE_SIZE);
         return new ConsultationListResponse(page.items(), page.nextCursor(),
                 cursor == null ? intakeRepository.stageCounts(tenantId) : null);
     }

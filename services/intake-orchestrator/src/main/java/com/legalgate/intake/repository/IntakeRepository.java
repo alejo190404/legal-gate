@@ -59,7 +59,7 @@ public interface IntakeRepository {
     );
 
     /** A page of the firm's Consultations, newest first; {@code stage} null means every Stage. */
-    Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit);
+    Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String query, String cursor, int limit);
 
     /** How many of the firm's Consultations are in each Stage; a Stage with none is absent. */
     Map<String, Long> stageCounts(String tenantSlug);
