@@ -93,12 +93,12 @@ class ActivitiesTests extends ClientsSeam {
         firm(null);
         Activity activity = open(new ActivityRequest(type("Concepto jurídico").id(), null, null, null, null, null, null));
         assertThat(activity.startDate()).isEqualTo(BusinessDays.today());
-        assertThat(clients.search(TENANT, null, true)).extracting(Client::id).doesNotContain(acme.id());
+        assertThat(clients.search(TENANT, null, true, null).items()).extracting(Client::id).doesNotContain(acme.id());
 
         clients.completeActivity(TENANT, "user_admin", acme.id(), activity.id());
 
         assertThat(clients.activities(TENANT, acme.id()).get(0).done()).isTrue();
-        assertThat(clients.search(TENANT, null, true)).extracting(Client::id).contains(acme.id());
+        assertThat(clients.search(TENANT, null, true, null).items()).extracting(Client::id).contains(acme.id());
         assertThatThrownBy(() -> clients.completeActivity(TENANT, "user_admin", acme.id(), activity.id()))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("activity_done");
         assertThatThrownBy(() -> clients.updateActivity(TENANT, "user_admin", acme.id(), activity.id(),

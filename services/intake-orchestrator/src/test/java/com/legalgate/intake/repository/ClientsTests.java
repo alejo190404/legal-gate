@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.legalgate.intake.clients.ClientsModels.Client;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.clients.ClientsModels.ClientRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.clients.ClientsService;
@@ -159,10 +160,27 @@ class ClientsTests {
         clients.create(TENANT, ADMIN, new ClientRequest(
                 "Maria Perez", "PERSON", "1020304050", null, null, ClientsFixtures.ANA, List.of("maria@example.com")));
 
-        assertThat(clients.search(TENANT, "acme", false)).extracting(Client::name).containsExactly("Acme SAS");
-        assertThat(clients.search(TENANT, "MARIA@", false)).extracting(Client::name).containsExactly("Maria Perez");
-        assertThat(clients.search(TENANT, "10203", false)).extracting(Client::name).containsExactly("Maria Perez");
-        assertThat(clients.search(TENANT, null, true)).hasSize(2);
+        assertThat(clients.search(TENANT, "acme", false, null).items()).extracting(Client::name).containsExactly("Acme SAS");
+        assertThat(clients.search(TENANT, "MARIA@", false, null).items()).extracting(Client::name).containsExactly("Maria Perez");
+        assertThat(clients.search(TENANT, "10203", false, null).items()).extracting(Client::name).containsExactly("Maria Perez");
+        assertThat(clients.search(TENANT, null, true, null).items()).hasSize(2);
+    }
+
+    @Test
+    void theListComesFiftyClientsAtATime() {
+        ClientsFixtures.saveLawyers(intake, TENANT);
+        for (int i = 1; i <= 51; i++) {
+            clients.create(TENANT, ADMIN, request("Cliente %02d".formatted(i), "PERSON", List.of("c%d@example.com".formatted(i))));
+        }
+
+        Page<Client> first = clients.search(TENANT, null, false, null);
+        Page<Client> second = clients.search(TENANT, null, false, first.nextCursor());
+
+        assertThat(first.items()).hasSize(50).first().extracting(Client::name).isEqualTo("Cliente 01");
+        assertThat(second.items()).extracting(Client::name).containsExactly("Cliente 51");
+        assertThat(second.nextCursor()).isNull();
+        assertThatThrownBy(() -> clients.search(TENANT, null, false, "not-a-cursor"))
+                .hasMessageContaining("invalid_cursor");
     }
 
     private ClientRequest request(String name, String kind, List<String> addresses) {

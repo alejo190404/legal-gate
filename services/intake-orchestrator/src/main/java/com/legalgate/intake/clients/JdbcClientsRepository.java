@@ -7,6 +7,7 @@ import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.repository.NotificationOutboxSql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -16,15 +17,18 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 @Repository
 @ConditionalOnProperty(name = "legalgate.intake.persistence", havingValue = "jdbc")
@@ -44,6 +48,39 @@ class JdbcClientsRepository implements ClientsRepository {
     public List<Client> clients(String tenantSlug) {
         return inTenant(tenantSlug, () -> withAddresses(jdbc.query(
                 clientSelect() + " where t.slug = ? order by lower(c.name)", this::mapClient, tenantSlug)));
+    }
+
+    // Keyset on (lower(name), id): both sides of the comparison are lowered by Postgres, so the
+    // cursor sorts exactly like the rows. strpos matches the query literally, % and _ included.
+    @Override
+    public Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit) {
+        StringBuilder sql = new StringBuilder(clientSelect()).append(" where t.slug = ?");
+        List<Object> args = new ArrayList<>(List.of(tenantSlug));
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (!needle.isEmpty()) {
+            sql.append("""
+                     and (strpos(lower(c.name), ?) > 0 or strpos(lower(coalesce(c.id_number, '')), ?) > 0
+                       or exists (select 1 from client_contact_addresses a
+                                  where a.client_id = c.id and strpos(lower(a.address), ?) > 0))
+                    """);
+            args.addAll(List.of(needle, needle, needle));
+        }
+        if (idleOnly) {
+            sql.append(" and not exists (select 1 from activities a where a.client_id = c.id and not a.done)");
+        }
+        if (cursor != null) {
+            List<String> after = Page.sortKey(cursor, 2);
+            UUID afterId = uuid(after.get(1));
+            if (afterId == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
+            }
+            sql.append(" and (lower(c.name), c.id) > (lower(?), ?)");
+            args.addAll(List.of(after.get(0), afterId));
+        }
+        sql.append(" order by lower(c.name), c.id limit ?");
+        args.add(limit + 1);
+        return inTenant(tenantSlug, () -> Page.of(withAddresses(jdbc.query(sql.toString(), this::mapClient, args.toArray())),
+                limit, client -> List.of(client.name(), client.id())));
     }
 
     @Override

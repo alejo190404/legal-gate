@@ -10,6 +10,7 @@ import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.Engagement;
 import com.legalgate.intake.clients.ClientsModels.EngagementRequest;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.service.TenantContextResolver;
 import java.net.URI;
 import java.util.LinkedHashMap;
@@ -40,12 +41,13 @@ public class ClientsController {
     }
 
     @GetMapping("/api/clients")
-    public List<Client> clients(
+    public Page<Client> clients(
             @RequestHeader("X-LegalGate-Organization-Id") String organizationId,
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "false") boolean idle
+            @RequestParam(defaultValue = "false") boolean idle,
+            @RequestParam(required = false) String cursor
     ) {
-        return clients.search(tenant(organizationId), q, idle);
+        return clients.search(tenant(organizationId), q, idle, cursor);
     }
 
     @PostMapping("/api/clients")

@@ -6,6 +6,7 @@ import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +46,28 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .sorted(Comparator.comparing(client -> client.name().toLowerCase()))
                 .map(this::withOpenActivities)
                 .toList();
+    }
+
+    @Override
+    public Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit) {
+        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        Comparator<Client> byName = Comparator.comparing((Client client) -> client.name().toLowerCase(Locale.ROOT))
+                .thenComparing(Client::id);
+        List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
+        Client afterClient = after == null ? null : new Client(after.get(1), after.get(0), null, null, null, null, null,
+                List.of(), 0, null, null);
+        List<Client> rows = tenantClients(tenantSlug).values().stream()
+                .map(this::withOpenActivities)
+                .filter(client -> !idleOnly || client.openActivities() == 0)
+                .filter(client -> needle.isEmpty()
+                        || client.name().toLowerCase(Locale.ROOT).contains(needle)
+                        || (client.idNumber() != null && client.idNumber().toLowerCase(Locale.ROOT).contains(needle))
+                        || client.contactAddresses().stream().anyMatch(address -> address.toLowerCase(Locale.ROOT).contains(needle)))
+                .filter(client -> afterClient == null || byName.compare(client, afterClient) > 0)
+                .sorted(byName)
+                .limit(limit + 1L)
+                .toList();
+        return Page.of(rows, limit, client -> List.of(client.name(), client.id()));
     }
 
     @Override

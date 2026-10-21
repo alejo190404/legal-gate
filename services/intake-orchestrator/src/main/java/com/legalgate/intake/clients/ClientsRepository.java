@@ -6,6 +6,7 @@ import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.Page;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -14,6 +15,13 @@ import java.util.Optional;
 public interface ClientsRepository {
 
     List<Client> clients(String tenantSlug);
+
+    /**
+     * Up to {@code limit} Clients by name, after {@code cursor} (null for the first page). A non-blank
+     * {@code query} matches name, ID number or a Contact Address, case-insensitively and literally;
+     * {@code idleOnly} keeps the Clients with no open Activities.
+     */
+    Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit);
 
     Optional<Client> client(String tenantSlug, String clientId);
 

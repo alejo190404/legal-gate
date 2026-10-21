@@ -8,6 +8,7 @@ import com.legalgate.intake.clients.ClientsModels.ActivityType;
 import com.legalgate.intake.clients.ClientsModels.Client;
 import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.Page;
 import java.time.Instant;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import java.sql.Connection;
@@ -350,6 +351,51 @@ class ClientsMigrationPostgresTests {
             }
         }
         assertThat(repository.clientForContactAddress("tenant-a", "gc@acme.co")).isEmpty();
+    }
+
+    @Test
+    void clientsArePagedByNameWithACursorThatSurvivesTiedNames() {
+        JdbcClientsRepository repository = repository();
+        repository.saveClient("tenant-a", client(null, "beta", LAWYER_A, "b@beta.co"), List.of());
+        repository.saveClient("tenant-a", client(null, "Alfa", LAWYER_A, "a1@alfa.co"), List.of());
+        repository.saveClient("tenant-a", client(null, "alfa", LAWYER_A, "a2@alfa.co"), List.of());
+        repository.saveClient("tenant-b", client(null, "Ajeno", LAWYER_B, "x@b.co"), List.of());
+
+        List<Client> seen = new java.util.ArrayList<>();
+        String cursor = null;
+        do {
+            Page<Client> page = repository.clients("tenant-a", null, false, cursor, 1);
+            seen.addAll(page.items());
+            cursor = page.nextCursor();
+        } while (cursor != null);
+
+        assertThat(seen).extracting(client -> client.name().toLowerCase()).containsExactly("alfa", "alfa", "beta");
+        assertThat(seen).extracting(Client::id).doesNotHaveDuplicates();
+        assertThat(seen.get(2).contactAddresses()).containsExactly("b@beta.co");
+        assertThat(repository.clients("tenant-a", null, false, null, 3).nextCursor()).isNull();
+    }
+
+    @Test
+    void searchAndTheIdleFilterRunInTheDatabaseAndPageTheSameWay() {
+        JdbcClientsRepository repository = repository();
+        repository.saveClient("tenant-a", client(null, "Acme SAS", LAWYER_A, "gc@acme.co"), List.of());
+        repository.saveClient("tenant-a", new Client(null, "Beta", ClientsModels.PERSON, "ACME-77", null, null,
+                LAWYER_A, List.of("b@beta.co"), 0, null, null), List.of());
+        Client busy = repository.saveClient("tenant-a", client(null, "Carlos", LAWYER_A, "carlos@acme.co"), List.of());
+        repository.saveClient("tenant-a", client(null, "Dora 100%_", LAWYER_A, "dora@otro.co"), List.of());
+        repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", busy, LAWYER_A), List.of());
+
+        Page<Client> first = repository.clients("tenant-a", "acme", false, null, 2);
+        Page<Client> second = repository.clients("tenant-a", "acme", false, first.nextCursor(), 2);
+        assertThat(first.items()).extracting(Client::name).containsExactly("Acme SAS", "Beta");
+        assertThat(second.items()).extracting(Client::name).containsExactly("Carlos");
+        assertThat(second.nextCursor()).isNull();
+
+        assertThat(repository.clients("tenant-a", "ACME", true, null, 10).items())
+                .extracting(Client::name).containsExactly("Acme SAS", "Beta");
+        // The query is matched literally, not as a LIKE pattern.
+        assertThat(repository.clients("tenant-a", "%_", false, null, 10).items())
+                .extracting(Client::name).containsExactly("Dora 100%_");
     }
 
     static Activity turnaround(JdbcClientsRepository repository, String tenant, Client client, String lawyerId) {
