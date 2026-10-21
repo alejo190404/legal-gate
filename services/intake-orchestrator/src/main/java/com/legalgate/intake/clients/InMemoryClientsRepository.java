@@ -54,8 +54,6 @@ public class InMemoryClientsRepository implements ClientsRepository {
         Comparator<Client> byName = Comparator.comparing((Client client) -> client.name().toLowerCase(Locale.ROOT))
                 .thenComparing(Client::id);
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
-        Client afterClient = after == null ? null : new Client(after.get(1), after.get(0), null, null, null, null, null,
-                List.of(), 0, null, null);
         List<Client> rows = tenantClients(tenantSlug).values().stream()
                 .map(this::withOpenActivities)
                 .filter(client -> !idleOnly || client.openActivities() == 0)
@@ -63,11 +61,16 @@ public class InMemoryClientsRepository implements ClientsRepository {
                         || client.name().toLowerCase(Locale.ROOT).contains(needle)
                         || (client.idNumber() != null && client.idNumber().toLowerCase(Locale.ROOT).contains(needle))
                         || client.contactAddresses().stream().anyMatch(address -> address.toLowerCase(Locale.ROOT).contains(needle)))
-                .filter(client -> afterClient == null || byName.compare(client, afterClient) > 0)
+                .filter(client -> after == null || isAfter(client, after.get(0), after.get(1)))
                 .sorted(byName)
                 .limit(limit + 1L)
                 .toList();
         return Page.of(rows, limit, client -> List.of(client.name(), client.id()));
+    }
+
+    private static boolean isAfter(Client client, String name, String id) {
+        int byName = client.name().toLowerCase(Locale.ROOT).compareTo(name.toLowerCase(Locale.ROOT));
+        return byName > 0 || byName == 0 && client.id().compareTo(id) > 0;
     }
 
     @Override

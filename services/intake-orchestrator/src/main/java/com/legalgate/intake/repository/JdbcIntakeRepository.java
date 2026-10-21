@@ -589,8 +589,8 @@ class JdbcIntakeRepository implements IntakeRepository {
         if (cursor != null) {
             List<String> after = Page.sortKey(cursor, 2);
             sql.append(" and (c.created_at, c.id) < (?, ?)");
-            args.add(cursorTimestamp(after.get(0)));
-            args.add(cursorId(after.get(1)));
+            args.add(Timestamp.from(Page.instant(after.get(0))));
+            args.add(Page.uuid(after.get(1)));
         }
         sql.append(" order by c.created_at desc, c.id desc limit ?");
         args.add(limit + 1);
@@ -599,22 +599,6 @@ class JdbcIntakeRepository implements IntakeRepository {
             return Page.of(jdbcTemplate.query(sql.toString(), this::mapConsultation, args.toArray()), limit,
                     consultation -> List.of(consultation.createdAt().toString(), consultation.id()));
         });
-    }
-
-    private static Timestamp cursorTimestamp(String value) {
-        try {
-            return Timestamp.from(Instant.parse(value));
-        } catch (java.time.format.DateTimeParseException malformed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-        }
-    }
-
-    private static UUID cursorId(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException malformed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_cursor");
-        }
     }
 
     @Override
