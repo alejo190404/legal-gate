@@ -724,6 +724,9 @@
                     }
                   </div>
                 }
+                @if (nextCursor() && !isLoading()) {
+                  <button class="btn sec wide" type="button" (click)="loadMore()">Cargar más</button>
+                }
               </div>
 
               @if (selectedConsultation(); as c) {
