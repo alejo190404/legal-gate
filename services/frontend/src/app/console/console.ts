@@ -1,13 +1,14 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { ApiConfigService } from '../config/api-config.service';
 import { LoadingScreenComponent } from '../loading-screen/loading-screen';
 import { ActivityTypesComponent } from '../activity-types/activity-types';
-import { ClientsComponent } from '../clients/clients';
+import { ClientsComponent, Page } from '../clients/clients';
 import { EngagementComponent } from '../clients/engagement';
 import { PixelIconComponent } from './pixel-icon';
+import { Subscription } from 'rxjs';
 
 type ViewName = 'loading' | 'register' | 'onboard-lawyers' | 'onboard-rules' | 'billing' | 'console';
 type ConsoleView =
@@ -77,9 +78,9 @@ interface Consultation {
   stage: string;
 }
 
-interface ConsultationListResponse {
-  tenantId: string;
-  consultations: Consultation[];
+/** A page of Bandeja, newest first. Only the first page counts the firm's Consultations per Stage. */
+interface ConsultationListResponse extends Page<Consultation> {
+  stageCounts?: Record<string, number>;
 }
 
 interface UrgencyDefinition {
@@ -310,6 +311,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   readonly tenantId = signal('');
   readonly sessionEmail = signal('');
   readonly consultations = signal<Consultation[]>([]);
+  readonly nextCursor = signal<string | null>(null);
+  readonly stageCounts = signal<Record<string, number>>({});
+  /** The Consultation whose detail is open when it isn't on a loaded page. */
+  private readonly openedConsultation = signal<Consultation | null>(null);
+  private listing?: Subscription;
   readonly tenantSettings = signal<TenantSettingsResponse | null>(null);
   readonly settingsLoaded = signal(false);
   readonly activeView = signal<ConsoleView>('inbox');
@@ -393,7 +399,9 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     automaticAnswers: false,
   };
 
-  readonly totalConsultations = computed(() => this.consultations().length);
+  readonly totalConsultations = computed(() =>
+    Object.values(this.stageCounts()).reduce((sum, count) => sum + count, 0),
+  );
   readonly urgentConsultations = computed(
     () => this.consultations().filter((consultation) => this.isHighestUrgency(consultation)).length,
   );
@@ -485,7 +493,9 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   readonly selectedConsultation = computed(() => {
     const id = this.selectedConsultationId();
-    return id ? (this.consultations().find((consultation) => consultation.id === id) ?? null) : null;
+    if (!id) return null;
+    const opened = this.openedConsultation();
+    return this.consultations().find((consultation) => consultation.id === id) ?? (opened?.id === id ? opened : null);
   });
 
   ngOnInit(): void {
@@ -862,6 +872,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   private clearProtectedTenantData(): void {
     this.consultations.set([]);
+    this.nextCursor.set(null);
+    this.stageCounts.set({});
     this.tenantSettings.set(null);
     this.settingsLoaded.set(false);
   }
@@ -927,7 +939,28 @@ export class ConsoleComponent implements OnInit, OnDestroy {
   selectConsultation(id: string): void {
     this.selectedConsultationId.set(id);
     this.isTranscriptOpen.set(false);
+    if (!this.consultations().some((consultation) => consultation.id === id)) {
+      this.fetchOpenedConsultation(id);
+    }
     this.loadDiagnostics(id);
+  }
+
+  // Bandeja holds only the pages loaded so far, so a Consultation opened off them is fetched on its own.
+  private fetchOpenedConsultation(id: string): void {
+    this.http.get<Consultation>(this.apiConfig.url(`/api/consultations/${id}`)).subscribe({
+      next: (consultation) => {
+        if (this.selectedConsultationId() === id) {
+          this.openedConsultation.set(consultation);
+        }
+      },
+      error: (error: HttpErrorResponse) =>
+        this.handleProtectedError(error, () => {
+          if (this.selectedConsultationId() === id) {
+            this.closeDetail();
+            this.consultationsErrorMessage.set('No se encontró la consulta.');
+          }
+        }),
+    });
   }
 
   closeDetail(): void {
@@ -989,11 +1022,11 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   setInboxFilter(id: string): void {
     this.inboxFilter.set(id);
+    this.loadConsultations();
   }
 
   statusCount(id: string): number {
-    const all = this.consultations();
-    return id === 'all' ? all.length : all.filter((consultation) => consultation.stage === id).length;
+    return id === 'all' ? this.totalConsultations() : (this.stageCounts()[id] ?? 0);
   }
 
   badgeClass(consultation: Consultation): string {
@@ -1064,16 +1097,40 @@ export class ConsoleComponent implements OnInit, OnDestroy {
     this.closeTranscript();
   }
 
+  /** Bandeja's first page for the chosen chip, with the firm's totals per Stage. */
   loadConsultations(): void {
     this.isLoading.set(true);
+    this.fetchConsultations(null);
+  }
+
+  loadMore(): void {
+    this.fetchConsultations(this.nextCursor());
+  }
+
+  // Only the newest listing counts: switching chips cancels an in-flight page of the previous one.
+  private fetchConsultations(cursor: string | null): void {
+    this.listing?.unsubscribe();
     this.consultationsErrorMessage.set('');
-    this.http
-      .get<ConsultationListResponse>(
-        this.apiConfig.url('/api/consultations'),
-      )
+    let params = new HttpParams();
+    if (this.inboxFilter() !== 'all') {
+      params = params.set('stage', this.inboxFilter());
+    }
+    if (cursor) {
+      params = params.set('cursor', cursor);
+    }
+    this.listing = this.http
+      .get<ConsultationListResponse>(this.apiConfig.url('/api/consultations'), { params })
       .subscribe({
-        next: (response) => {
-          this.consultations.set([...response.consultations].reverse());
+        next: (page) => {
+          this.consultations.update((loaded) => (cursor ? [...loaded, ...page.items] : page.items));
+          this.nextCursor.set(page.nextCursor);
+          if (page.stageCounts) {
+            this.stageCounts.set(page.stageCounts);
+          }
+          const selected = this.selectedConsultationId();
+          if (!cursor && selected && !page.items.some((consultation) => consultation.id === selected)) {
+            this.fetchOpenedConsultation(selected);
+          }
           this.statusMessage.set('Datos de la firma cargados desde el servicio de intake.');
           this.isLoading.set(false);
         },
@@ -1438,7 +1495,9 @@ export class ConsoleComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (consultation) => {
-          this.consultations.update((items) => [consultation, ...items]);
+          // Reload so the chips count it; the detail shows it meanwhile, whatever chip is chosen.
+          this.openedConsultation.set(consultation);
+          this.loadConsultations();
           this.consultationsErrorMessage.set('');
           this.statusMessage.set('Consulta creada, clasificada y agendada.');
           this.form.clientName = '';

@@ -63,7 +63,7 @@ describe('ConsoleComponent session + billing flow', () => {
       accessEndsAt: null,
       message: 'Billing is disabled for this environment.',
     });
-    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1',
       urgentKeywords: [],
@@ -94,7 +94,7 @@ describe('ConsoleComponent session + billing flow', () => {
       billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
       subscription: null, payments: [], accessEndsAt: null, message: '',
     });
-    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
       destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co',
@@ -140,7 +140,7 @@ describe('ConsoleComponent session + billing flow', () => {
       billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
       subscription: null, payments: [], accessEndsAt: null, message: '',
     });
-    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
       destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co',
@@ -239,7 +239,7 @@ describe('ConsoleComponent session + billing flow', () => {
       billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
       subscription: null, payments: [], accessEndsAt: null, message: '',
     });
-    http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+    http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: ['NORMAL'],
       destinationEmail: 'ana@firm.co', intakeEmail: 'firma-1@intake.legal-gate.co',
@@ -295,7 +295,7 @@ describe('ConsoleComponent session + billing flow', () => {
         billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
         subscription: null, payments: [], accessEndsAt: null, message: '',
       });
-      http.expectOne('/api/consultations').flush({ tenantId: 'firma-1', consultations: [] });
+      http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
       http.expectOne('/api/tenant/settings').flush(settings(routingRules));
       fixture.detectChanges();
       const component = fixture.componentInstance;
@@ -564,7 +564,7 @@ describe('ConsoleComponent session + billing flow', () => {
       accessEndsAt: null,
       message: 'Suscripcion activa.',
     });
-    http.expectOne('/api/consultations').flush({ tenantId: 'tenant-1', consultations: [] });
+    http.expectOne('/api/consultations').flush({ items: [], nextCursor: null, stageCounts: {} });
     http.expectOne('/api/tenant/settings').flush({
       tenantId: 'tenant-1',
       urgentKeywords: [],
@@ -580,45 +580,108 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(component.view()).toBe('console');
   });
 
-  it('sorts Bandeja by the Stage each Consultation reports', () => {
-    user.set({ id: 'user_1', email: 'admin@firma.test' });
-    hasOrganization.set(true);
-    const fixture = TestBed.createComponent(ConsoleComponent);
-    const http = TestBed.inject(HttpTestingController);
-    fixture.detectChanges();
-    http.expectOne('/api/session').flush({
-      userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
-      displayName: 'Firma 1', role: 'firm_admin',
-    });
-    http.expectOne('/api/billing/subscription').flush({
-      billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
-      subscription: null, payments: [], accessEndsAt: null, message: '',
-    });
+  describe('Bandeja pages', () => {
     // Nothing in these fields says rejected or scheduled; only the reported Stage does.
-    const consultation = (id: string, stage: string) => ({
+    const consultation = (id: string, stage = 'new') => ({
       id, tenantId: 'firma-1', clientName: 'Ana', clientEmail: 'ana@example.com', summary: 'Contrato',
       preferredWindow: null, status: 'RECEIVED', urgency: 'NORMAL', consultationType: null,
-      assignedLawyerEmail: null, classification: null, notifications: null, sourceEventId: null,
-      sourceMessageId: null, createdAt: '2026-10-01T10:00:00Z', eventId: null, event: null,
+      assignedLawyerEmail: null,
+      classification: { label: null, matchedUrgentKeywords: [], concept: null, explanation: null, confidence: null },
+      notifications: { emailQueued: false, calendarQueued: false, destinationEmail: null, preferredWindow: null },
+      sourceEventId: null, sourceMessageId: null, createdAt: '2026-10-01T10:00:00Z', eventId: null, event: null,
       diagnosticsSummary: null, stage,
     });
-    http.expectOne('/api/consultations').flush({
-      tenantId: 'firma-1',
-      consultations: [consultation('c-1', 'rejected'), consultation('c-2', 'scheduled'), consultation('c-3', 'scheduled')],
-    });
-    http.expectOne('/api/tenant/settings').flush({
-      tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: [],
-      destinationEmail: null, intakeEmail: 'firma-1@intake.legal-gate.co', routingRules: [], lawyers: [],
-    });
-    const component = fixture.componentInstance;
 
-    expect(component.statusCount('all')).toBe(3);
-    expect(component.statusCount('scheduled')).toBe(2);
-    expect(component.statusCount('rejected')).toBe(1);
-    expect(component.statusCount('new')).toBe(0);
-    component.inboxFilter.set('rejected');
-    expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-1']);
-    expect(component.statusLabel(component.filteredConsultations()[0])).toBe('Rechazado');
-    expect(component.badgeClass(component.filteredConsultations()[0])).toBe('badge st-rejected');
+    function openBandeja(firstPage: object) {
+      user.set({ id: 'user_1', email: 'admin@firma.test' });
+      hasOrganization.set(true);
+      const fixture = TestBed.createComponent(ConsoleComponent);
+      const http = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+      http.expectOne('/api/session').flush({
+        userId: 'user_1', sessionId: 'session_1', organizationId: 'org_1', tenantId: 'firma-1',
+        displayName: 'Firma 1', role: 'firm_admin',
+      });
+      http.expectOne('/api/billing/subscription').flush({
+        billingEnabled: false, enforcementEnabled: false, entitled: true, status: 'DISABLED',
+        subscription: null, payments: [], accessEndsAt: null, message: '',
+      });
+      http.expectOne('/api/consultations').flush(firstPage);
+      http.expectOne('/api/tenant/settings').flush({
+        tenantId: 'firma-1', urgentKeywords: [], consultationWindows: [], urgencyLevels: [],
+        destinationEmail: null, intakeEmail: 'firma-1@intake.legal-gate.co', routingRules: [], lawyers: [],
+      });
+      fixture.detectChanges();
+      return { fixture, http, component: fixture.componentInstance };
+    }
+
+    const listRequest = (params: Record<string, string>) => (request: { url: string; params: any }) =>
+      request.url === '/api/consultations' &&
+      request.params.keys().length === Object.keys(params).length &&
+      Object.entries(params).every(([key, value]) => request.params.get(key) === value);
+
+    it("shows the firm's total per Stage on the chips and in the nav, not just what is loaded", () => {
+      const { component } = openBandeja({
+        items: [consultation('c-1', 'rejected')],
+        nextCursor: 'cursor-1',
+        stageCounts: { rejected: 3, scheduled: 120 },
+      });
+
+      expect(component.statusCount('all')).toBe(123);
+      expect(component.statusCount('scheduled')).toBe(120);
+      expect(component.statusCount('rejected')).toBe(3);
+      expect(component.statusCount('new')).toBe(0);
+      expect(component.navCount('inbox')).toBe(123);
+      expect(component.statusLabel(component.filteredConsultations()[0])).toBe('Rechazado');
+      expect(component.badgeClass(component.filteredConsultations()[0])).toBe('badge st-rejected');
+    });
+
+    it('"Cargar más" appends the next page and disappears after the last', () => {
+      const { fixture, http, component } = openBandeja({
+        items: [consultation('c-2')], nextCursor: 'cursor-1', stageCounts: { new: 2 },
+      });
+      const loadMoreButton = () =>
+        [...fixture.nativeElement.querySelectorAll('button')].find((b: HTMLElement) => b.textContent?.includes('Cargar más'));
+
+      loadMoreButton().click();
+      http.expectOne(listRequest({ cursor: 'cursor-1' })).flush({ items: [consultation('c-1')], nextCursor: null });
+      fixture.detectChanges();
+
+      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
+      expect(component.statusCount('all')).toBe(2);
+      expect(loadMoreButton()).toBeUndefined();
+    });
+
+    it('asks the server for the chosen Stage, pages through it, and "Todas" goes back to every Stage', () => {
+      const { http, component } = openBandeja({
+        items: [consultation('c-3'), consultation('c-2', 'scheduled')], nextCursor: 'cursor-all',
+        stageCounts: { new: 1, scheduled: 70 },
+      });
+
+      component.setInboxFilter('scheduled');
+      http.expectOne(listRequest({ stage: 'scheduled' })).flush({
+        items: [consultation('c-2', 'scheduled')], nextCursor: 'cursor-scheduled', stageCounts: { new: 1, scheduled: 70 },
+      });
+      component.loadMore();
+      http.expectOne(listRequest({ stage: 'scheduled', cursor: 'cursor-scheduled' })).flush({
+        items: [consultation('c-1', 'scheduled')], nextCursor: null,
+      });
+      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-2', 'c-1']);
+
+      component.setInboxFilter('all');
+      http.expectOne(listRequest({})).flush({ items: [consultation('c-3')], nextCursor: null, stageCounts: { new: 1 } });
+      expect(component.filteredConsultations().map((c) => c.id)).toEqual(['c-3']);
+    });
+
+    it('opens a Consultation that is not on a loaded page', () => {
+      const { http, component } = openBandeja({ items: [consultation('c-new')], nextCursor: 'cursor-1', stageCounts: { new: 80 } });
+
+      component.selectConsultation('c-old');
+      http.expectOne('/api/consultations/c-old').flush(consultation('c-old', 'scheduled'));
+      http.expectOne('/api/consultations/c-old/diagnostics').flush(null, { status: 404, statusText: 'Not Found' });
+
+      expect(component.selectedConsultation()?.id).toBe('c-old');
+      expect(component.statusLabel(component.selectedConsultation()!)).toBe('Agendado');
+    });
   });
 });

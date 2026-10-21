@@ -1,16 +1,17 @@
 package com.legalgate.intake.repository;
 
-import com.legalgate.intake.model.ConsultationListResponse;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.DiagnosticsMessage;
 import com.legalgate.intake.model.DiagnosticsSession;
 import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.Page;
 import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface IntakeRepository {
@@ -57,7 +58,11 @@ public interface IntakeRepository {
             List<NotificationOutboxItem> notifications
     );
 
-    ConsultationListResponse consultationsForTenant(String tenantSlug);
+    /** A page of the firm's Consultations, newest first; {@code stage} null means every Stage. */
+    Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String cursor, int limit);
+
+    /** How many of the firm's Consultations are in each Stage; a Stage with none is absent. */
+    Map<String, Long> stageCounts(String tenantSlug);
 
     Optional<ConsultationResponse> consultationById(String tenantSlug, String consultationId);
 
