@@ -735,6 +735,9 @@ class JdbcIntakeRepository implements IntakeRepository {
                 args[index + 1] = lawyerIds.get(index);
             }
             jdbcTemplate.update("delete from lawyers where tenant_id = ? and id not in (" + placeholders + ")", args);
+            // Emails are unique per firm and rows are written one by one, so lawyers trading or handing over an email
+            // would collide midway. Every remaining row is rewritten below, so park their emails first.
+            jdbcTemplate.update("update lawyers set email = id::text || '@pending.invalid' where tenant_id = ?", tenantId);
         }
         for (LawyerProfile lawyer : lawyers) {
             UUID lawyerId = UUID.fromString(lawyer.id());
