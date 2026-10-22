@@ -52,7 +52,11 @@ Every message exchanged with a potential client about one Consultation, seen as 
 
 ## Firm Voice
 
-The identity a potential client sees on everything LegalGate sends them: the firm's name, signed by the firm. A potential client wrote to a firm and hears back from that firm — LegalGate is not a party to the correspondence and never appears in it. Distinct from what lawyers and firm staff receive, which is LegalGate's own product surface and is branded as such.
+The identity a potential client sees on everything LegalGate sends them: the firm's name, signed by the firm. A potential client wrote to a firm and hears back from that firm — LegalGate is not a party to the correspondence and never appears in it. Distinct from what lawyers and firm staff receive, which is LegalGate's own product surface and is branded as such. The Firm Voice is who is speaking; how the message looks is the House Style.
+
+## House Style
+
+The one look every email LegalGate sends is dressed in — layout, palette and type — whoever receives it. It carries no name of its own: in client-facing mail it frames the firm's name and nothing else, so a potential client sees a firm with a consistent look, not LegalGate. Only mail to lawyers and firm staff adds LegalGate's name and mark to it. A firm replacing the House Style with its own is a later feature; until then every firm shares it.
 
 ## Non-Engagement Notice
 

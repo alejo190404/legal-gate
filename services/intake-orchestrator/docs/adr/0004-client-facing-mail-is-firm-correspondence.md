@@ -1,5 +1,7 @@
 # Client-facing mail is firm correspondence, not product notification
 
+- Status: Partially superseded by ADR-0009 (plaintext conversational mail, the LegalGate header fallback, the client card footer)
+
 A potential client's first contact with a firm arrived as a bare LLM question from "LegalGate Agenda", on a fresh thread, with no salutation or signature. Everything sent to a potential client now carries the Firm Voice instead: the firm's name as sender, a salutation, a signature from the firm's consultation team, and no mention of LegalGate. Mail to lawyers and firm staff keeps LegalGate branding, because they are the customer and know what LegalGate is.
 
 ## Consequences

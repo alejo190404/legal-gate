@@ -3,9 +3,15 @@ package com.legalgate.intake.service;
 import static org.assertj.core.api.Assertions.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.util.HtmlUtils;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 
@@ -15,7 +21,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void lawyerTemplateFillsFieldsAndEscapes() {
-        String html = renderer.renderLawyer(consultation(), event());
+        String html = renderer.renderLawyer(consultation(), event(), false).html();
 
         assertThat(html).contains("A1B2C3D4");                 // matter_id: first 8 compact chars, uppercased
         assertThat(html).contains("Juan &amp; Co Pérez"); // client_name with & escaped
@@ -26,7 +32,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateFormatsDateAndEscapesSummary() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).contains("Juan");            // client_first_name (first token)
         assertThat(html).contains("julio");           // Spanish month in America/Bogota
@@ -45,14 +51,14 @@ class EmailTemplateRendererTests {
                 "Tutela", "URGENTE", 1, null, 100,
                 null, null, "SCHEDULED", "SYSTEM");
 
-        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo", false).html();
 
         assertThat(html).doesNotContain("{{");
     }
 
     @Test
     void clientReceiptSaysItIsAutomaticAndInvitesNoReply() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).contains("Este correo es autom&aacute;tico");
         assertThat(html).doesNotContain("Responde a este mensaje");
@@ -60,7 +66,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).containsOnlyOnce("Firma Ejemplo"); // named once, in the header, like letterhead
         assertThat(html).doesNotContain("LegalGate"); // no wordmark, no product footer
@@ -69,11 +75,14 @@ class EmailTemplateRendererTests {
     }
 
     @Test
-    void clientTemplateFallsBackToWhateverNameTheMailIsSentFrom() {
-        // A tenant with no organization display name has no other name to show, and a blank header
-        // is worse than the sender name the message already arrives from (issue #48, ADR 0004).
-        assertThat(renderer.renderClient(consultation(), event(), "LegalGate Agenda"))
-                .containsOnlyOnce("LegalGate Agenda");
+    void aTenantWithNoDisplayNameGetsAnEmptyHeaderBandAndNoLegalGateAnywhere() {
+        // No fallback to the sender name: a stranger never sees LegalGate in a firm's letter (ADR-0009).
+        RenderedEmail mail = renderer.renderClient(consultation(), event(), null, false);
+
+        assertThat(mail.html()).containsPattern("letter-spacing:-0\\.01em;\">\\s*</div>");
+        assertThat(mail.html()).doesNotContainIgnoringCase("legalgate");
+        assertThat(mail.text()).doesNotContainIgnoringCase("legalgate");
+        assertThat(mail.text()).startsWith("Consulta agendada\nSu consulta fue agendada");
     }
 
     @Test
@@ -84,24 +93,164 @@ class EmailTemplateRendererTests {
                 Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"),
                 "SCHEDULED", "SYSTEM");
 
-        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo"))
+        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo", false).html())
                 .doesNotContain("LegalGate")
                 .contains("Por asignar");
+    }
+
+    // --- Scheduling cards in the House Style (#89) ---
+
+    private static final String SCHEDULING_FOOTER = "Este correo es automático. No podemos leer lo que responda aquí. "
+            + "Si necesita algo, escríbanos al correo de siempre.";
+
+    @Test
+    void theClientScheduledCardSpeaksUstedPromisesNoReminderAndSaysRepliesAreNotRead() {
+        RenderedEmail mail = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false);
+
+        assertThat(visibleText(mail))
+                .contains("Su consulta fue agendada", "reservamos su espacio", "Este correo es automático",
+                        "No podemos leer lo que responda aquí. Si necesita algo, escríbanos al correo de siempre.")
+                .doesNotContain("Tu consulta", "tu espacio", "recordatorio", "respondas", "escríbenos");
+        assertThat(mail.text()).contains(SCHEDULING_FOOTER).doesNotContain("recordatorio");
+    }
+
+    @Test
+    void bothScheduledCardsCarryAMeetingButtonOnlyWhenTheEventHasALink() {
+        EventResponse online = withMeeting("https://meet.example.com/abc?x=1&y=2");
+
+        for (RenderedEmail mail : List.of(renderer.renderClient(consultation(), online, "Firma Ejemplo", false),
+                renderer.renderLawyer(consultation(), online, false))) {
+            assertThat(mail.html()).contains("href=\"https://meet.example.com/abc?x=1&amp;y=2\"");
+            assertThat(visibleText(mail)).contains("Unirse a la reunión");
+            assertThat(mail.text()).contains("Unirse a la reunión: https://meet.example.com/abc?x=1&y=2");
+        }
+        for (RenderedEmail mail : List.of(renderer.renderClient(consultation(), event(), "Firma Ejemplo", false),
+                renderer.renderLawyer(consultation(), event(), false))) {
+            assertThat(mail.html()).doesNotContain("<a ").doesNotContain("reuni");
+            assertThat(mail.text()).doesNotContain("reunión");
+        }
+    }
+
+    @Test
+    void theLawyerCardsSummaryBoxStylesCarryNoBackticks() {
+        String html = renderer.renderLawyer(consultation(), event(), false).html();
+
+        assertThat(html).doesNotContain("`")
+                .contains("background-color:#FAF8F4;border:1px solid #E2DBCE;");
+    }
+
+    @Test
+    void aRescheduledConsultationSaysReagendadaInTheHeadlineAndEyebrowOfBothCards() {
+        RenderedEmail client = renderer.renderClient(consultation(), event(), "Firma Ejemplo", true);
+        RenderedEmail lawyer = renderer.renderLawyer(consultation(), event(), true);
+
+        assertThat(CardParity.visibleSentences(client.html())).contains("Consulta reagendada", "Su consulta fue reagendada");
+        assertThat(client.text()).contains("Consulta reagendada", "Su consulta fue reagendada");
+        assertThat(CardParity.visibleSentences(lawyer.html()))
+                .contains("Expediente #A1B2C3D4 · Consulta reagendada", "Consulta reagendada en tu bandeja");
+        assertThat(lawyer.text()).contains("Expediente #A1B2C3D4 · Consulta reagendada", "Consulta reagendada en tu bandeja");
+    }
+
+    @Test
+    void aScheduledConsultationSaysAgendadaAndNeverReagendada() {
+        RenderedEmail client = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false);
+        RenderedEmail lawyer = renderer.renderLawyer(consultation(), event(), false);
+
+        assertThat(CardParity.visibleSentences(client.html())).contains("Consulta agendada", "Su consulta fue agendada");
+        assertThat(CardParity.visibleSentences(lawyer.html()))
+                .contains("Expediente #A1B2C3D4 · Consulta agendada", "Nueva consulta en tu bandeja");
+        for (RenderedEmail mail : List.of(client, lawyer)) {
+            assertThat(mail.html() + mail.text()).doesNotContain("reagendada");
+        }
+    }
+
+    @Test
+    void theSchedulingPlaintextShowsLocalTimesAccentsAndLeavesOutMissingValues() {
+        EventResponse sparse = new EventResponse(
+                "event-1", null, null, null, "Tutela", "URGENTE", 1, null, 100,
+                Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"), null, null,
+                "SCHEDULED", "SYSTEM");
+        ConsultationResponse noEmail = new ConsultationResponse(
+                "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a", "Juan Pérez", null,
+                "Despido sin justa causa", "manana", "SCHEDULED", "URGENTE",
+                "GENERAL", null, null, null, null, null, Instant.parse("2026-07-01T12:00:00Z"));
+
+        for (RenderedEmail mail : List.of(renderer.renderClient(noEmail, sparse, "Firma Ejemplo", false),
+                renderer.renderLawyer(noEmail, sparse, false), renderer.renderClient(consultation(), event(), null, true),
+                renderer.renderLawyer(consultation(), withMeeting("https://meet.example.com/abc"), true))) {
+            assertThat(mail.text()).doesNotContain("null").doesNotContainPattern("\\d{4}-\\d{2}-\\d{2}T")
+                    .contains("14:00–14:45");
+        }
+        assertThat(renderer.renderClient(noEmail, sparse, "Firma Ejemplo", false).text())
+                .contains("Fecha: 2 de julio de 2026", "Abogado: Por asignar\n");
+        assertThat(renderer.renderLawyer(consultation(), event(), false).text())
+                .contains("CLIENTE: Juan & Co Pérez", "EMAIL: juan@example.com", "EN SLA: sí");
+        assertThat(renderer.renderLawyer(noEmail, sparse, false).text()).doesNotContain("EMAIL", "SLA");
+    }
+
+    @Test
+    void bothScheduledPlaintextPartsCarryEverySentenceOfTheirCard() {
+        for (EventResponse event : List.of(event(), withMeeting("https://meet.example.com/abc"))) {
+            for (boolean rescheduled : new boolean[] {false, true}) {
+                CardParity.assertPlaintextCarriesTheCard(
+                        renderer.renderClient(consultation(), event, "Firma Ejemplo", rescheduled));
+                CardParity.assertPlaintextCarriesTheCard(renderer.renderLawyer(consultation(), event, rescheduled));
+            }
+        }
+    }
+
+    @Test
+    void theLawyerPreheaderSaysReagendadaWhenTheConsultationMoved() {
+        assertThat(preheader(renderer.renderLawyer(consultation(), event(), true)))
+                .contains("Consulta reagendada").doesNotContain("Nueva consulta");
+        assertThat(preheader(renderer.renderLawyer(consultation(), event(), false))).contains("Nueva consulta");
+    }
+
+    @Test
+    void theClientPreheaderLeavesOutTheTimeWhenThereIsNone() {
+        EventResponse openEnded = new EventResponse(
+                "event-1", "lawyer-1", "Ana Abogada", "ana@firm.co",
+                "Tutela", "URGENTE", 1, null, 100,
+                null, null, "SCHEDULED", "SYSTEM");
+
+        assertThat(preheader(renderer.renderClient(consultation(), openEnded, "Firma Ejemplo", false)))
+                .isEqualTo("Su consulta fue agendada.");
+        assertThat(preheader(renderer.renderClient(consultation(), event(), "Firma Ejemplo", true)))
+                .isEqualTo("Su consulta fue reagendada — 2 julio 2026, 14:00–14:45 COT.");
+    }
+
+    /** The inbox preview line: the card's hidden preheader, entities decoded. */
+    private static String preheader(RenderedEmail mail) {
+        java.util.regex.Matcher hidden = java.util.regex.Pattern.compile("display:none[^>]*>(.*?)</div>").matcher(mail.html());
+        assertThat(hidden.find()).as("a preheader").isTrue();
+        return HtmlUtils.htmlUnescape(hidden.group(1));
+    }
+
+    private static EventResponse withMeeting(String meetingUrl) {
+        EventResponse base = event();
+        return new EventResponse(base.id(), base.lawyerId(), base.lawyerDisplayName(), base.lawyerEmail(),
+                base.routeName(), base.urgencyName(), base.slaDays(), base.slaDeadline(), base.priorityScore(),
+                base.scheduledStart(), base.scheduledEnd(), meetingUrl, base.scheduledWithinSla(), base.status(),
+                base.source());
+    }
+
+    /** What a reader sees in the card: tags dropped, entities decoded, whitespace collapsed. */
+    private static String visibleText(RenderedEmail mail) {
+        return String.join(" ", CardParity.visibleSentences(mail.html()));
     }
 
     @Test
     void diagnosticsQuestionIsFirmCorrespondenceAroundTheModelsQuestion() {
         String body = renderer.renderDiagnosticsQuestion(
                 "Alejandro Barragán", "Firma Ejemplo", "la acusación en su institución educativa",
-                "  ¿Cual fue la fecha del despido?  ");
+                "  ¿Cual fue la fecha del despido?  ").text();
 
-        assertThat(body).startsWith(
+        assertThat(body).contains(
                 "Estimado(a) Alejandro:\n\nRecibimos su mensaje sobre la acusación en su institución educativa.\n\n");
-        assertThat(body).contains("Para poder revisar su consulta necesitamos algunos datos adicionales:");
-        assertThat(body).contains("¿Cual fue la fecha del despido?");
+        assertThat(body).contains("Lo que necesitamos:\n\n¿Cual fue la fecha del despido?\n");
         assertThat(body).contains("Quedamos atentos a su respuesta.");
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
-        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        assertThat(body).contains("Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.");
         // The reply-linking sentence is an automation tell now that the message is a threaded Re:.
         assertThat(body).doesNotContain("vinculada automaticamente");
         assertThat(body).doesNotContain("<");
@@ -109,12 +258,12 @@ class EmailTemplateRendererTests {
 
     @Test
     void theAcknowledgmentFallsBackToABareReceiptRatherThanNamingWhatNobodyWrote() {
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?").text())
                 .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?").text())
                 .contains("Recibimos su mensaje.\n\n");
         // The model punctuating its own restatement must not produce "sobre su despido..".
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre su despido.\n\n");
     }
 
@@ -122,20 +271,20 @@ class EmailTemplateRendererTests {
     void theAcknowledgmentCarriesOneLeadInEvenWhenTheModelEchoesIt() {
         // The model is asked to complete the sentence and sometimes returns the whole of it.
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje sobre que la acusan de plagio", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje sobre que la acusan de plagio", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre que la acusan de plagio.\n\n");
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "recibimos su mensaje sobre: su despido", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "recibimos su mensaje sobre: su despido", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre su despido.\n\n");
         // Nothing left once the echo goes: the bare receipt, not a sentence ending in "sobre".
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje.", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje.", "¿Fecha?").text())
                 .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
     }
 
     @Test
     void diagnosticsQuestionNeverSignsWithALawyer() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?").text();
 
         assertThat(body).doesNotContain("Ana Abogada");
         assertThat(body).doesNotContain("Abogado");
@@ -154,7 +303,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void signatureOmitsTheFirmLineRatherThanLeakingLegalGateToAPotentialClient() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?").text();
 
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\n\n---");
         assertThat(body).doesNotContain("LegalGate");
@@ -163,11 +312,11 @@ class EmailTemplateRendererTests {
     @Test
     void theNonEngagementNoticeWearsTheSameEnvelopeAsTheQuestion() {
         String body = renderer.renderNonEngagementNotice(
-                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.");
+                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.").text();
 
-        assertThat(body).startsWith("Estimado(a) Maria:\n\n");
+        assertThat(body).contains("Estimado(a) Maria:\n\nLa firma no puede asumir este asunto.\n\n");
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
-        assertThat(body).contains("Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.");
+        assertThat(body).contains("Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.");
         // The firm is declining; nothing here invites a reply.
         assertThat(body).doesNotContain("Quedamos atentos");
     }
@@ -176,12 +325,84 @@ class EmailTemplateRendererTests {
     void aFirmAuthoredNoticeIsReproducedVerbatim() {
         String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
 
-        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n");
+        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n").text();
 
         // Nothing inserted, reworded or stripped between the salutation and the signature.
-        assertThat(body).isEqualTo("Estimado(a) Maria:\n\n" + notice + "\n\nCordialmente,\n"
+        assertThat(body).isEqualTo("Respuesta a su consulta\nSobre su consulta\n\n"
+                + "Estimado(a) Maria:\n\n" + notice + "\n\nCordialmente,\n"
                 + "Equipo de consultas\nFirma Ejemplo\n\n---\n"
-                + "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n");
+                + "Aviso: Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.\n");
+    }
+
+    // --- Diagnostics question and Non-Engagement Notice cards (#90) ---
+
+    @Test
+    void theDiagnosticsQuestionIsAHouseStyleCardWhosePlaintextCarriesEverySentence() {
+        RenderedEmail mail = renderer.renderDiagnosticsQuestion(
+                "Maria Perez", "Firma Ejemplo", "su despido", "¿Cuál fue la fecha del despido?");
+
+        assertThat(CardParity.visibleSentences(mail.html())).containsExactly(
+                "Firma Ejemplo", "Revisión de su consulta", "Necesitamos algunos datos",
+                "Estimado(a) Maria:", "Recibimos su mensaje sobre su despido.",
+                "Lo que necesitamos", "¿Cuál fue la fecha del despido?",
+                "Quedamos atentos a su respuesta.", "Cordialmente,", "Equipo de consultas", "Firma Ejemplo",
+                "Aviso", "Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.",
+                "Puede responder directamente a este correo.");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void theNonEngagementNoticeIsAHouseStyleCardWhosePlaintextCarriesEverySentence() {
+        RenderedEmail mail = renderer.renderNonEngagementNotice(
+                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.");
+
+        assertThat(CardParity.visibleSentences(mail.html())).containsExactly(
+                "Firma Ejemplo", "Respuesta a su consulta", "Sobre su consulta", "Estimado(a) Maria:",
+                "La firma no puede asumir este asunto.", "Cordialmente,", "Equipo de consultas", "Firma Ejemplo",
+                "Aviso", "Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void markupInTheQuestionOrTheNoticeComesOutEscapedAndKeepsItsLineBreaks() {
+        String multiLine = "<b>¿Fecha?</b> & <script>x</script>\n¿Lugar?";
+
+        RenderedEmail question = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", multiLine);
+        RenderedEmail notice = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", multiLine);
+
+        for (RenderedEmail mail : List.of(question, notice)) {
+            assertThat(mail.html())
+                    .contains("&lt;b&gt;¿Fecha?&lt;/b&gt; &amp; &lt;script&gt;x&lt;/script&gt;\n¿Lugar?")
+                    .doesNotContain("<b>", "<script>");
+            assertThat(mail.text()).contains(multiLine);
+            CardParity.assertPlaintextCarriesTheCard(mail);
+        }
+    }
+
+    @Test
+    void anUnusableAcknowledgmentDegradesToTheBareReceiptInTheCardToo() {
+        // An over-long one reaches the renderer as null: DiagnosticsService drops it first.
+        RenderedEmail mail = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?");
+
+        assertThat(CardParity.visibleSentences(mail.html()))
+                .contains("Recibimos su mensaje.")
+                .noneMatch(sentence -> sentence.contains("sobre"));
+        assertThat(mail.text()).contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void withNoFirmNameBothCardsHaveAnEmptyHeaderBandAndSignAsTheConsultationTeamAlone() {
+        RenderedEmail question = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?");
+        RenderedEmail notice = renderer.renderNonEngagementNotice("Maria Perez", "  ", "No tomamos este asunto.");
+
+        for (RenderedEmail mail : List.of(question, notice)) {
+            assertThat(mail.html()).containsPattern("letter-spacing:-0\\.01em;\">\\s*</div>");
+            List<String> sentences = CardParity.visibleSentences(mail.html());
+            assertThat(sentences.get(sentences.indexOf("Equipo de consultas") + 1)).isEqualTo("Aviso");
+            assertThat(mail.text()).contains("Cordialmente,\nEquipo de consultas\n\n---\n");
+            CardParity.assertPlaintextCarriesTheCard(mail);
+        }
     }
 
     @Test
@@ -201,11 +422,193 @@ class EmailTemplateRendererTests {
         assertThat(renderer.diagnosticsQuestionSubject(null)).isEqualTo("Necesitamos algunos datos para revisar su consulta");
     }
 
-    private String salutationFor(String clientName) {
-        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").split("\n")[0];
+    // --- #91: client receipt and status answer cards ---
+
+    @Test
+    void theClientReceiptIsAFirmCardThatRepeatsTheClientsSubject() {
+        RenderedEmail mail = renderer.renderClientReceipt("Maria Perez", "Firma Ejemplo", "Contrato <urgente>");
+
+        assertThat(mail.html())
+                .contains("Mensaje recibido")
+                .contains("Su mensaje est&aacute; con su abogado(a)")
+                .contains("Estimado(a) Maria:")
+                .contains("Asunto: Contrato &lt;urgente&gt;")
+                .doesNotContain("<urgente>")
+                .doesNotContain("{{");
+        assertThat(mail.text()).isEqualTo("""
+                Mensaje recibido
+                Su mensaje está con su abogado(a)
+
+                Estimado(a) Maria:
+
+                Recibimos su mensaje y lo trasladamos a su abogado(a), quien le responderá directamente.
+
+                Cordialmente,
+                Firma Ejemplo
+
+                Su mensaje · Asunto: Contrato <urgente>
+                """);
+        CardParity.assertPlaintextCarriesTheCard(mail);
     }
 
-    private ConsultationResponse consultation() {
+    @Test
+    void aReceiptForAnEmailWithNoSubjectSaysSo() {
+        assertThat(renderer.renderClientReceipt(null, null, "  ").text()).endsWith("Su mensaje · Asunto: (sin asunto)\n");
+    }
+
+    @Test
+    void theStatusAnswerListsEachOpenActivityWithItsStatusLine() {
+        RenderedEmail mail = renderer.renderStatusAnswer("Maria Perez", "Firma Ejemplo",
+                List.of(dated("Audiencia inicial", LocalDate.of(2026, 3, 3))), LocalDate.of(2026, 3, 1));
+
+        assertThat(mail.text()).isEqualTo("""
+                Estado de sus asuntos
+                Así van sus asuntos
+
+                Estimado(a) Maria:
+
+                Este es el estado de sus asuntos con nosotros:
+
+                Audiencia inicial
+                Programada para el 3 de marzo de 2026.
+
+                Cordialmente,
+                Firma Ejemplo
+
+                Corte · Estado al 1 de marzo de 2026.
+                """);
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void theStatusCardHasOneEscapedRowPerOpenActivityAndInvitesNoReply() {
+        LocalDate today = LocalDate.of(2026, 3, 1);
+        RenderedEmail mail = renderer.renderStatusAnswer(null, "Firma Ejemplo", List.of(
+                dated("Audiencia <b>inicial</b>", LocalDate.of(2026, 3, 3)),
+                dated("Entrega & firma", LocalDate.of(2026, 3, 9))), today);
+
+        assertThat(mail.html())
+                .contains("Estado de sus asuntos")
+                .contains("As&iacute; van sus asuntos")
+                .contains("Audiencia &lt;b&gt;inicial&lt;/b&gt;")
+                .doesNotContain("<b>inicial</b>")
+                .contains("Entrega &amp; firma")
+                .contains("Programada para el 9 de marzo de 2026.")
+                .contains("Estado al 1 de marzo de 2026.")
+                .doesNotContain("{{");
+        assertThat(mail.html().split("Programada para el", -1)).as("one row per open Activity").hasSize(3);
+        assertThat(mail.html() + mail.text()).doesNotContain("Puede responder directamente a este correo");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void theStatusLinesAreSpelledWithTheirAccents() {
+        LocalDate today = LocalDate.of(2026, 3, 2);
+        Activity external = new Activity("activity-2", "tenant-a", "client-1", "type-1", "Tutela", ActivityKind.EXTERNAL,
+                "Fallo", today.minusDays(60), null, null, null, 10, "lawyer-1", false, null, null, null,
+                Instant.parse("2026-01-01T00:00:00Z"));
+
+        assertThat(renderer.renderStatusAnswer(null, null, List.of(external), today).text())
+                .contains("El término legal para la decisión venció el ")
+                .contains("y estamos atentos a la respuesta del juzgado o la autoridad.");
+    }
+
+    // --- end #91 ---
+
+    // --- Client forward and Activity nudge cards (#92) ---
+
+    @Test
+    void theClientForwardCardShowsWhoWroteWhyAndWhatAndThatAReplyGoesToTheClient() {
+        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "El cliente escribió sobre algo que requiere a un abogado.",
+                "Estado del contrato", "Hola <b>Ana</b>,\n¿cómo va?");
+
+        for (String part : List.of(HtmlUtils.htmlUnescape(mail.html()), mail.text())) {
+            assertThat(part).contains("Acme SAS le escribió")
+                    .contains("gc@acme.co")
+                    .contains("Estado del contrato")
+                    .contains("El cliente escribió sobre algo que requiere a un abogado.")
+                    .contains("Responda a este correo para contestarle directamente al cliente.");
+        }
+        assertThat(mail.html()).contains("Hola &lt;b&gt;Ana&lt;/b&gt;,\n¿cómo va?").doesNotContain("<b>Ana")
+                .contains("white-space:pre-line");
+        assertThat(mail.text()).contains("Hola <b>Ana</b>,\n¿cómo va?");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void aClientForwardWithNoSubjectOrBodySaysSo() {
+        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "Motivo.", null, "  ");
+
+        assertThat(mail.text()).contains("Asunto: (sin asunto)").contains("(sin contenido)");
+        assertThat(mail.html()).contains("(sin asunto)").contains("(sin contenido)");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void eachActivityNudgeCardCarriesItsOwnLabelHeadlineAndSentenceAndLinksToTheActivity() {
+        String link = "https://x.co/dashboard?client=c-1&activity=a-1";
+        Map<EmailTemplateRenderer.ActivityNudge, List<String>> expected = Map.of(
+                EmailTemplateRenderer.ActivityNudge.OVERDUE, List.of("Vencida", "Actividad vencida",
+                        "La actividad \"Contestación\" del cliente Acme SAS venció el 3 de marzo de 2026 y sigue abierta.",
+                        "Si ya terminó, márquela como terminada; si no, actualice su fecha."),
+                EmailTemplateRenderer.ActivityNudge.TERM_PASSED, List.of("Término vencido", "Término legal vencido",
+                        "El término legal de \"Contestación\" del cliente Acme SAS terminó el 3 de marzo de 2026 y no hay decisión registrada.",
+                        "Puede ser momento de actuar, por ejemplo con un incidente de desacato."),
+                EmailTemplateRenderer.ActivityNudge.HELD_BACK, List.of("Consulta retenida", "Consulta de estado retenida",
+                        "Acme SAS preguntó por el estado de su trabajo y no se le respondió automáticamente porque \"Contestación\" está vencida desde el 3 de marzo de 2026.",
+                        "El correo del cliente se le reenvió a su abogado responsable."));
+
+        expected.forEach((nudge, copy) -> {
+            RenderedEmail mail = renderer.renderActivityNudge(nudge, "Contestación", "Acme SAS", LocalDate.of(2026, 3, 3), link);
+
+            for (String part : List.of(HtmlUtils.htmlUnescape(mail.html()), mail.text())) {
+                assertThat(part).as(nudge.name()).contains(copy).contains("Contestación").contains("Acme SAS")
+                        .contains("Nada cambia hasta que alguien actualice la actividad en la consola.");
+            }
+            assertThat(mail.html()).contains("href=\"https://x.co/dashboard?client=c-1&amp;activity=a-1\"").contains("LegalGate");
+            assertThat(mail.text()).contains(link);
+            CardParity.assertPlaintextCarriesTheCard(mail);
+        });
+    }
+
+    @Test
+    void theNudgeSentenceKeepsItsLineBreakInTheCard() {
+        String html = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE, "Contestación", "Acme SAS",
+                LocalDate.of(2026, 3, 3), "https://x.co").html();
+
+        assertThat(html).containsPattern("<div style=\"[^\"]*white-space:pre-line[^\"]*\">La actividad");
+    }
+
+    @Test
+    void theTermPassedNudgeReadsTerminoWithItsAccentButKeepsItsSubject() {
+        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.TERM_PASSED, "Fallo",
+                "Acme SAS", LocalDate.of(2026, 3, 3), "https://x.co");
+
+        assertThat(CardParity.visibleSentences(mail.html())).contains("Término legal vencido");
+        assertThat(mail.text()).contains("\nTérmino legal vencido\n");
+        assertThat(mail.html() + mail.text()).doesNotContain("Termino legal vencido");
+        assertThat(EmailTemplateRenderer.ActivityNudge.TERM_PASSED.subject()).isEqualTo("Termino legal vencido");
+    }
+
+    @Test
+    void aNudgeWithNoActivityOrClientNameNeverPrintsNull() {
+        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE, null, null,
+                LocalDate.of(2026, 3, 3), "https://x.co");
+
+        assertThat(mail.html() + mail.text()).doesNotContain("null");
+    }
+
+    static Activity dated(String label, LocalDate on) {
+        return new Activity("activity-1", "tenant-a", "client-1", "type-1", "Audiencia", ActivityKind.DATED, label,
+                on.minusDays(10), null, null, on, null, "lawyer-1", false, null, null, null, Instant.parse("2026-01-01T00:00:00Z"));
+    }
+
+    private String salutationFor(String clientName) {
+        return CardParity.visibleSentences(
+                renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").html()).get(3);
+    }
+
+    static ConsultationResponse consultation() {
         return new ConsultationResponse(
                 "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a",
                 "Juan & Co Pérez", "juan@example.com",
@@ -213,7 +616,7 @@ class EmailTemplateRendererTests {
                 "GENERAL", "ana@firm.co", null, null, null, null, Instant.parse("2026-07-01T12:00:00Z"));
     }
 
-    private EventResponse event() {
+    static EventResponse event() {
         return new EventResponse(
                 "event-1", "lawyer-1", "Ana Abogada", "ana@firm.co",
                 "Tutela", "URGENTE", 1, Instant.parse("2026-07-03T00:00:00Z"), 100,

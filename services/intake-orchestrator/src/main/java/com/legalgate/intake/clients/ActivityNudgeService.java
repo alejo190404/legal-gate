@@ -6,7 +6,10 @@ import com.legalgate.intake.clients.ClientsRepository.NudgeTrigger;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.repository.IntakeRepository;
+import com.legalgate.intake.service.EmailTemplateRenderer;
+import com.legalgate.intake.service.EmailTemplateRenderer.ActivityNudge;
 import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.service.RenderedEmail;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -29,18 +32,20 @@ public class ActivityNudgeService {
     static final String NUDGE = "ACTIVITY_NUDGE";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ActivityNudgeService.class);
-    private static final String FOOTER = "Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.";
 
     private final ClientsRepository clients;
     private final IntakeRepository intake;
     private final IntakeService intakeService;
+    private final EmailTemplateRenderer renderer;
     private final String consoleUrl;
 
     public ActivityNudgeService(ClientsRepository clients, IntakeRepository intake, IntakeService intakeService,
+            EmailTemplateRenderer renderer,
             @Value("${LEGALGATE_CONSOLE_URL:https://legal-gate.co/dashboard}") String consoleUrl) {
         this.clients = clients;
         this.intake = intake;
         this.intakeService = intakeService;
+        this.renderer = renderer;
         this.consoleUrl = consoleUrl;
     }
 
@@ -50,14 +55,10 @@ public class ActivityNudgeService {
         for (Activity activity : clients.openActivitiesAcrossTenants()) {
             try {
                 if (activity.overdue() && !activity.nudgedFor(NudgeTrigger.OVERDUE)) {
-                    nudge(activity, NudgeTrigger.OVERDUE, "Actividad vencida", """
-                            La actividad "%s" del cliente %s vencio el %s y sigue abierta.
-                            Si ya termino, marquela como terminada; si no, actualice su fecha.""");
+                    nudge(activity, NudgeTrigger.OVERDUE, ActivityNudge.OVERDUE);
                 }
                 if (activity.termPassed() && !activity.nudgedFor(NudgeTrigger.TERM_PASSED)) {
-                    nudge(activity, NudgeTrigger.TERM_PASSED, "Termino legal vencido", """
-                            El termino legal de "%s" del cliente %s termino el %s y no hay decision registrada.
-                            Puede ser momento de actuar, por ejemplo con un incidente de desacato.""");
+                    nudge(activity, NudgeTrigger.TERM_PASSED, ActivityNudge.TERM_PASSED);
                 }
             } catch (RuntimeException ex) {
                 LOGGER.warn("Activity reminder id={} tenant={} failed", activity.id(), activity.tenantId(), ex);
@@ -67,25 +68,21 @@ public class ActivityNudgeService {
 
     /** The reminder queued when a Client's Status Inquiry is held back because this Activity is Overdue. */
     public List<NotificationOutboxItem> heldBack(Activity activity, Client client) {
-        return reminders(activity, client, "Consulta de estado retenida", """
-                %2$s pregunto por el estado de su trabajo y LegalGate no respondio porque "%1$s" esta vencida desde el %3$s.
-                El correo del cliente se le reenvio a su abogado responsable. Cierre la actividad o actualice su fecha.""");
+        return reminders(activity, client, ActivityNudge.HELD_BACK);
     }
 
-    private void nudge(Activity activity, NudgeTrigger trigger, String subject, String sentence) {
+    private void nudge(Activity activity, NudgeTrigger trigger, ActivityNudge variant) {
         Client client = clients.client(activity.tenantId(), activity.clientId()).orElse(null);
         if (client != null) {
             clients.claimNudge(activity.tenantId(), activity.id(), trigger, activity.expectedDate(),
-                    reminders(activity, client, subject, sentence));
+                    reminders(activity, client, variant));
         }
     }
 
-    private List<NotificationOutboxItem> reminders(Activity activity, Client client, String subject, String sentence) {
-        String body = "LegalGate:\n\n"
-                + sentence.formatted(activity.displayName(), client.name(), ClientsModels.spanishDate(activity.expectedDate())) + "\n\n"
-                + "Ver en la consola: " + consoleUrl + "?client=" + client.id() + "&activity=" + activity.id() + "\n\n"
-                + FOOTER;
-        String fullSubject = subject + ": " + activity.displayName() + " (" + client.name() + ")";
+    private List<NotificationOutboxItem> reminders(Activity activity, Client client, ActivityNudge variant) {
+        RenderedEmail mail = renderer.renderActivityNudge(variant, activity.displayName(), client.name(),
+                activity.expectedDate(), consoleUrl + "?client=" + client.id() + "&activity=" + activity.id());
+        String fullSubject = variant.subject() + ": " + activity.displayName() + " (" + client.name() + ")";
         List<String> recipients = new ArrayList<>();
         intake.lawyer(activity.tenantId(), activity.assignedLawyerId()).map(LawyerProfile::email).ifPresent(recipients::add);
         String destination = intakeService.settingsForTenant(activity.tenantId()).destinationEmail();
@@ -93,7 +90,7 @@ public class ActivityNudgeService {
             recipients.add(destination);
         }
         return recipients.stream()
-                .map(recipient -> NotificationOutboxItem.forActivity(activity.id(), NUDGE, recipient, fullSubject, body))
+                .map(recipient -> NotificationOutboxItem.forActivity(activity.id(), NUDGE, recipient, fullSubject, mail.text(), mail.html()))
                 .toList();
     }
 }

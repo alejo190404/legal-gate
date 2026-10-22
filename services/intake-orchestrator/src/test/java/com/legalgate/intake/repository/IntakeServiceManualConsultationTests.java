@@ -3,6 +3,7 @@ package com.legalgate.intake.repository;
 import static org.assertj.core.api.Assertions.*;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,9 @@ import com.legalgate.intake.classifier.ConsultationClassifierResponse;
 import com.legalgate.intake.config.IntakeProperties;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.CreateConsultationRequest;
+import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
+import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.TenantRoutingRule;
 import com.legalgate.intake.model.TenantSettingsRequest;
 import com.legalgate.intake.model.UrgencyDefinition;
@@ -59,7 +62,37 @@ class IntakeServiceManualConsultationTests {
         assertThat(repository.claimPendingNotifications(10)).isNotEmpty();
     }
 
+    @Test
+    void schedulingAndReschedulingNotificationsEachCarryAnHtmlCard() {
+        InMemoryIntakeRepository repository = new InMemoryIntakeRepository();
+        StubClassifier classifier = new StubClassifier();
+        // One hour-long slot a day: a handful of ordinary consultations takes every slot an urgent
+        // one could have inside its SLA, so the urgent one moves an ordinary one out.
+        IntakeService service = seededService(repository, classifier, IntStream.rangeClosed(1, 7)
+                .mapToObj(day -> new LawyerAvailabilityWindow(day, "09:00", "10:00", null)).toList());
+        classifier.response = new ConsultationClassifierResponse(
+                0, "Contratos", "NORMAL", "Arriendo", "Resumen", "Juan", "Routed to general.", 0.9);
+        for (int i = 0; i < 8; i++) {
+            service.createConsultation(TENANT, request());
+        }
+        repository.claimPendingNotifications(100);
+        classifier.response = new ConsultationClassifierResponse(
+                0, "Contratos", "URGENTE", "Arriendo", "Resumen", "Juan", "Routed to general.", 0.9);
+
+        service.createConsultation(TENANT, request());
+
+        List<NotificationOutboxItem> queued = repository.claimPendingNotifications(100);
+        assertThat(queued).extracting(NotificationOutboxItem::type)
+                .contains("CONSULTATION_SCHEDULED", "CONSULTATION_RESCHEDULED");
+        assertThat(queued).allSatisfy(item -> assertThat(item.htmlBody()).as(item.type()).isNotBlank());
+    }
+
     private IntakeService seededService(InMemoryIntakeRepository repository, ConsultationClassifierClient classifier) {
+        return seededService(repository, classifier, null);
+    }
+
+    private IntakeService seededService(InMemoryIntakeRepository repository, ConsultationClassifierClient classifier,
+            List<LawyerAvailabilityWindow> availability) {
         IntakeService service = new IntakeService(repository, properties(), classifier, new EmailTemplateRenderer(),
                 new FirmNameResolver(repository, properties()),
                 ClientsFixtures.clientsService(repository, new com.legalgate.intake.clients.InMemoryClientsRepository(repository)));
@@ -69,7 +102,7 @@ class IntakeServiceManualConsultationTests {
                         List.of("NORMAL", "URGENTE"), null,
                         List.of(new UrgencyDefinition("NORMAL", 1, 5, true), new UrgencyDefinition("URGENTE", 2, 1, true)),
                         "ana@firm.co")),
-                List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, null))));
+                List.of(new LawyerProfile(null, "Ana Abogada", "ana@firm.co", true, 60, availability))));
         return service;
     }
 

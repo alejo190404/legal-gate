@@ -543,23 +543,20 @@ public class IntakeService {
         }
         List<NotificationOutboxItem> notifications = new ArrayList<>();
         String ics = calendarInviteFor(consultation, event);
+        boolean rescheduled = "CONSULTATION_RESCHEDULED".equals(type);
         if (event.lawyerEmail() != null && !event.lawyerEmail().isBlank()) {
+            RenderedEmail mail = emailTemplateRenderer.renderLawyer(consultation, event, rescheduled);
             notifications.add(new NotificationOutboxItem(
                     consultation.id(), event.id(), type, "LAWYER", event.lawyerEmail(),
-                    subjectFor(type, consultation, event),
-                    lawyerEmailBody(consultation, event),
-                    emailTemplateRenderer.renderLawyer(consultation, event),
-                    ics
+                    subjectFor(type, consultation, event), mail.text(), mail.html(), ics
             ));
         }
         if (consultation.clientEmail() != null && !consultation.clientEmail().isBlank()) {
-            String firmName = firmNameResolver.firmNameFor(consultation.tenantId());
+            RenderedEmail mail = emailTemplateRenderer.renderClient(consultation, event,
+                    firmNameResolver.firmDisplayName(consultation.tenantId()).orElse(null), rescheduled);
             notifications.add(new NotificationOutboxItem(
                     consultation.id(), event.id(), type, "CLIENT", consultation.clientEmail(),
-                    subjectFor(type, consultation, event),
-                    clientEmailBody(consultation, event, firmName),
-                    emailTemplateRenderer.renderClient(consultation, event, firmName),
-                    ics
+                    subjectFor(type, consultation, event), mail.text(), mail.html(), ics
             ));
         }
         return notifications;
@@ -568,57 +565,6 @@ public class IntakeService {
     private String subjectFor(String type, ConsultationResponse consultation, EventResponse event) {
         String prefix = "CONSULTATION_RESCHEDULED".equals(type) ? "Consulta reagendada" : "Consulta agendada";
         return prefix + ": " + consultation.clientName() + " - " + event.routeName();
-    }
-
-    private String lawyerEmailBody(ConsultationResponse consultation, EventResponse event) {
-        return """
-                LegalGate agendo una consulta.
-
-                Cliente: %s <%s>
-                Ruta: %s
-                Urgencia: %s
-                SLA: %s
-                Hora: %s - %s
-                En SLA: %s
-                %s
-                Resumen:
-                %s
-                """.formatted(
-                consultation.clientName(),
-                consultation.clientEmail(),
-                event.routeName(),
-                event.urgencyName(),
-                event.slaDeadline(),
-                event.scheduledStart(),
-                event.scheduledEnd(),
-                Boolean.TRUE.equals(event.scheduledWithinSla()) ? "si" : "no",
-                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
-                consultation.summary()
-        ).trim();
-    }
-
-    /** Plaintext half of the same client receipt, so the fallback part carries no LegalGate either. */
-    private String clientEmailBody(ConsultationResponse consultation, EventResponse event, String firmName) {
-        return """
-                Tu consulta con %s fue agendada.
-
-                Hora: %s - %s
-                Abogado: %s <%s>
-                %s
-                Resumen:
-                %s
-
-                Este correo es automatico: no podemos leer lo que respondas aqui. Si necesitas
-                algo, escribenos al correo de siempre y con gusto te ayudamos.
-                """.formatted(
-                firmName,
-                event.scheduledStart(),
-                event.scheduledEnd(),
-                firstNonBlank(event.lawyerDisplayName(), EmailTemplateRenderer.UNASSIGNED_LAWYER),
-                event.lawyerEmail(),
-                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
-                consultation.summary()
-        ).trim();
     }
 
     private String calendarInviteFor(ConsultationResponse consultation, EventResponse event) {

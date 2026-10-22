@@ -32,7 +32,7 @@ class NotificationDeliveryServiceTests {
         OutboundEmailClient outboundEmailClient = mock(OutboundEmailClient.class);
         when(outboundEmailClient.isEnabled()).thenReturn(true);
         NotificationOutboxItem receipt = NotificationOutboxItem.forCorrespondence("corr-1", "CLIENT_RECEIPT", "CLIENT",
-                "gc@acme.co", "firma-demo@intake.legal-gate.co", null, "Re: Hola", "Cuerpo")
+                "gc@acme.co", "firma-demo@intake.legal-gate.co", null, "Re: Hola", "Cuerpo", null)
                 .withDelivery("notification-2", "firma-demo", "SENDING", 0, null, null, null, null, null);
         when(intakeRepository.claimPendingNotifications(anyInt())).thenReturn(List.of(receipt));
         when(clientsRepository.correspondence("firma-demo", "corr-1")).thenReturn(Optional.of(new Correspondence(
