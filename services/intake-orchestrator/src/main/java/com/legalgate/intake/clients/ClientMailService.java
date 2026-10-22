@@ -192,7 +192,7 @@ public class ClientMailService {
     }
 
     private NotificationOutboxItem receipt(Correspondence entry, Client client) {
-        return clientMessage(entry, RECEIPT, renderer.renderClientReceipt(salutationName(client), firmName(entry)));
+        return clientMessage(entry, RECEIPT, renderer.renderClientReceipt(salutationName(client), firmName(entry), entry.subject()));
     }
 
     /**
