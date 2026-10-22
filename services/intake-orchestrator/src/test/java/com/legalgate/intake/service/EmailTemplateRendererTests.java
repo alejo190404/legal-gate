@@ -289,12 +289,49 @@ class EmailTemplateRendererTests {
         assertThat(renderer.diagnosticsQuestionSubject(null)).isEqualTo("Necesitamos algunos datos para revisar su consulta");
     }
 
+    // --- #91: client receipt and status answer cards ---
+
+    @Test
+    void theClientReceiptIsAFirmCardThatRepeatsTheClientsSubject() {
+        RenderedEmail mail = renderer.renderClientReceipt("Maria Perez", "Firma Ejemplo", "Contrato <urgente>");
+
+        assertThat(mail.html())
+                .contains("Mensaje recibido")
+                .contains("Su mensaje est&aacute; con su abogado(a)")
+                .contains("Estimado(a) Maria:")
+                .contains("Asunto: Contrato &lt;urgente&gt;")
+                .doesNotContain("<urgente>")
+                .doesNotContain("{{");
+        assertThat(mail.text()).isEqualTo("""
+                Mensaje recibido
+                Su mensaje está con su abogado(a)
+
+                Estimado(a) Maria:
+
+                Recibimos su mensaje y lo trasladamos a su abogado(a), quien le responderá directamente.
+
+                Cordialmente,
+                Firma Ejemplo
+
+                Su mensaje · Asunto: Contrato <urgente>
+                """);
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void aReceiptForAnEmailWithNoSubjectSaysSo() {
+        assertThat(renderer.renderClientReceipt(null, null, "  ").text()).endsWith("Su mensaje · Asunto: (sin asunto)\n");
+    }
+
     @Test
     void theStatusAnswerListsEachOpenActivityWithItsStatusLine() {
         RenderedEmail mail = renderer.renderStatusAnswer("Maria Perez", "Firma Ejemplo",
                 List.of(dated("Audiencia inicial", LocalDate.of(2026, 3, 3))), LocalDate.of(2026, 3, 1));
 
         assertThat(mail.text()).isEqualTo("""
+                Estado de sus asuntos
+                Así van sus asuntos
+
                 Estimado(a) Maria:
 
                 Este es el estado de sus asuntos con nosotros:
@@ -304,8 +341,46 @@ class EmailTemplateRendererTests {
 
                 Cordialmente,
                 Firma Ejemplo
+
+                Corte · Estado al 1 de marzo de 2026.
                 """);
+        CardParity.assertPlaintextCarriesTheCard(mail);
     }
+
+    @Test
+    void theStatusCardHasOneEscapedRowPerOpenActivityAndInvitesNoReply() {
+        LocalDate today = LocalDate.of(2026, 3, 1);
+        RenderedEmail mail = renderer.renderStatusAnswer(null, "Firma Ejemplo", List.of(
+                dated("Audiencia <b>inicial</b>", LocalDate.of(2026, 3, 3)),
+                dated("Entrega & firma", LocalDate.of(2026, 3, 9))), today);
+
+        assertThat(mail.html())
+                .contains("Estado de sus asuntos")
+                .contains("As&iacute; van sus asuntos")
+                .contains("Audiencia &lt;b&gt;inicial&lt;/b&gt;")
+                .doesNotContain("<b>inicial</b>")
+                .contains("Entrega &amp; firma")
+                .contains("Programada para el 9 de marzo de 2026.")
+                .contains("Estado al 1 de marzo de 2026.")
+                .doesNotContain("{{");
+        assertThat(mail.html().split("Programada para el", -1)).as("one row per open Activity").hasSize(3);
+        assertThat(mail.html() + mail.text()).doesNotContain("Puede responder directamente a este correo");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
+
+    @Test
+    void theStatusLinesAreSpelledWithTheirAccents() {
+        LocalDate today = LocalDate.of(2026, 3, 2);
+        Activity external = new Activity("activity-2", "tenant-a", "client-1", "type-1", "Tutela", ActivityKind.EXTERNAL,
+                "Fallo", today.minusDays(60), null, null, null, 10, "lawyer-1", false, null, null, null,
+                Instant.parse("2026-01-01T00:00:00Z"));
+
+        assertThat(renderer.renderStatusAnswer(null, null, List.of(external), today).text())
+                .contains("El término legal para la decisión venció el ")
+                .contains("y estamos atentos a la respuesta del juzgado o la autoridad.");
+    }
+
+    // --- end #91 ---
 
     @Test
     void theClientForwardTellsTheLawyerWhoWroteWhyAndWhat() {

@@ -121,7 +121,8 @@ class ClientMailTests extends ClientsSeam {
         assertThat(receipt.fromEmail()).isEqualTo(TENANT + "@intake.legal-gate.co");
         assertThat(receipt.replyTo()).isNull();
         assertThat(receipt.subject()).isEqualTo("Re: Estado de mi contrato");
-        assertThat(receipt.htmlBody()).isNull();
+        assertThat(receipt.htmlBody()).contains("Vargas &amp; Asociados").contains("Asunto: Estado de mi contrato");
+        assertThat(receipt.body()).contains("Su mensaje · Asunto: Estado de mi contrato");
         assertThat(receipt.body()).contains("Vargas & Asociados").doesNotContain("LegalGate");
         assertThat(receipt.body()).doesNotContain("no crea una relacion abogado-cliente");
 
