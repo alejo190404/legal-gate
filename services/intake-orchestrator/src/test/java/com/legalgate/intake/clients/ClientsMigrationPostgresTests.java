@@ -293,7 +293,7 @@ class ClientsMigrationPostgresTests {
                 List.of(NotificationOutboxItem.forCorrespondence(old.id(), "CLIENT_STATUS_ANSWER", "CLIENT", "gc@acme.co",
                         "tenant-a@intake.legal-gate.co", null, "Re: Hola", "Respuesta enviada.", null),
                         NotificationOutboxItem.forCorrespondence(old.id(), "CLIENT_MAIL_FORWARD", "LAWYER", "ana@a.co",
-                                null, "gc@acme.co", "Correo de cliente", "Texto del cliente", null)));
+                                null, "gc@acme.co", "Correo de cliente", "Texto del cliente", "<div>Texto del cliente</div>")));
         repository.recordCorrespondence("tenant-a", pending(acme, "<new@acme.co>"));
         Activity activity = repository.saveActivity("tenant-a", turnaround(repository, "tenant-a", acme, LAWYER_A),
                 List.of(HistoryEntry.of(acme.id(), null, "activity", null, "Contrato", "user_1")));
@@ -326,6 +326,11 @@ class ClientsMigrationPostgresTests {
             assertThat(bodies).containsExactly("ACTIVITY_NUDGE: Acme SAS",
                     "CLIENT_MAIL_FORWARD: (texto del cliente eliminado tras un año)",
                     "CLIENT_STATUS_ANSWER: Respuesta enviada.");
+        }
+        try (Connection connection = ownerConnection(); Statement sql = connection.createStatement();
+             ResultSet rows = sql.executeQuery("select count(*) from notification_outbox where html_body like '%Texto del cliente%'")) {
+            rows.next();
+            assertThat(rows.getInt(1)).as("the forward card's copy of the Client's words").isZero();
         }
 
         try (Connection connection = ownerConnection(); Statement sql = connection.createStatement()) {

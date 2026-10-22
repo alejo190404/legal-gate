@@ -38,7 +38,11 @@ class FirmVoiceTests {
                     dated("Audiencia inicial", TODAY.plusDays(5)),
                     activity(ActivityKind.TURNAROUND, 15, null),
                     activity(ActivityKind.EXTERNAL, null, 10),
-                    activity(ActivityKind.EXTERNAL, null, null)), TODAY)));
+                    activity(ActivityKind.EXTERNAL, null, null)), TODAY)),
+            // Staff mail, but the lawyer's reply quotes it to the Client; it has no firm name to vary.
+            new Type("client forward", firm -> RENDERER.renderClientForward("Acme SAS", "gc@acme.co",
+                    "No se pudo determinar de qué trata el correo, así que no se respondió automáticamente.",
+                    "Estado del contrato", "¿Cómo va mi contrato?")));
 
     record Type(String name, Function<String, RenderedEmail> render) {
     }

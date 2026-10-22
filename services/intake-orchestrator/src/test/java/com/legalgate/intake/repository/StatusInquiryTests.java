@@ -94,6 +94,9 @@ class StatusInquiryTests extends ClientsSeam {
         assertThat(queued).filteredOn(item -> "ACTIVITY_NUDGE".equals(item.type()))
                 .extracting(NotificationOutboxItem::recipientEmail).containsExactly("luis@firm.co");
         assertThat(only(queued, "CLIENT_MAIL_FORWARD").body()).contains("Revision de estatutos").contains("vencida");
+        // The forward is quoted to the Client in the lawyer's reply: its "why" never names LegalGate.
+        assertThat(only(queued, "CLIENT_MAIL_FORWARD").body()).doesNotContainIgnoringCase("legalgate");
+        assertThat(only(queued, "CLIENT_MAIL_FORWARD").htmlBody()).contains("Revision de estatutos").doesNotContainIgnoringCase("legalgate");
         assertThat(onlyEntry().outcome()).isEqualTo(ClientsModels.HELD_BACK);
     }
 
@@ -143,8 +146,11 @@ class StatusInquiryTests extends ClientsSeam {
         }
 
         assertThat(classifier.intentCalls).isEqualTo(4);
-        assertThat(queued()).extracting(NotificationOutboxItem::type)
+        List<NotificationOutboxItem> queued = queued();
+        assertThat(queued).extracting(NotificationOutboxItem::type)
                 .containsExactlyInAnyOrder("CLIENT_MAIL_FORWARD", "CLIENT_RECEIPT");
+        assertThat(only(queued, "CLIENT_MAIL_FORWARD").body()).doesNotContainIgnoringCase("legalgate");
+        assertThat(only(queued, "CLIENT_MAIL_FORWARD").htmlBody()).doesNotContainIgnoringCase("legalgate");
         assertThat(onlyEntry().outcome()).isEqualTo(ClientsModels.FORWARDED);
     }
 

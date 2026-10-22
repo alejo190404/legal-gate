@@ -114,6 +114,7 @@ class ClientMailTests extends ClientsSeam {
         assertThat(forward.recipientEmail()).isEqualTo("ana@firm.co");
         assertThat(forward.replyTo()).isEqualTo("gc@acme.co");
         assertThat(forward.body()).contains("Como va mi contrato?").contains("Acme SAS");
+        assertThat(forward.htmlBody()).contains("Como va mi contrato?").contains("Acme SAS");
 
         NotificationOutboxItem receipt = only(queued, "CLIENT_RECEIPT");
         assertThat(receipt.recipientRole()).isEqualTo("CLIENT");

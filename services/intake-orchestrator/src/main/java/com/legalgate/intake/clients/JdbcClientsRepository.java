@@ -396,14 +396,14 @@ class JdbcClientsRepository implements ClientsRepository {
 
     @Override
     public int purgeCorrespondenceBodies(Instant cutoff) {
-        // The forward copied the Client's words into the outbox, so they go from there too.
+        // The forward copied the Client's words into the outbox, card and plaintext, so they go from there too.
         return inTenant(WORKER, () -> jdbc.queryForObject("""
                 with purged as (
                   update client_correspondence set body = null, purged_at = now()
                   where received_at < ? and purged_at is null
                   returning id
                 ), forwards as (
-                  update notification_outbox set body = '(texto del cliente eliminado tras un año)'
+                  update notification_outbox set body = '(texto del cliente eliminado tras un año)', html_body = null
                   where notification_type = 'CLIENT_MAIL_FORWARD' and correspondence_id in (select id from purged)
                 )
                 select count(*) from purged

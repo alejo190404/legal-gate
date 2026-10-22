@@ -33,6 +33,9 @@ class ActivityNudgeTests extends ClientsSeam {
         assertThat(queued.get(0).body())
                 .contains("https://app.legal-gate.co/dashboard?client=" + acme.id() + "&activity=" + late.id())
                 .contains("Acme SAS");
+        assertThat(queued.get(0).htmlBody())
+                .contains("https://app.legal-gate.co/dashboard?client=" + acme.id() + "&amp;activity=" + late.id())
+                .contains("Actividad vencida");
         assertThat(queued.get(0).activityId()).isEqualTo(late.id());
         assertThat(late.overdue()).isTrue();
     }

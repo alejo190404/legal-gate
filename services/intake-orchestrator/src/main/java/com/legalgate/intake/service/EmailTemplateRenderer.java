@@ -54,10 +54,14 @@ public class EmailTemplateRenderer {
 
     private final String lawyerTemplate;
     private final String clientTemplate;
+    private final String clientForwardTemplate;
+    private final String activityNudgeTemplate;
 
     public EmailTemplateRenderer() {
         this.lawyerTemplate = load("templates/email/lawyer-scheduled.html");
         this.clientTemplate = load("templates/email/client-scheduled.html");
+        this.clientForwardTemplate = load("templates/email/client-forward.html");
+        this.activityNudgeTemplate = load("templates/email/activity-nudge.html");
     }
 
     RenderedEmail renderLawyer(ConsultationResponse consultation, EventResponse event) {
@@ -238,39 +242,59 @@ public class EmailTemplateRenderer {
 
     /**
      * A Client's email passed to their Responsible Lawyer, who replies straight to the Client.
-     * Staff mail, but the Client sees it quoted in that reply (ADR-0009).
+     * Staff mail, but the Client sees it quoted in that reply, so neither part carries LegalGate's
+     * mark or name (ADR-0009).
      */
     public RenderedEmail renderClientForward(String clientName, String contactAddress, String why, String subject,
             String body) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("client_name", nullToEmpty(clientName));
+        fields.put("client_contact_address", nullToEmpty(contactAddress));
+        fields.put("original_subject", trimmedOr(subject, "(sin asunto)"));
+        fields.put("why", nullToEmpty(why));
+        fields.put("original_body", trimmedOr(body, "(sin contenido)"));
         String text = """
-                LegalGate le reenvia un correo de su cliente %s <%s>.
-                Motivo: %s
+                Correo de cliente
+                Cliente · %s
+
+                Correo reenviado
+                %s le escribió
                 Responda a este correo para contestarle directamente al cliente.
 
+                Cliente: %s
+                Correo: %s
                 Asunto: %s
+                Motivo: %s
 
+                Mensaje del cliente
                 %s
-                """.formatted(clientName, contactAddress, why,
-                trimmedOr(subject, "(sin asunto)"), trimmedOr(body, "(sin contenido)")).trim();
-        return new RenderedEmail(text, null);
+
+                Aviso automático
+                Al cliente solo se le envió un acuse de recibo. Lo que usted conteste le llega al cliente desde su propio buzón.
+                """.formatted(fields.get("client_name"), fields.get("client_name"), fields.get("client_name"),
+                fields.get("client_contact_address"), fields.get("original_subject"), fields.get("why"),
+                fields.get("original_body"));
+        return new RenderedEmail(text.trim(), render(clientForwardTemplate, fields));
     }
 
-    /** The three reminders a lawyer gets about stale work, each with its subject and its sentence. */
+    /** The three reminders a lawyer gets about stale work, each with its label, subject and sentence. */
     public enum ActivityNudge {
-        OVERDUE("Actividad vencida", """
-                La actividad "%s" del cliente %s vencio el %s y sigue abierta.
-                Si ya termino, marquela como terminada; si no, actualice su fecha."""),
-        TERM_PASSED("Termino legal vencido", """
-                El termino legal de "%s" del cliente %s termino el %s y no hay decision registrada.
+        OVERDUE("Vencida", "Actividad vencida", """
+                La actividad "%s" del cliente %s venció el %s y sigue abierta.
+                Si ya terminó, márquela como terminada; si no, actualice su fecha."""),
+        TERM_PASSED("Término vencido", "Termino legal vencido", """
+                El término legal de "%s" del cliente %s terminó el %s y no hay decisión registrada.
                 Puede ser momento de actuar, por ejemplo con un incidente de desacato."""),
-        HELD_BACK("Consulta de estado retenida", """
-                %2$s pregunto por el estado de su trabajo y LegalGate no respondio porque "%1$s" esta vencida desde el %3$s.
-                El correo del cliente se le reenvio a su abogado responsable. Cierre la actividad o actualice su fecha.""");
+        HELD_BACK("Consulta retenida", "Consulta de estado retenida", """
+                %2$s preguntó por el estado de su trabajo y no se le respondió automáticamente porque "%1$s" está vencida desde el %3$s.
+                El correo del cliente se le reenvió a su abogado responsable. Cierre la actividad o actualice su fecha.""");
 
+        private final String label;
         private final String subject;
         private final String sentence;
 
-        ActivityNudge(String subject, String sentence) {
+        ActivityNudge(String label, String subject, String sentence) {
+            this.label = label;
             this.subject = subject;
             this.sentence = sentence;
         }
@@ -283,11 +307,33 @@ public class EmailTemplateRenderer {
     /** A reminder to a lawyer: LegalGate-branded, and nothing in it changes state. */
     public RenderedEmail renderActivityNudge(ActivityNudge nudge, String activityName, String clientName, LocalDate date,
             String consoleLink) {
-        String text = "LegalGate:\n\n"
-                + nudge.sentence.formatted(activityName, clientName, ClientsModels.spanishDate(date)) + "\n\n"
-                + "Ver en la consola: " + consoleLink + "\n\n"
-                + "Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.";
-        return new RenderedEmail(text, null);
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("variant_label", nudge.label);
+        fields.put("variant_subject", nudge.subject);
+        fields.put("variant_sentence", nudge.sentence.formatted(activityName, clientName, ClientsModels.spanishDate(date)));
+        fields.put("activity_name", nullToEmpty(activityName));
+        fields.put("client_name", nullToEmpty(clientName));
+        fields.put("expected_date", ClientsModels.spanishDate(date));
+        fields.put("console_link", nullToEmpty(consoleLink));
+        String text = """
+                LegalGate · %s
+                Actividad · %s
+
+                Recordatorio
+                %s
+                %s
+
+                Actividad: %s
+                Cliente: %s
+                Fecha: %s
+
+                Ver en la consola → %s
+
+                LegalGate · Aviso informativo
+                Nada cambia hasta que alguien actualice la actividad en la consola.""".formatted(
+                nudge.label, fields.get("client_name"), nudge.subject, fields.get("variant_sentence"),
+                fields.get("activity_name"), fields.get("client_name"), fields.get("expected_date"), fields.get("console_link"));
+        return new RenderedEmail(text, render(activityNudgeTemplate, fields));
     }
 
     /** Client mail stays on the Client's own subject line, as a reply to it. */

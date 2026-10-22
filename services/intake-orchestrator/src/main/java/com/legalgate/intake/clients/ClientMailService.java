@@ -137,19 +137,19 @@ public class ClientMailService {
             }
             LOGGER.warn("Client mail id={} tenant={} could not be classified; forwarding.", entry.id(), entry.tenantId());
             forward(entry, client, null, ClientsModels.FORWARDED, null,
-                    "LegalGate no pudo determinar de que trata el correo, asi que no lo respondio.", List.of());
+                    "No se pudo determinar de qué trata el correo, así que no se respondió automáticamente.", List.of());
             return;
         }
         if (!intent.isStatusInquiry()) {
             forward(entry, client, intent.intent(), ClientsModels.FORWARDED, null,
-                    "El cliente escribio sobre algo que requiere a un abogado.", List.of());
+                    "El cliente escribió sobre algo que requiere a un abogado.", List.of());
             return;
         }
         List<Activity> open = clients.activities(entry.tenantId(), client.id()).stream().filter(activity -> !activity.done()).toList();
         if (open.isEmpty()) {
             // "Nothing pending" may be work the firm never logged, so a person answers.
             forward(entry, client, intent.intent(), ClientsModels.FORWARDED, null,
-                    "El cliente pregunto por el estado de su trabajo, pero no tiene actividades abiertas registradas.", List.of());
+                    "El cliente preguntó por el estado de su trabajo, pero no tiene actividades abiertas registradas.", List.of());
             return;
         }
         List<Activity> overdue = open.stream().filter(Activity::overdue).toList();
@@ -158,7 +158,7 @@ public class ClientMailService {
             List<NotificationOutboxItem> reminders = new ArrayList<>();
             overdue.forEach(activity -> reminders.addAll(nudges.heldBack(activity, client)));
             forward(entry, client, intent.intent(), ClientsModels.HELD_BACK, null,
-                    "El cliente pregunto por el estado de su trabajo y LegalGate no respondio porque esta vencida: "
+                    "El cliente preguntó por el estado de su trabajo y no se le respondió automáticamente porque hay actividades vencidas: "
                             + String.join(", ", overdue.stream().map(Activity::displayName).toList()) + ".",
                     reminders);
             return;
@@ -171,8 +171,8 @@ public class ClientMailService {
             return;
         }
         forward(entry, client, intent.intent(), ClientsModels.WOULD_HAVE_ANSWERED, answer.text(),
-                "El cliente pregunto por el estado de su trabajo. Las respuestas automaticas estan apagadas; "
-                        + "la consola muestra la respuesta que se habria enviado.", List.of());
+                "El cliente preguntó por el estado de su trabajo. Las respuestas automáticas están apagadas; "
+                        + "la consola muestra la respuesta que se habría enviado.", List.of());
     }
 
     /** Passes the email to the Responsible Lawyer and sends the Client a receipt, in one write. */

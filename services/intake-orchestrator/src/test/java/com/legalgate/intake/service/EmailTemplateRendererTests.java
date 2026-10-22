@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.util.HtmlUtils;
 
 import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.clients.ClientsModels.ActivityKind;
@@ -236,34 +238,61 @@ class EmailTemplateRendererTests {
                 """);
     }
 
+    // --- Client forward and Activity nudge cards (#92) ---
+
     @Test
-    void theClientForwardTellsTheLawyerWhoWroteWhyAndWhat() {
-        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "Motivo.", null, "  ");
+    void theClientForwardCardShowsWhoWroteWhyAndWhatAndThatAReplyGoesToTheClient() {
+        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "El cliente escribió sobre algo que requiere a un abogado.",
+                "Estado del contrato", "Hola <b>Ana</b>,\n¿cómo va?");
 
-        assertThat(mail.text()).isEqualTo("""
-                LegalGate le reenvia un correo de su cliente Acme SAS <gc@acme.co>.
-                Motivo: Motivo.
-                Responda a este correo para contestarle directamente al cliente.
-
-                Asunto: (sin asunto)
-
-                (sin contenido)""");
+        for (String part : List.of(HtmlUtils.htmlUnescape(mail.html()), mail.text())) {
+            assertThat(part).contains("Acme SAS le escribió")
+                    .contains("gc@acme.co")
+                    .contains("Estado del contrato")
+                    .contains("El cliente escribió sobre algo que requiere a un abogado.")
+                    .contains("Responda a este correo para contestarle directamente al cliente.");
+        }
+        assertThat(mail.html()).contains("Hola &lt;b&gt;Ana&lt;/b&gt;,\n¿cómo va?").doesNotContain("<b>Ana")
+                .contains("white-space:pre-line");
+        assertThat(mail.text()).contains("Hola <b>Ana</b>,\n¿cómo va?");
+        CardParity.assertPlaintextCarriesTheCard(mail);
     }
 
     @Test
-    void anActivityNudgeNamesTheActivityTheClientAndTheDateAndLinksToTheConsole() {
-        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE,
-                "Contestación", "Acme SAS", LocalDate.of(2026, 3, 3), "https://x.co/dashboard?client=c&activity=a");
+    void aClientForwardWithNoSubjectOrBodySaysSo() {
+        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "Motivo.", null, "  ");
 
-        assertThat(mail.text()).isEqualTo("""
-                LegalGate:
+        assertThat(mail.text()).contains("Asunto: (sin asunto)").contains("(sin contenido)");
+        assertThat(mail.html()).contains("(sin asunto)").contains("(sin contenido)");
+        CardParity.assertPlaintextCarriesTheCard(mail);
+    }
 
-                La actividad "Contestación" del cliente Acme SAS vencio el 3 de marzo de 2026 y sigue abierta.
-                Si ya termino, marquela como terminada; si no, actualice su fecha.
+    @Test
+    void eachActivityNudgeCardCarriesItsOwnLabelSubjectAndSentenceAndLinksToTheActivity() {
+        String link = "https://x.co/dashboard?client=c-1&activity=a-1";
+        Map<EmailTemplateRenderer.ActivityNudge, List<String>> expected = Map.of(
+                EmailTemplateRenderer.ActivityNudge.OVERDUE, List.of("Vencida", "Actividad vencida",
+                        "La actividad \"Contestación\" del cliente Acme SAS venció el 3 de marzo de 2026 y sigue abierta.",
+                        "Si ya terminó, márquela como terminada; si no, actualice su fecha."),
+                EmailTemplateRenderer.ActivityNudge.TERM_PASSED, List.of("Término vencido", "Termino legal vencido",
+                        "El término legal de \"Contestación\" del cliente Acme SAS terminó el 3 de marzo de 2026 y no hay decisión registrada.",
+                        "Puede ser momento de actuar, por ejemplo con un incidente de desacato."),
+                EmailTemplateRenderer.ActivityNudge.HELD_BACK, List.of("Consulta retenida", "Consulta de estado retenida",
+                        "Acme SAS preguntó por el estado de su trabajo y no se le respondió automáticamente porque \"Contestación\" está vencida desde el 3 de marzo de 2026.",
+                        "El correo del cliente se le reenvió a su abogado responsable."));
 
-                Ver en la consola: https://x.co/dashboard?client=c&activity=a
+        expected.forEach((nudge, copy) -> {
+            RenderedEmail mail = renderer.renderActivityNudge(nudge, "Contestación", "Acme SAS", LocalDate.of(2026, 3, 3), link);
 
-                Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.""");
+            assertThat(nudge.subject()).isEqualTo(copy.get(1));
+            for (String part : List.of(HtmlUtils.htmlUnescape(mail.html()), mail.text())) {
+                assertThat(part).as(nudge.name()).contains(copy).contains("Contestación").contains("Acme SAS")
+                        .contains("Nada cambia hasta que alguien actualice la actividad en la consola.");
+            }
+            assertThat(mail.html()).contains("href=\"https://x.co/dashboard?client=c-1&amp;activity=a-1\"").contains("LegalGate");
+            assertThat(mail.text()).contains(link);
+            CardParity.assertPlaintextCarriesTheCard(mail);
+        });
     }
 
     static Activity dated(String label, LocalDate on) {
