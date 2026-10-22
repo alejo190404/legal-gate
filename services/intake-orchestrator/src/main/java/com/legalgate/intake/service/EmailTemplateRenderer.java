@@ -50,14 +50,18 @@ public class EmailTemplateRenderer {
     private static final String DIAGNOSTICS_QUESTION_SUBJECT = "Necesitamos algunos datos para revisar su consulta";
     private static final String NON_ENGAGEMENT_SUBJECT = "Sobre su consulta";
     private static final String DISCLAIMER =
-            "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n";
+            "Este mensaje no constituye asesoría legal y no crea una relación abogado-cliente.";
 
     private final String lawyerTemplate;
     private final String clientTemplate;
+    private final String diagnosticsQuestionTemplate;
+    private final String nonEngagementTemplate;
 
     public EmailTemplateRenderer() {
         this.lawyerTemplate = load("templates/email/lawyer-scheduled.html");
         this.clientTemplate = load("templates/email/client-scheduled.html");
+        this.diagnosticsQuestionTemplate = load("templates/email/diagnostics-question.html");
+        this.nonEngagementTemplate = load("templates/email/non-engagement-notice.html");
     }
 
     RenderedEmail renderLawyer(ConsultationResponse consultation, EventResponse event) {
@@ -147,26 +151,38 @@ public class EmailTemplateRenderer {
     }
 
     /**
-     * The Diagnostics question as firm correspondence: plaintext, in the Firm Voice, with every
-     * fixed sentence supplied here rather than by the model (ADR 0004). The model contributes the
-     * question and the Acknowledgment and nothing else, so no generation can put a sentence of its
-     * own into a firm's first contact with a stranger.
+     * The Diagnostics question as firm correspondence: a House Style card in the Firm Voice, with
+     * every fixed sentence supplied here rather than by the model (ADR-0004, ADR-0009). The model
+     * contributes the question and the Acknowledgment and nothing else, so no generation can put a
+     * sentence of its own into a firm's first contact with a stranger.
      *
      * <p>{@code acknowledgment} is what the potential client wrote about, in their own terms; the
      * caller passes null when the model gave nothing usable and the neutral receipt is used instead.
      */
     RenderedEmail renderDiagnosticsQuestion(String clientName, String firmName, String acknowledgment, String question) {
-        return new RenderedEmail(salutation(clientName) + "\n"
+        String salutation = salutation(clientName);
+        String acknowledgmentLine = acknowledgmentLine(acknowledgment);
+        String asked = nullToEmpty(question).trim();
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("firm_name", nullToEmpty(firmName).trim());
+        fields.put("salutation", salutation);
+        fields.put("acknowledgment_line", acknowledgmentLine);
+        fields.put("question", asked);
+        String text = "Revisión de su consulta\n"
+                + "Necesitamos algunos datos\n"
                 + "\n"
-                + acknowledgmentLine(acknowledgment) + "\n"
+                + salutation + "\n"
                 + "\n"
-                + "Para poder revisar su consulta necesitamos algunos datos adicionales:\n"
+                + acknowledgmentLine + "\n"
                 + "\n"
-                + nullToEmpty(question).trim() + "\n"
+                + "Lo que necesitamos:\n"
+                + "\n"
+                + asked + "\n"
                 + "\n"
                 + "Quedamos atentos a su respuesta.\n"
                 + "\n"
-                + signOff(firmName), null);
+                + signOff(firmName, DISCLAIMER + " Puede responder directamente a este correo.");
+        return new RenderedEmail(text, render(diagnosticsQuestionTemplate, fields));
     }
 
     /**
@@ -175,12 +191,22 @@ public class EmailTemplateRenderer {
      * the field must not end up with two greetings, so nothing here reads, rewords or strips it.
      */
     RenderedEmail renderNonEngagementNotice(String clientName, String firmName, String notice) {
-        return new RenderedEmail(salutation(clientName) + "\n"
+        String salutation = salutation(clientName);
+        String body = nullToEmpty(notice).strip();
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("firm_name", nullToEmpty(firmName).trim());
+        fields.put("salutation", salutation);
+        fields.put("non_engagement_notice", body);
+        String text = "Respuesta a su consulta\n"
+                + "Sobre su consulta\n"
                 + "\n"
-                + nullToEmpty(notice).strip() + "\n"
+                + salutation + "\n"
+                + "\n"
+                + body + "\n"
                 + "\n"
                 // No "quedamos atentos": the firm is declining, not inviting a reply.
-                + signOff(firmName), null);
+                + signOff(firmName, DISCLAIMER);
+        return new RenderedEmail(text, render(nonEngagementTemplate, fields));
     }
 
     /**
@@ -382,15 +408,15 @@ public class EmailTemplateRenderer {
         return fullName.trim().split("\\s+")[0];
     }
 
-    /** How every plaintext letter to a potential client ends: same signature, same disclaimer. */
-    private String signOff(String firmName) {
+    /** How every plaintext letter to a potential client ends: same signature, then the card's notice block. */
+    private String signOff(String firmName, String notice) {
         return "Cordialmente,\n"
                 // Never a lawyer: during Diagnostics nobody has been assigned or read the matter.
                 + "Equipo de consultas\n"
                 + signatureFirmLine(firmName)
                 + "\n"
                 + "---\n"
-                + DISCLAIMER;
+                + "Aviso: " + notice + "\n";
     }
 
     /** The firm's own name, or nothing: a signature must never leak LegalGate to a potential client. */
