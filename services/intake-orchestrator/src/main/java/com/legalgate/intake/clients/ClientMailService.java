@@ -187,7 +187,7 @@ public class ClientMailService {
         LawyerProfile lawyer = lawyer(entry.tenantId(), client.responsibleLawyerId());
         RenderedEmail mail = renderer.renderClientForward(client.name(), entry.contactAddress(), why, entry.subject(), entry.body());
         return NotificationOutboxItem.forCorrespondence(entry.id(), FORWARD, "LAWYER", lawyer.email(), null,
-                entry.contactAddress(), "Correo de cliente: " + client.name() + " - " + firstNonBlank(entry.subject(), "(sin asunto)"),
+                entry.contactAddress(), "Correo de cliente: " + client.name() + " - " + firstNonBlank(entry.subject(), EmailTemplateRenderer.NO_SUBJECT),
                 mail.text(), mail.html());
     }
 

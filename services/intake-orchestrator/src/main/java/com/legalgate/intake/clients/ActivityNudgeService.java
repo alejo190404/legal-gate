@@ -71,18 +71,18 @@ public class ActivityNudgeService {
         return reminders(activity, client, ActivityNudge.HELD_BACK);
     }
 
-    private void nudge(Activity activity, NudgeTrigger trigger, ActivityNudge kind) {
+    private void nudge(Activity activity, NudgeTrigger trigger, ActivityNudge variant) {
         Client client = clients.client(activity.tenantId(), activity.clientId()).orElse(null);
         if (client != null) {
             clients.claimNudge(activity.tenantId(), activity.id(), trigger, activity.expectedDate(),
-                    reminders(activity, client, kind));
+                    reminders(activity, client, variant));
         }
     }
 
-    private List<NotificationOutboxItem> reminders(Activity activity, Client client, ActivityNudge kind) {
-        RenderedEmail mail = renderer.renderActivityNudge(kind, activity.displayName(), client.name(),
+    private List<NotificationOutboxItem> reminders(Activity activity, Client client, ActivityNudge variant) {
+        RenderedEmail mail = renderer.renderActivityNudge(variant, activity.displayName(), client.name(),
                 activity.expectedDate(), consoleUrl + "?client=" + client.id() + "&activity=" + activity.id());
-        String fullSubject = kind.subject() + ": " + activity.displayName() + " (" + client.name() + ")";
+        String fullSubject = variant.subject() + ": " + activity.displayName() + " (" + client.name() + ")";
         List<String> recipients = new ArrayList<>();
         intake.lawyer(activity.tenantId(), activity.assignedLawyerId()).map(LawyerProfile::email).ifPresent(recipients::add);
         String destination = intakeService.settingsForTenant(activity.tenantId()).destinationEmail();

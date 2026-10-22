@@ -40,14 +40,14 @@ public record NotificationOutboxItem(
                 nextAttemptAt, null, null, null);
     }
 
-    /** Mail about a Client's email; no Consultation, no Event, no calendar invite. {@code htmlBody} may be null. */
+    /** Mail about a Client's email; no Consultation, no Event, no calendar invite. */
     public static NotificationOutboxItem forCorrespondence(String correspondenceId, String type, String recipientRole,
             String recipientEmail, String fromEmail, String replyTo, String subject, String body, String htmlBody) {
         return new NotificationOutboxItem(null, null, null, null, type, recipientRole, recipientEmail, fromEmail,
                 subject, body, htmlBody, null, "PENDING", 0, null, null, null, null, null, correspondenceId, replyTo, null);
     }
 
-    /** A reminder to a lawyer about an Activity. {@code htmlBody} may be null. */
+    /** A reminder to a lawyer about an Activity. */
     public static NotificationOutboxItem forActivity(String activityId, String type, String recipientEmail,
             String subject, String body, String htmlBody) {
         return new NotificationOutboxItem(null, null, null, null, type, "LAWYER", recipientEmail, null,

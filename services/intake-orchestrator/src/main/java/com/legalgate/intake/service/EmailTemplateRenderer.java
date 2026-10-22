@@ -21,10 +21,11 @@ import java.util.regex.Pattern;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
+import org.springframework.web.util.HtmlUtils;
 
 /**
- * Owns every outbound email body: each render returns the plaintext part and, where the type has
- * one yet, the HTML card in the House Style (ADR-0009). Merge fields are flat {@code {{key}}}
+ * Owns every outbound email body: each render returns the plaintext part and the HTML card in the
+ * House Style (ADR-0009). Merge fields are flat {@code {{key}}}
  * tokens, so a plain string replace over an escaped value map is enough — no template engine.
  */
 @Component
@@ -40,7 +41,10 @@ public class EmailTemplateRenderer {
     private static final DateTimeFormatter LAWYER_DATE = DateTimeFormatter.ofPattern("d 'de' MMMM yyyy", ES);
 
     /** What the receipt names when no lawyer is on the Event yet — never a LegalGate one. */
-    static final String UNASSIGNED_LAWYER = "Por asignar";
+    private static final String UNASSIGNED_LAWYER = "Por asignar";
+
+    /** What a Client's email with no subject line is called, in a card and in a forward's subject. */
+    public static final String NO_SUBJECT = "(sin asunto)";
 
     private static final String NEUTRAL_SALUTATION = "Estimado(a):";
     private static final String NEUTRAL_ACKNOWLEDGMENT = "Recibimos su mensaje.";
@@ -62,6 +66,8 @@ public class EmailTemplateRenderer {
     private final String nonEngagementTemplate;
     private final String clientForwardTemplate;
     private final String activityNudgeTemplate;
+    private final String clientReceiptTemplate;
+    private final String statusAnswerTemplate;
 
     public EmailTemplateRenderer() {
         this.lawyerTemplate = load("templates/email/lawyer-scheduled.html");
@@ -70,6 +76,8 @@ public class EmailTemplateRenderer {
         this.nonEngagementTemplate = load("templates/email/non-engagement-notice.html");
         this.clientForwardTemplate = load("templates/email/client-forward.html");
         this.activityNudgeTemplate = load("templates/email/activity-nudge.html");
+        this.clientReceiptTemplate = load("templates/email/client-receipt.html");
+        this.statusAnswerTemplate = load("templates/email/client-status-answer.html");
     }
 
     /** The lawyer's card. A moved consultation gets the same card saying "reagendada" (ADR-0009). */
@@ -126,7 +134,7 @@ public class EmailTemplateRenderer {
         String greeting = (first.isEmpty() ? "Hola" : "Hola " + first) + ", reservamos su espacio.";
         String time = start == null ? "" : timeRange(start, end) + " " + start.format(ZONE)
                 + (end == null ? "" : " · " + durationLabel(event.scheduledStart(), event.scheduledEnd()));
-        String lawyer = firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER);
+        String lawyer = trimmedOr(event.lawyerDisplayName(), UNASSIGNED_LAWYER);
         String meetingUrl = nullToEmpty(event.meetingUrl()).trim();
         String summary = nullToEmpty(consultation.summary()).strip();
 
@@ -222,8 +230,6 @@ public class EmailTemplateRenderer {
         return new RenderedEmail(text, render(nonEngagementTemplate, fields));
     }
 
-    private static final String RECEIPT_TEMPLATE = load("templates/email/client-receipt.html");
-
     /**
      * The receipt a Client gets when their email goes to a lawyer: a card in the Firm Voice, every
      * sentence fixed (ADR-0007, ADR-0009). A Client is represented, so unlike a potential client's
@@ -233,25 +239,25 @@ public class EmailTemplateRenderer {
      * @param salutationName the Client's name for a person, or null for an organization
      */
     public RenderedEmail renderClientReceipt(String salutationName, String firmName, String originalSubject) {
-        String subject = trimmedOr(originalSubject, "(sin asunto)");
+        String subject = trimmedOr(originalSubject, NO_SUBJECT);
+        String salutation = salutation(salutationName);
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("firm_name", nullToEmpty(firmName).trim());
-        fields.put("salutation", salutation(salutationName));
+        fields.put("salutation", salutation);
         fields.put("original_subject", subject);
         String text = "Mensaje recibido\n"
                 + "Su mensaje está con su abogado(a)\n"
                 + "\n"
-                + salutation(salutationName) + "\n"
+                + salutation + "\n"
                 + "\n"
                 + "Recibimos su mensaje y lo trasladamos a su abogado(a), quien le responderá directamente.\n"
                 + "\n"
                 + clientSignOff(firmName)
                 + "\n"
                 + "Su mensaje · Asunto: " + subject + "\n";
-        return new RenderedEmail(text, render(RECEIPT_TEMPLATE, fields));
+        return new RenderedEmail(text, render(clientReceiptTemplate, fields));
     }
 
-    private static final String STATUS_ANSWER_TEMPLATE = load("templates/email/client-status-answer.html");
     /** One open Activity in the status card; both values arrive escaped. */
     private static final String ACTIVITY_ROW = "<tr><td style=\"padding:14px 0;border-bottom:1px solid #ECE7DD;\">"
             + "<div style=\"font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-weight:600;font-size:15px;color:#15120F;\">%s</div>"
@@ -269,8 +275,9 @@ public class EmailTemplateRenderer {
      */
     public RenderedEmail renderStatusAnswer(String salutationName, String firmName, List<Activity> open, LocalDate today) {
         String asOf = "Estado al " + ClientsModels.spanishDate(today) + ".";
+        String salutation = salutation(salutationName);
         StringBuilder text = new StringBuilder("Estado de sus asuntos\nAsí van sus asuntos\n\n")
-                .append(salutation(salutationName))
+                .append(salutation)
                 .append("\n\nEste es el estado de sus asuntos con nosotros:\n");
         StringBuilder rows = new StringBuilder();
         for (Activity activity : open) {
@@ -281,10 +288,10 @@ public class EmailTemplateRenderer {
         text.append("\n").append(clientSignOff(firmName)).append("\nCorte · ").append(asOf).append("\n");
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("firm_name", nullToEmpty(firmName).trim());
-        fields.put("salutation", salutation(salutationName));
+        fields.put("salutation", salutation);
         fields.put("today", ClientsModels.spanishDate(today));
         // The rows are built escaped above, so they go into their one pre-built slot unescaped.
-        String html = render(STATUS_ANSWER_TEMPLATE, fields).replace("{{activity_rows}}", rows);
+        String html = render(statusAnswerTemplate, fields).replace("{{activity_rows}}", rows);
         return new RenderedEmail(text.toString(), html);
     }
 
@@ -320,7 +327,7 @@ public class EmailTemplateRenderer {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("client_name", nullToEmpty(clientName));
         fields.put("client_contact_address", nullToEmpty(contactAddress));
-        fields.put("original_subject", trimmedOr(subject, "(sin asunto)"));
+        fields.put("original_subject", trimmedOr(subject, NO_SUBJECT));
         fields.put("why", nullToEmpty(why));
         fields.put("original_body", trimmedOr(body, "(sin contenido)"));
         String text = """
@@ -415,7 +422,7 @@ public class EmailTemplateRenderer {
     }
 
     /** How a letter to a Client ends: the firm's own name, or nothing — never LegalGate. */
-    public String clientSignOff(String firmName) {
+    private String clientSignOff(String firmName) {
         return "Cordialmente,\n" + signatureFirmLine(firmName);
     }
 
@@ -466,7 +473,7 @@ public class EmailTemplateRenderer {
      * A name we cannot vouch for is worse in a salutation than no name at all: an email address or
      * a bare lowercase handle in "Estimado ..." reads as a mail merge, which is what this avoids.
      */
-    public String salutation(String clientName) {
+    private String salutation(String clientName) {
         String name = nullToEmpty(clientName).trim();
         String first = firstName(name);
         boolean trustworthy = !first.isEmpty()
@@ -562,10 +569,6 @@ public class EmailTemplateRenderer {
         return rest == 0 ? hours + " h" : hours + " h " + rest + " min";
     }
 
-    private String firstNonBlank(String primary, String fallback) {
-        return primary == null || primary.isBlank() ? fallback : primary;
-    }
-
     private static String trimmedOr(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
@@ -574,13 +577,9 @@ public class EmailTemplateRenderer {
         return value == null ? "" : value;
     }
 
-    private String htmlEscape(String value) {
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#x27;");
+    /** The five markup characters only: accents stay as typed, the card is UTF-8. */
+    private static String htmlEscape(String value) {
+        return HtmlUtils.htmlEscape(value, StandardCharsets.UTF_8.name());
     }
 
     private static String load(String path) {
