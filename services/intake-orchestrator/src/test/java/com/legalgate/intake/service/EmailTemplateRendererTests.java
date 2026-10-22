@@ -19,7 +19,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void lawyerTemplateFillsFieldsAndEscapes() {
-        String html = renderer.renderLawyer(consultation(), event()).html();
+        String html = renderer.renderLawyer(consultation(), event(), false).html();
 
         assertThat(html).contains("A1B2C3D4");                 // matter_id: first 8 compact chars, uppercased
         assertThat(html).contains("Juan &amp; Co Pérez"); // client_name with & escaped
@@ -30,7 +30,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateFormatsDateAndEscapesSummary() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).contains("Juan");            // client_first_name (first token)
         assertThat(html).contains("julio");           // Spanish month in America/Bogota
@@ -49,14 +49,14 @@ class EmailTemplateRendererTests {
                 "Tutela", "URGENTE", 1, null, 100,
                 null, null, "SCHEDULED", "SYSTEM");
 
-        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo").html();
+        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo", false).html();
 
         assertThat(html).doesNotContain("{{");
     }
 
     @Test
     void clientReceiptSaysItIsAutomaticAndInvitesNoReply() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).contains("Este correo es autom&aacute;tico");
         assertThat(html).doesNotContain("Responde a este mensaje");
@@ -64,7 +64,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false).html();
 
         assertThat(html).containsOnlyOnce("Firma Ejemplo"); // named once, in the header, like letterhead
         assertThat(html).doesNotContain("LegalGate"); // no wordmark, no product footer
@@ -75,22 +75,12 @@ class EmailTemplateRendererTests {
     @Test
     void aTenantWithNoDisplayNameGetsAnEmptyHeaderBandAndNoLegalGateAnywhere() {
         // No fallback to the sender name: a stranger never sees LegalGate in a firm's letter (ADR-0009).
-        RenderedEmail mail = renderer.renderClient(consultation(), event(), null);
+        RenderedEmail mail = renderer.renderClient(consultation(), event(), null, false);
 
         assertThat(mail.html()).containsPattern("letter-spacing:-0\\.01em;\">\\s*</div>");
         assertThat(mail.html()).doesNotContainIgnoringCase("legalgate");
         assertThat(mail.text()).doesNotContainIgnoringCase("legalgate");
-        assertThat(mail.text()).startsWith("Tu consulta fue agendada.");
-    }
-
-    @Test
-    void theScheduledCardsCarryTheirPlaintextPart() {
-        assertThat(renderer.renderClient(consultation(), event(), "Firma Ejemplo").text())
-                .startsWith("Tu consulta con Firma Ejemplo fue agendada.")
-                .contains("Abogado: Ana Abogada <ana@firm.co>");
-        assertThat(renderer.renderLawyer(consultation(), event()).text())
-                .startsWith("LegalGate agendo una consulta.")
-                .contains("Cliente: Juan & Co Pérez <juan@example.com>");
+        assertThat(mail.text()).startsWith("Consulta agendada\nSu consulta fue agendada");
     }
 
     @Test
@@ -101,9 +91,123 @@ class EmailTemplateRendererTests {
                 Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"),
                 "SCHEDULED", "SYSTEM");
 
-        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo").html())
+        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo", false).html())
                 .doesNotContain("LegalGate")
                 .contains("Por asignar");
+    }
+
+    // --- Scheduling cards in the House Style (#89) ---
+
+    private static final String SCHEDULING_FOOTER = "Este correo es automático. No podemos leer lo que responda aquí. "
+            + "Si necesita algo, escríbanos al correo de siempre.";
+
+    @Test
+    void theClientScheduledCardSpeaksUstedPromisesNoReminderAndSaysRepliesAreNotRead() {
+        RenderedEmail mail = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false);
+
+        assertThat(visibleText(mail))
+                .contains("Su consulta fue agendada", "reservamos su espacio", "Este correo es automático",
+                        "No podemos leer lo que responda aquí. Si necesita algo, escríbanos al correo de siempre.")
+                .doesNotContain("Tu consulta", "tu espacio", "recordatorio", "respondas", "escríbenos");
+        assertThat(mail.text()).contains(SCHEDULING_FOOTER).doesNotContain("recordatorio");
+    }
+
+    @Test
+    void bothScheduledCardsCarryAMeetingButtonOnlyWhenTheEventHasALink() {
+        EventResponse online = withMeeting("https://meet.example.com/abc?x=1&y=2");
+
+        for (RenderedEmail mail : List.of(renderer.renderClient(consultation(), online, "Firma Ejemplo", false),
+                renderer.renderLawyer(consultation(), online, false))) {
+            assertThat(mail.html()).contains("href=\"https://meet.example.com/abc?x=1&amp;y=2\"");
+            assertThat(visibleText(mail)).contains("Unirse a la reunión");
+            assertThat(mail.text()).contains("Unirse a la reunión: https://meet.example.com/abc?x=1&y=2");
+        }
+        for (RenderedEmail mail : List.of(renderer.renderClient(consultation(), event(), "Firma Ejemplo", false),
+                renderer.renderLawyer(consultation(), event(), false))) {
+            assertThat(mail.html()).doesNotContain("<a ").doesNotContain("reuni");
+            assertThat(mail.text()).doesNotContain("reunión");
+        }
+    }
+
+    @Test
+    void theLawyerCardsSummaryBoxStylesCarryNoBackticks() {
+        String html = renderer.renderLawyer(consultation(), event(), false).html();
+
+        assertThat(html).doesNotContain("`")
+                .contains("background-color:#FAF8F4;border:1px solid #E2DBCE;");
+    }
+
+    @Test
+    void aRescheduledConsultationSaysReagendadaInTheHeadlineAndEyebrowOfBothCards() {
+        RenderedEmail client = renderer.renderClient(consultation(), event(), "Firma Ejemplo", true);
+        RenderedEmail lawyer = renderer.renderLawyer(consultation(), event(), true);
+
+        assertThat(CardParity.visibleSentences(client.html())).contains("Consulta reagendada", "Su consulta fue reagendada");
+        assertThat(client.text()).contains("Consulta reagendada", "Su consulta fue reagendada");
+        assertThat(CardParity.visibleSentences(lawyer.html()))
+                .contains("Expediente #A1B2C3D4 · Consulta reagendada", "Consulta reagendada en tu bandeja");
+        assertThat(lawyer.text()).contains("Expediente #A1B2C3D4 · Consulta reagendada", "Consulta reagendada en tu bandeja");
+    }
+
+    @Test
+    void aScheduledConsultationSaysAgendadaAndNeverReagendada() {
+        RenderedEmail client = renderer.renderClient(consultation(), event(), "Firma Ejemplo", false);
+        RenderedEmail lawyer = renderer.renderLawyer(consultation(), event(), false);
+
+        assertThat(CardParity.visibleSentences(client.html())).contains("Consulta agendada", "Su consulta fue agendada");
+        assertThat(CardParity.visibleSentences(lawyer.html()))
+                .contains("Expediente #A1B2C3D4 · Consulta agendada", "Nueva consulta en tu bandeja");
+        for (RenderedEmail mail : List.of(client, lawyer)) {
+            assertThat(mail.html() + mail.text()).doesNotContain("reagendada");
+        }
+    }
+
+    @Test
+    void theSchedulingPlaintextShowsLocalTimesAccentsAndLeavesOutMissingValues() {
+        EventResponse sparse = new EventResponse(
+                "event-1", null, null, null, "Tutela", "URGENTE", 1, null, 100,
+                Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"), null, null,
+                "SCHEDULED", "SYSTEM");
+        ConsultationResponse noEmail = new ConsultationResponse(
+                "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a", "Juan Pérez", null,
+                "Despido sin justa causa", "manana", "SCHEDULED", "URGENTE",
+                "GENERAL", null, null, null, null, null, Instant.parse("2026-07-01T12:00:00Z"));
+
+        for (RenderedEmail mail : List.of(renderer.renderClient(noEmail, sparse, "Firma Ejemplo", false),
+                renderer.renderLawyer(noEmail, sparse, false), renderer.renderClient(consultation(), event(), null, true),
+                renderer.renderLawyer(consultation(), withMeeting("https://meet.example.com/abc"), true))) {
+            assertThat(mail.text()).doesNotContain("null").doesNotContainPattern("\\d{4}-\\d{2}-\\d{2}T")
+                    .contains("14:00–14:45");
+        }
+        assertThat(renderer.renderClient(noEmail, sparse, "Firma Ejemplo", false).text())
+                .contains("Fecha: 2 de julio de 2026", "Abogado: Por asignar\n");
+        assertThat(renderer.renderLawyer(consultation(), event(), false).text())
+                .contains("CLIENTE: Juan & Co Pérez", "EMAIL: juan@example.com", "EN SLA: sí");
+        assertThat(renderer.renderLawyer(noEmail, sparse, false).text()).doesNotContain("EMAIL", "SLA");
+    }
+
+    @Test
+    void bothScheduledPlaintextPartsCarryEverySentenceOfTheirCard() {
+        for (EventResponse event : List.of(event(), withMeeting("https://meet.example.com/abc"))) {
+            for (boolean rescheduled : new boolean[] {false, true}) {
+                CardParity.assertPlaintextCarriesTheCard(
+                        renderer.renderClient(consultation(), event, "Firma Ejemplo", rescheduled));
+                CardParity.assertPlaintextCarriesTheCard(renderer.renderLawyer(consultation(), event, rescheduled));
+            }
+        }
+    }
+
+    private static EventResponse withMeeting(String meetingUrl) {
+        EventResponse base = event();
+        return new EventResponse(base.id(), base.lawyerId(), base.lawyerDisplayName(), base.lawyerEmail(),
+                base.routeName(), base.urgencyName(), base.slaDays(), base.slaDeadline(), base.priorityScore(),
+                base.scheduledStart(), base.scheduledEnd(), meetingUrl, base.scheduledWithinSla(), base.status(),
+                base.source());
+    }
+
+    /** What a reader sees in the card: tags dropped, entities decoded, whitespace collapsed. */
+    private static String visibleText(RenderedEmail mail) {
+        return String.join(" ", CardParity.visibleSentences(mail.html()));
     }
 
     @Test

@@ -28,7 +28,7 @@ class FirmVoiceTests {
 
     /** Each client-facing type, rendered with representative inputs for the given firm name (null for none). */
     private static final List<Type> CLIENT_FACING = List.of(
-            new Type("client scheduled", firm -> RENDERER.renderClient(consultation(), event(), firm)),
+            new Type("client scheduled", firm -> RENDERER.renderClient(consultation(), event(), firm, false)),
             new Type("Diagnostics question", firm -> RENDERER.renderDiagnosticsQuestion(
                     "Maria Perez", firm, "su despido", "¿Cuál fue la fecha del despido?")),
             new Type("Non-Engagement Notice", firm -> RENDERER.renderNonEngagementNotice(

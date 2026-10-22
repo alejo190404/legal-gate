@@ -543,8 +543,9 @@ public class IntakeService {
         }
         List<NotificationOutboxItem> notifications = new ArrayList<>();
         String ics = calendarInviteFor(consultation, event);
+        boolean rescheduled = "CONSULTATION_RESCHEDULED".equals(type);
         if (event.lawyerEmail() != null && !event.lawyerEmail().isBlank()) {
-            RenderedEmail mail = emailTemplateRenderer.renderLawyer(consultation, event);
+            RenderedEmail mail = emailTemplateRenderer.renderLawyer(consultation, event, rescheduled);
             notifications.add(new NotificationOutboxItem(
                     consultation.id(), event.id(), type, "LAWYER", event.lawyerEmail(),
                     subjectFor(type, consultation, event), mail.text(), mail.html(), ics
@@ -552,7 +553,7 @@ public class IntakeService {
         }
         if (consultation.clientEmail() != null && !consultation.clientEmail().isBlank()) {
             RenderedEmail mail = emailTemplateRenderer.renderClient(consultation, event,
-                    firmNameResolver.firmDisplayName(consultation.tenantId()).orElse(null));
+                    firmNameResolver.firmDisplayName(consultation.tenantId()).orElse(null), rescheduled);
             notifications.add(new NotificationOutboxItem(
                     consultation.id(), event.id(), type, "CLIENT", consultation.clientEmail(),
                     subjectFor(type, consultation, event), mail.text(), mail.html(), ics

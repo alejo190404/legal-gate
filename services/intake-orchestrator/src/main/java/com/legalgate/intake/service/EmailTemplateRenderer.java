@@ -52,6 +52,10 @@ public class EmailTemplateRenderer {
     private static final String DISCLAIMER =
             "Este mensaje no constituye asesoria legal y no crea una relacion abogado-cliente.\n";
 
+    /** Nothing receives mail at the scheduling sender, so the footer says so (ADR-0009). */
+    private static final String SCHEDULING_FOOTER = "Este correo es automático. No podemos leer lo que responda aquí. "
+            + "Si necesita algo, escríbanos al correo de siempre.";
+
     private final String lawyerTemplate;
     private final String clientTemplate;
 
@@ -60,90 +64,92 @@ public class EmailTemplateRenderer {
         this.clientTemplate = load("templates/email/client-scheduled.html");
     }
 
-    RenderedEmail renderLawyer(ConsultationResponse consultation, EventResponse event) {
+    /** The lawyer's card. A moved consultation gets the same card saying "reagendada" (ADR-0009). */
+    RenderedEmail renderLawyer(ConsultationResponse consultation, EventResponse event, boolean rescheduled) {
+        String eyebrow = "Expediente #" + matterId(consultation.id()) + " · Consulta " + (rescheduled ? "reagendada" : "agendada");
+        String headline = rescheduled ? "Consulta reagendada en tu bandeja" : "Nueva consulta en tu bandeja";
+        String datetime = lawyerDateTime(event.scheduledStart(), event.scheduledEnd());
+        String meetingUrl = nullToEmpty(event.meetingUrl()).trim();
+        String summary = nullToEmpty(consultation.summary()).strip();
+
         Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("matter_id", matterId(consultation.id()));
+        fields.put("eyebrow", eyebrow);
+        fields.put("headline", headline);
         fields.put("client_name", nullToEmpty(consultation.clientName()));
         fields.put("client_email", nullToEmpty(consultation.clientEmail()));
         fields.put("route", nullToEmpty(event.routeName()));
         fields.put("urgency", nullToEmpty(event.urgencyName()));
-        fields.put("datetime", lawyerDateTime(event.scheduledStart(), event.scheduledEnd()));
-        fields.put("summary", nullToEmpty(consultation.summary()));
-        return new RenderedEmail(lawyerText(consultation, event), render(lawyerTemplate, fields));
-    }
+        fields.put("datetime", datetime);
+        fields.put("meeting_url", meetingUrl);
+        fields.put("summary", summary);
+        String html = optionalSection(render(lawyerTemplate, fields), "meeting_url", !meetingUrl.isEmpty());
 
-    private String lawyerText(ConsultationResponse consultation, EventResponse event) {
-        return """
-                LegalGate agendo una consulta.
-
-                Cliente: %s <%s>
-                Ruta: %s
-                Urgencia: %s
-                SLA: %s
-                Hora: %s - %s
-                En SLA: %s
-                %s
-                Resumen:
-                %s
-                """.formatted(
-                consultation.clientName(),
-                consultation.clientEmail(),
-                event.routeName(),
-                event.urgencyName(),
-                event.slaDeadline(),
-                event.scheduledStart(),
-                event.scheduledEnd(),
-                Boolean.TRUE.equals(event.scheduledWithinSla()) ? "si" : "no",
-                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
-                consultation.summary()
-        ).trim();
+        StringBuilder text = new StringBuilder("LegalGate\n");
+        line(text, "", event.urgencyName());
+        text.append(eyebrow).append("\n\n").append(headline).append("\n\n");
+        line(text, "CLIENTE: ", consultation.clientName());
+        line(text, "EMAIL: ", consultation.clientEmail());
+        line(text, "RUTA: ", event.routeName());
+        line(text, "URGENCIA: ", event.urgencyName());
+        line(text, "HORA: ", datetime);
+        line(text, "SLA: ", lawyerDateTime(event.slaDeadline(), null));
+        line(text, "EN SLA: ", event.scheduledWithinSla() == null ? null : event.scheduledWithinSla() ? "sí" : "no");
+        line(text, "Unirse a la reunión: ", meetingUrl);
+        if (!summary.isEmpty()) {
+            text.append("\n// Resumen\n").append(summary).append("\n");
+        }
+        text.append("\nLEGALGATE · AVISO AUTOMÁTICO · REGLAS DE ENRUTAMIENTO");
+        return new RenderedEmail(text.toString(), html);
     }
 
     /**
      * The scheduling receipt a potential client gets. It carries the firm's name and no LegalGate
      * mark of any kind: the firm is who they wrote to, and LegalGate is a supplier they have never
      * heard of. {@code firmName} is the firm's display name with no fallback; a tenant without one
-     * gets an empty header band, as with signatures (ADR-0009).
+     * gets an empty header band, as with signatures (ADR-0009). A moved consultation gets the same
+     * card saying "reagendada" (ADR-0009).
      */
-    RenderedEmail renderClient(ConsultationResponse consultation, EventResponse event, String firmName) {
+    RenderedEmail renderClient(ConsultationResponse consultation, EventResponse event, String firmName, boolean rescheduled) {
         ZonedDateTime start = event.scheduledStart() == null ? null : ZonedDateTime.ofInstant(event.scheduledStart(), BUSINESS_ZONE);
         ZonedDateTime end = event.scheduledEnd() == null ? null : ZonedDateTime.ofInstant(event.scheduledEnd(), BUSINESS_ZONE);
+        String firm = nullToEmpty(firmName).trim();
+        String first = firstName(consultation.clientName());
+        String status = rescheduled ? "reagendada" : "agendada";
+        String greeting = (first.isEmpty() ? "Hola" : "Hola " + first) + ", reservamos su espacio.";
+        String time = start == null ? "" : timeRange(start, end) + " " + start.format(ZONE)
+                + (end == null ? "" : " · " + durationLabel(event.scheduledStart(), event.scheduledEnd()));
+        String lawyer = firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER);
+        String meetingUrl = nullToEmpty(event.meetingUrl()).trim();
+        String summary = nullToEmpty(consultation.summary()).strip();
+
         Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("firm_name", nullToEmpty(firmName).trim());
-        fields.put("client_first_name", firstName(consultation.clientName()));
+        fields.put("firm_name", firm);
+        fields.put("status", status);
+        fields.put("greeting", greeting);
         fields.put("date_day", start == null ? "" : start.format(DAY));
         fields.put("date_month", start == null ? "" : start.format(MONTH));
         fields.put("date_year", start == null ? "" : start.format(YEAR));
         fields.put("time_range", timeRange(start, end));
         fields.put("timezone", start == null ? "" : start.format(ZONE));
         fields.put("duration", durationLabel(event.scheduledStart(), event.scheduledEnd()));
-        fields.put("lawyer_name", firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER));
-        fields.put("summary", nullToEmpty(consultation.summary()));
-        return new RenderedEmail(clientText(consultation, event, firmName), render(clientTemplate, fields));
-    }
+        fields.put("lawyer_name", lawyer);
+        fields.put("meeting_url", meetingUrl);
+        fields.put("summary", summary);
+        String html = optionalSection(render(clientTemplate, fields), "meeting_url", !meetingUrl.isEmpty());
 
-    private String clientText(ConsultationResponse consultation, EventResponse event, String firmName) {
-        String firm = nullToEmpty(firmName).trim();
-        return """
-                %s
-
-                Hora: %s - %s
-                Abogado: %s <%s>
-                %s
-                Resumen:
-                %s
-
-                Este correo es automatico: no podemos leer lo que respondas aqui. Si necesitas
-                algo, escribenos al correo de siempre y con gusto te ayudamos.
-                """.formatted(
-                firm.isEmpty() ? "Tu consulta fue agendada." : "Tu consulta con " + firm + " fue agendada.",
-                event.scheduledStart(),
-                event.scheduledEnd(),
-                firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER),
-                event.lawyerEmail(),
-                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
-                consultation.summary()
-        ).trim();
+        StringBuilder text = new StringBuilder();
+        line(text, "", firm);
+        text.append("\nConsulta ").append(status).append("\nSu consulta fue ").append(status).append("\n\n")
+                .append(greeting).append("\n\n");
+        line(text, "Fecha: ", start == null ? null : ClientsModels.spanishDate(start.toLocalDate()));
+        line(text, "Hora: ", time);
+        line(text, "Abogado: ", lawyer + (nullToEmpty(event.lawyerEmail()).isBlank() ? "" : " <" + event.lawyerEmail() + ">"));
+        line(text, "Unirse a la reunión: ", meetingUrl);
+        if (!summary.isEmpty()) {
+            text.append("\nMotivo de la consulta:\n").append(summary).append("\n");
+        }
+        text.append("\n").append(SCHEDULING_FOOTER);
+        return new RenderedEmail(text.toString().strip(), html);
     }
 
     /**
@@ -357,6 +363,18 @@ public class EmailTemplateRenderer {
                 && !first.equals(first.toLowerCase(ES));
         // Gendered, and the firm knows nothing about the person: "Estimado(a)" either way.
         return trustworthy ? "Estimado(a) " + first + ":" : NEUTRAL_SALUTATION;
+    }
+
+    /** Drops the card's {@code <!--if:name-->…<!--end:name-->} section unless {@code keep}. */
+    private static String optionalSection(String html, String name, boolean keep) {
+        return keep ? html : html.replaceAll("(?s)<!--if:" + name + "-->.*?<!--end:" + name + "-->", "");
+    }
+
+    /** A plaintext line, left out when its value is missing rather than printed as {@code null}. */
+    private static void line(StringBuilder text, String label, String value) {
+        if (value != null && !value.isBlank()) {
+            text.append(label).append(value).append('\n');
+        }
     }
 
     private String render(String template, Map<String, String> fields) {
