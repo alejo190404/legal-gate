@@ -183,35 +183,70 @@ public class EmailTemplateRenderer {
                 + signOff(firmName), null);
     }
 
+    private static final String RECEIPT_TEMPLATE = load("templates/email/client-receipt.html");
+
     /**
-     * The receipt a Client gets when their email goes to a lawyer. Firm Voice, every sentence fixed
-     * (ADR-0007). A Client is represented, so unlike a potential client's letters this carries no
-     * not-legal-advice disclaimer and is signed by the firm, not its intake team.
+     * The receipt a Client gets when their email goes to a lawyer: a card in the Firm Voice, every
+     * sentence fixed (ADR-0007, ADR-0009). A Client is represented, so unlike a potential client's
+     * letters this carries no not-legal-advice disclaimer and is signed by the firm, not its intake
+     * team. It repeats the Client's subject so they can tell which email it confirms.
      *
      * @param salutationName the Client's name for a person, or null for an organization
      */
-    public RenderedEmail renderClientReceipt(String salutationName, String firmName) {
-        return new RenderedEmail(salutation(salutationName) + "\n"
+    public RenderedEmail renderClientReceipt(String salutationName, String firmName, String originalSubject) {
+        String subject = trimmedOr(originalSubject, "(sin asunto)");
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("firm_name", nullToEmpty(firmName).trim());
+        fields.put("salutation", salutation(salutationName));
+        fields.put("original_subject", subject);
+        String text = "Mensaje recibido\n"
+                + "Su mensaje está con su abogado(a)\n"
                 + "\n"
-                + "Recibimos su mensaje y lo trasladamos a su abogado(a), quien le respondera directamente.\n"
+                + salutation(salutationName) + "\n"
                 + "\n"
-                + clientSignOff(firmName), null);
+                + "Recibimos su mensaje y lo trasladamos a su abogado(a), quien le responderá directamente.\n"
+                + "\n"
+                + clientSignOff(firmName)
+                + "\n"
+                + "Su mensaje · Asunto: " + subject + "\n";
+        return new RenderedEmail(text, render(RECEIPT_TEMPLATE, fields));
     }
 
+    private static final String STATUS_ANSWER_TEMPLATE = load("templates/email/client-status-answer.html");
+    /** One open Activity in the status card; both values arrive escaped. */
+    private static final String ACTIVITY_ROW = "<tr><td style=\"padding:14px 0;border-bottom:1px solid #ECE7DD;\">"
+            + "<div style=\"font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-weight:600;font-size:15px;color:#15120F;\">%s</div>"
+            + "<div style=\"font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:14px;line-height:1.55;color:#4A443A;margin-top:4px;\">%s</div>"
+            + "</td></tr>";
+
     /**
-     * The automatic answer to a Client's Status Inquiry: fixed sentences filled from the record and
-     * nothing else, so no model ever states anything about a Client's matter (ADR-0007). Dates are
-     * Bogota's; {@code today} is the day the answer reflects.
+     * The automatic answer to a Client's Status Inquiry, as a card in the Firm Voice: fixed
+     * sentences filled from the record and nothing else, so no model ever states anything about a
+     * Client's matter (ADR-0007). It invites no reply: a reply is just a forward to the lawyer.
+     * Dates are Bogota's; {@code today} is the day the answer reflects. The plaintext part is what
+     * Client Correspondence records as the answer.
      *
      * @param salutationName the Client's name for a person, or null for an organization
      */
     public RenderedEmail renderStatusAnswer(String salutationName, String firmName, List<Activity> open, LocalDate today) {
-        StringBuilder text = new StringBuilder(salutation(salutationName))
+        String asOf = "Estado al " + ClientsModels.spanishDate(today) + ".";
+        StringBuilder text = new StringBuilder("Estado de sus asuntos\nAsí van sus asuntos\n\n")
+                .append(salutation(salutationName))
                 .append("\n\nEste es el estado de sus asuntos con nosotros:\n");
+        StringBuilder rows = new StringBuilder();
         for (Activity activity : open) {
-            text.append("\n").append(activity.displayName()).append("\n").append(statusLine(activity, today)).append("\n");
+            String line = statusLine(activity, today);
+            text.append("\n").append(activity.displayName()).append("\n").append(line).append("\n");
+            rows.append(ACTIVITY_ROW.formatted(htmlEscape(nullToEmpty(activity.displayName())), htmlEscape(line)));
         }
-        return new RenderedEmail(text.append("\n").append(clientSignOff(firmName)).toString(), null);
+        text.append("\n").append(clientSignOff(firmName)).append("\nCorte · ").append(asOf).append("\n");
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("firm_name", nullToEmpty(firmName).trim());
+        fields.put("salutation", salutation(salutationName));
+        fields.put("today", ClientsModels.spanishDate(today));
+        // The rows are built escaped above, so they go into their one pre-built slot unescaped.
+        String html = render(STATUS_ANSWER_TEMPLATE, fields).replace("{{activity_rows}}", rows);
+        return new RenderedEmail(text.toString(), html);
     }
 
     private static String statusLine(Activity activity, LocalDate today) {
@@ -223,17 +258,17 @@ public class EmailTemplateRenderer {
                     + ClientsModels.spanishDate(expected) + ".";
             case DATED -> "Programada para el " + ClientsModels.spanishDate(expected) + ".";
             case EXTERNAL -> expected == null
-                    ? "Estamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo."
+                    ? "Estamos a la espera de la decisión del juzgado o la autoridad, que no tiene un término fijo."
                     : today.isAfter(expected)
-                            ? "El termino legal para la decision vencio el " + ClientsModels.spanishDate(expected)
+                            ? "El término legal para la decisión venció el " + ClientsModels.spanishDate(expected)
                                     + " y estamos atentos a la respuesta del juzgado o la autoridad."
-                            : "Estamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
+                            : "Estamos a la espera de la decisión del juzgado o la autoridad. El término legal vence el "
                                     + ClientsModels.spanishDate(expected) + ".";
         };
     }
 
     private static String days(int count) {
-        return count == 1 ? "1 dia habil" : count + " dias habiles";
+        return count == 1 ? "1 día hábil" : count + " días hábiles";
     }
 
     /**

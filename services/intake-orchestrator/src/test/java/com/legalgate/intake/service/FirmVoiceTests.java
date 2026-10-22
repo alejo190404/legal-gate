@@ -33,7 +33,7 @@ class FirmVoiceTests {
                     "Maria Perez", firm, "su despido", "¿Cuál fue la fecha del despido?")),
             new Type("Non-Engagement Notice", firm -> RENDERER.renderNonEngagementNotice(
                     "Maria Perez", firm, DiagnosticsService.DEFAULT_NON_ENGAGEMENT_NOTICE)),
-            new Type("client receipt", firm -> RENDERER.renderClientReceipt("Maria Perez", firm)),
+            new Type("client receipt", firm -> RENDERER.renderClientReceipt("Maria Perez", firm, "Estado de mi contrato")),
             new Type("status answer", firm -> RENDERER.renderStatusAnswer(null, firm, List.of(
                     dated("Audiencia inicial", TODAY.plusDays(5)),
                     activity(ActivityKind.TURNAROUND, 15, null),
