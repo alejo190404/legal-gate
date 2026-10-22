@@ -143,6 +143,9 @@ public class EmailTemplateRenderer {
         fields.put("lawyer_name", lawyer);
         fields.put("meeting_url", meetingUrl);
         fields.put("summary", summary);
+        // Like the plaintext, the preview leaves out a schedule it does not have.
+        fields.put("preheader", "Su consulta fue " + status + (start == null ? "" : " — " + start.format(DAY) + " "
+                + start.format(MONTH) + " " + start.format(YEAR) + ", " + timeRange(start, end) + " " + start.format(ZONE)) + ".");
         String html = optionalSection(render(clientTemplate, fields), "meeting_url", !meetingUrl.isEmpty());
 
         StringBuilder text = new StringBuilder();
@@ -344,25 +347,27 @@ public class EmailTemplateRenderer {
         return new RenderedEmail(text.trim(), render(clientForwardTemplate, fields));
     }
 
-    /** The three reminders a lawyer gets about stale work, each with its label, subject and sentence. */
+    /** The three reminders a lawyer gets about stale work, each with its label, subject, headline and sentence. */
     public enum ActivityNudge {
-        OVERDUE("Vencida", "Actividad vencida", """
+        OVERDUE("Vencida", "Actividad vencida", "Actividad vencida", """
                 La actividad "%s" del cliente %s venció el %s y sigue abierta.
                 Si ya terminó, márquela como terminada; si no, actualice su fecha."""),
-        TERM_PASSED("Término vencido", "Termino legal vencido", """
+        TERM_PASSED("Término vencido", "Termino legal vencido", "Término legal vencido", """
                 El término legal de "%s" del cliente %s terminó el %s y no hay decisión registrada.
                 Puede ser momento de actuar, por ejemplo con un incidente de desacato."""),
-        HELD_BACK("Consulta retenida", "Consulta de estado retenida", """
+        HELD_BACK("Consulta retenida", "Consulta de estado retenida", "Consulta de estado retenida", """
                 %2$s preguntó por el estado de su trabajo y no se le respondió automáticamente porque "%1$s" está vencida desde el %3$s.
                 El correo del cliente se le reenvió a su abogado responsable. Cierre la actividad o actualice su fecha.""");
 
         private final String label;
         private final String subject;
+        private final String headline;
         private final String sentence;
 
-        ActivityNudge(String label, String subject, String sentence) {
+        ActivityNudge(String label, String subject, String headline, String sentence) {
             this.label = label;
             this.subject = subject;
+            this.headline = headline;
             this.sentence = sentence;
         }
 
@@ -376,11 +381,12 @@ public class EmailTemplateRenderer {
             String consoleLink) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("variant_label", nudge.label);
-        fields.put("variant_subject", nudge.subject);
-        fields.put("variant_sentence", nudge.sentence.formatted(activityName, clientName, ClientsModels.spanishDate(date)));
+        fields.put("variant_headline", nudge.headline);
         fields.put("activity_name", nullToEmpty(activityName));
         fields.put("client_name", nullToEmpty(clientName));
         fields.put("expected_date", ClientsModels.spanishDate(date));
+        fields.put("variant_sentence", nudge.sentence.formatted(
+                fields.get("activity_name"), fields.get("client_name"), fields.get("expected_date")));
         fields.put("console_link", nullToEmpty(consoleLink));
         String text = """
                 LegalGate · %s
@@ -398,7 +404,7 @@ public class EmailTemplateRenderer {
 
                 LegalGate · Aviso informativo
                 Nada cambia hasta que alguien actualice la actividad en la consola.""".formatted(
-                nudge.label, fields.get("client_name"), nudge.subject, fields.get("variant_sentence"),
+                nudge.label, fields.get("client_name"), nudge.headline, fields.get("variant_sentence"),
                 fields.get("activity_name"), fields.get("client_name"), fields.get("expected_date"), fields.get("console_link"));
         return new RenderedEmail(text, render(activityNudgeTemplate, fields));
     }

@@ -199,6 +199,33 @@ class EmailTemplateRendererTests {
         }
     }
 
+    @Test
+    void theLawyerPreheaderSaysReagendadaWhenTheConsultationMoved() {
+        assertThat(preheader(renderer.renderLawyer(consultation(), event(), true)))
+                .contains("Consulta reagendada").doesNotContain("Nueva consulta");
+        assertThat(preheader(renderer.renderLawyer(consultation(), event(), false))).contains("Nueva consulta");
+    }
+
+    @Test
+    void theClientPreheaderLeavesOutTheTimeWhenThereIsNone() {
+        EventResponse openEnded = new EventResponse(
+                "event-1", "lawyer-1", "Ana Abogada", "ana@firm.co",
+                "Tutela", "URGENTE", 1, null, 100,
+                null, null, "SCHEDULED", "SYSTEM");
+
+        assertThat(preheader(renderer.renderClient(consultation(), openEnded, "Firma Ejemplo", false)))
+                .isEqualTo("Su consulta fue agendada.");
+        assertThat(preheader(renderer.renderClient(consultation(), event(), "Firma Ejemplo", true)))
+                .isEqualTo("Su consulta fue reagendada — 2 julio 2026, 14:00–14:45 COT.");
+    }
+
+    /** The inbox preview line: the card's hidden preheader, entities decoded. */
+    private static String preheader(RenderedEmail mail) {
+        java.util.regex.Matcher hidden = java.util.regex.Pattern.compile("display:none[^>]*>(.*?)</div>").matcher(mail.html());
+        assertThat(hidden.find()).as("a preheader").isTrue();
+        return HtmlUtils.htmlUnescape(hidden.group(1));
+    }
+
     private static EventResponse withMeeting(String meetingUrl) {
         EventResponse base = event();
         return new EventResponse(base.id(), base.lawyerId(), base.lawyerDisplayName(), base.lawyerEmail(),
@@ -518,13 +545,13 @@ class EmailTemplateRendererTests {
     }
 
     @Test
-    void eachActivityNudgeCardCarriesItsOwnLabelSubjectAndSentenceAndLinksToTheActivity() {
+    void eachActivityNudgeCardCarriesItsOwnLabelHeadlineAndSentenceAndLinksToTheActivity() {
         String link = "https://x.co/dashboard?client=c-1&activity=a-1";
         Map<EmailTemplateRenderer.ActivityNudge, List<String>> expected = Map.of(
                 EmailTemplateRenderer.ActivityNudge.OVERDUE, List.of("Vencida", "Actividad vencida",
                         "La actividad \"Contestación\" del cliente Acme SAS venció el 3 de marzo de 2026 y sigue abierta.",
                         "Si ya terminó, márquela como terminada; si no, actualice su fecha."),
-                EmailTemplateRenderer.ActivityNudge.TERM_PASSED, List.of("Término vencido", "Termino legal vencido",
+                EmailTemplateRenderer.ActivityNudge.TERM_PASSED, List.of("Término vencido", "Término legal vencido",
                         "El término legal de \"Contestación\" del cliente Acme SAS terminó el 3 de marzo de 2026 y no hay decisión registrada.",
                         "Puede ser momento de actuar, por ejemplo con un incidente de desacato."),
                 EmailTemplateRenderer.ActivityNudge.HELD_BACK, List.of("Consulta retenida", "Consulta de estado retenida",
@@ -534,7 +561,6 @@ class EmailTemplateRendererTests {
         expected.forEach((nudge, copy) -> {
             RenderedEmail mail = renderer.renderActivityNudge(nudge, "Contestación", "Acme SAS", LocalDate.of(2026, 3, 3), link);
 
-            assertThat(nudge.subject()).isEqualTo(copy.get(1));
             for (String part : List.of(HtmlUtils.htmlUnescape(mail.html()), mail.text())) {
                 assertThat(part).as(nudge.name()).contains(copy).contains("Contestación").contains("Acme SAS")
                         .contains("Nada cambia hasta que alguien actualice la actividad en la consola.");
@@ -543,6 +569,33 @@ class EmailTemplateRendererTests {
             assertThat(mail.text()).contains(link);
             CardParity.assertPlaintextCarriesTheCard(mail);
         });
+    }
+
+    @Test
+    void theNudgeSentenceKeepsItsLineBreakInTheCard() {
+        String html = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE, "Contestación", "Acme SAS",
+                LocalDate.of(2026, 3, 3), "https://x.co").html();
+
+        assertThat(html).containsPattern("<div style=\"[^\"]*white-space:pre-line[^\"]*\">La actividad");
+    }
+
+    @Test
+    void theTermPassedNudgeReadsTerminoWithItsAccentButKeepsItsSubject() {
+        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.TERM_PASSED, "Fallo",
+                "Acme SAS", LocalDate.of(2026, 3, 3), "https://x.co");
+
+        assertThat(CardParity.visibleSentences(mail.html())).contains("Término legal vencido");
+        assertThat(mail.text()).contains("\nTérmino legal vencido\n");
+        assertThat(mail.html() + mail.text()).doesNotContain("Termino legal vencido");
+        assertThat(EmailTemplateRenderer.ActivityNudge.TERM_PASSED.subject()).isEqualTo("Termino legal vencido");
+    }
+
+    @Test
+    void aNudgeWithNoActivityOrClientNameNeverPrintsNull() {
+        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE, null, null,
+                LocalDate.of(2026, 3, 3), "https://x.co");
+
+        assertThat(mail.html() + mail.text()).doesNotContain("null");
     }
 
     static Activity dated(String label, LocalDate on) {

@@ -69,10 +69,10 @@ public class DiagnosticsService {
     static final String DEFAULT_NON_ENGAGEMENT_NOTICE =
             "Gracias por escribirnos.\n"
             + "\n"
-            + "Despues de revisar su mensaje, la firma no puede asumir este asunto.\n"
+            + "Después de revisar su mensaje, la firma no puede asumir este asunto.\n"
             + "\n"
-            + "No se ha formado ninguna relacion abogado-cliente. Le recomendamos buscar otro abogado"
-            + " lo antes posible, ya que su asunto puede estar sujeto a terminos o plazos legales.\n";
+            + "No se ha formado ninguna relación abogado-cliente. Le recomendamos buscar otro abogado"
+            + " lo antes posible, ya que su asunto puede estar sujeto a términos o plazos legales.\n";
 
     private final IntakeRepository intakeRepository;
     private final IntakeService intakeService;
