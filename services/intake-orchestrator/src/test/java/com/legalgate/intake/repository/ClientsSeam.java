@@ -63,7 +63,8 @@ abstract class ClientsSeam {
         intakeService = ClientsFixtures.intakeService(intake, classifier, clientsRepository);
         diagnostics = new DiagnosticsService(intake, intakeService, classifier, ClientsFixtures.properties(),
                 new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()));
-        nudges = new ActivityNudgeService(clientsRepository, intake, intakeService, "https://app.legal-gate.co/dashboard");
+        nudges = new ActivityNudgeService(clientsRepository, intake, intakeService, new EmailTemplateRenderer(),
+                "https://app.legal-gate.co/dashboard");
         clientMail = new ClientMailService(clientsRepository, intake, intakeService, classifier,
                 new EmailTemplateRenderer(), new FirmNameResolver(intake, ClientsFixtures.properties()), nudges);
         router = new InboundMailRouter(diagnostics, clientMail);

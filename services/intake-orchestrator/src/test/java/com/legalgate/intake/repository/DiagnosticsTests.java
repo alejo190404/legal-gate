@@ -78,6 +78,22 @@ class DiagnosticsTests {
     }
 
     @Test
+    void aFirmWithNoDisplayNameSchedulesWithoutPuttingLegalGateInTheClientsCard() {
+        DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
+        ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-31@example.com>"));
+        classifier.verdicts.add(verdict("accept", null, "Completo.", "Despido el 3 de marzo."));
+        classifier.classification = classification();
+
+        diagnostics.processDueDiagnostics();
+
+        NotificationOutboxItem card = repository.claimPendingNotifications(20).stream()
+                .filter(item -> "CONSULTATION_SCHEDULED".equals(item.type()) && "CLIENT".equals(item.recipientRole()))
+                .findFirst().orElseThrow();
+        assertThat(card.htmlBody()).isNotBlank().doesNotContainIgnoringCase("legalgate");
+        assertThat(card.body()).doesNotContainIgnoringCase("legalgate");
+    }
+
+    @Test
     void acceptOnTheFirstPassClassifiesAndSchedulesWithoutAskingAnything() {
         DiagnosticsService diagnostics = diagnosticsFor(PROMPT);
         ConsultationResponse pending = diagnostics.receiveInboundEmail(inboundEmail("<m-3@example.com>"));

@@ -3,9 +3,13 @@ package com.legalgate.intake.service;
 import static org.assertj.core.api.Assertions.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import com.legalgate.intake.clients.ClientsModels.Activity;
+import com.legalgate.intake.clients.ClientsModels.ActivityKind;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 
@@ -15,7 +19,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void lawyerTemplateFillsFieldsAndEscapes() {
-        String html = renderer.renderLawyer(consultation(), event());
+        String html = renderer.renderLawyer(consultation(), event()).html();
 
         assertThat(html).contains("A1B2C3D4");                 // matter_id: first 8 compact chars, uppercased
         assertThat(html).contains("Juan &amp; Co Pérez"); // client_name with & escaped
@@ -26,7 +30,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateFormatsDateAndEscapesSummary() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
 
         assertThat(html).contains("Juan");            // client_first_name (first token)
         assertThat(html).contains("julio");           // Spanish month in America/Bogota
@@ -45,14 +49,14 @@ class EmailTemplateRendererTests {
                 "Tutela", "URGENTE", 1, null, 100,
                 null, null, "SCHEDULED", "SYSTEM");
 
-        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), openEnded, "Firma Ejemplo").html();
 
         assertThat(html).doesNotContain("{{");
     }
 
     @Test
     void clientReceiptSaysItIsAutomaticAndInvitesNoReply() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
 
         assertThat(html).contains("Este correo es autom&aacute;tico");
         assertThat(html).doesNotContain("Responde a este mensaje");
@@ -60,7 +64,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void clientTemplateIsFirmBrandedAndCarriesNoLegalGateMark() {
-        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo");
+        String html = renderer.renderClient(consultation(), event(), "Firma Ejemplo").html();
 
         assertThat(html).containsOnlyOnce("Firma Ejemplo"); // named once, in the header, like letterhead
         assertThat(html).doesNotContain("LegalGate"); // no wordmark, no product footer
@@ -69,11 +73,24 @@ class EmailTemplateRendererTests {
     }
 
     @Test
-    void clientTemplateFallsBackToWhateverNameTheMailIsSentFrom() {
-        // A tenant with no organization display name has no other name to show, and a blank header
-        // is worse than the sender name the message already arrives from (issue #48, ADR 0004).
-        assertThat(renderer.renderClient(consultation(), event(), "LegalGate Agenda"))
-                .containsOnlyOnce("LegalGate Agenda");
+    void aTenantWithNoDisplayNameGetsAnEmptyHeaderBandAndNoLegalGateAnywhere() {
+        // No fallback to the sender name: a stranger never sees LegalGate in a firm's letter (ADR-0009).
+        RenderedEmail mail = renderer.renderClient(consultation(), event(), null);
+
+        assertThat(mail.html()).containsPattern("letter-spacing:-0\\.01em;\">\\s*</div>");
+        assertThat(mail.html()).doesNotContainIgnoringCase("legalgate");
+        assertThat(mail.text()).doesNotContainIgnoringCase("legalgate");
+        assertThat(mail.text()).startsWith("Tu consulta fue agendada.");
+    }
+
+    @Test
+    void theScheduledCardsCarryTheirPlaintextPart() {
+        assertThat(renderer.renderClient(consultation(), event(), "Firma Ejemplo").text())
+                .startsWith("Tu consulta con Firma Ejemplo fue agendada.")
+                .contains("Abogado: Ana Abogada <ana@firm.co>");
+        assertThat(renderer.renderLawyer(consultation(), event()).text())
+                .startsWith("LegalGate agendo una consulta.")
+                .contains("Cliente: Juan & Co Pérez <juan@example.com>");
     }
 
     @Test
@@ -84,7 +101,7 @@ class EmailTemplateRendererTests {
                 Instant.parse("2026-07-02T19:00:00Z"), Instant.parse("2026-07-02T19:45:00Z"),
                 "SCHEDULED", "SYSTEM");
 
-        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo"))
+        assertThat(renderer.renderClient(consultation(), unassigned, "Firma Ejemplo").html())
                 .doesNotContain("LegalGate")
                 .contains("Por asignar");
     }
@@ -93,7 +110,7 @@ class EmailTemplateRendererTests {
     void diagnosticsQuestionIsFirmCorrespondenceAroundTheModelsQuestion() {
         String body = renderer.renderDiagnosticsQuestion(
                 "Alejandro Barragán", "Firma Ejemplo", "la acusación en su institución educativa",
-                "  ¿Cual fue la fecha del despido?  ");
+                "  ¿Cual fue la fecha del despido?  ").text();
 
         assertThat(body).startsWith(
                 "Estimado(a) Alejandro:\n\nRecibimos su mensaje sobre la acusación en su institución educativa.\n\n");
@@ -109,12 +126,12 @@ class EmailTemplateRendererTests {
 
     @Test
     void theAcknowledgmentFallsBackToABareReceiptRatherThanNamingWhatNobodyWrote() {
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", null, "¿Fecha?").text())
                 .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "   ", "¿Fecha?").text())
                 .contains("Recibimos su mensaje.\n\n");
         // The model punctuating its own restatement must not produce "sobre su despido..".
-        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?"))
+        assertThat(renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido.", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre su despido.\n\n");
     }
 
@@ -122,20 +139,20 @@ class EmailTemplateRendererTests {
     void theAcknowledgmentCarriesOneLeadInEvenWhenTheModelEchoesIt() {
         // The model is asked to complete the sentence and sometimes returns the whole of it.
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje sobre que la acusan de plagio", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje sobre que la acusan de plagio", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre que la acusan de plagio.\n\n");
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "recibimos su mensaje sobre: su despido", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "recibimos su mensaje sobre: su despido", "¿Fecha?").text())
                 .contains("Recibimos su mensaje sobre su despido.\n\n");
         // Nothing left once the echo goes: the bare receipt, not a sentence ending in "sobre".
         assertThat(renderer.renderDiagnosticsQuestion(
-                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje.", "¿Fecha?"))
+                "Maria Perez", "Firma Ejemplo", "Recibimos su mensaje.", "¿Fecha?").text())
                 .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n");
     }
 
     @Test
     void diagnosticsQuestionNeverSignsWithALawyer() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", "Firma Ejemplo", "su despido", "¿Tiene el contrato?").text();
 
         assertThat(body).doesNotContain("Ana Abogada");
         assertThat(body).doesNotContain("Abogado");
@@ -154,7 +171,7 @@ class EmailTemplateRendererTests {
 
     @Test
     void signatureOmitsTheFirmLineRatherThanLeakingLegalGateToAPotentialClient() {
-        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?");
+        String body = renderer.renderDiagnosticsQuestion("Maria Perez", null, "su despido", "¿Fecha?").text();
 
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\n\n---");
         assertThat(body).doesNotContain("LegalGate");
@@ -163,7 +180,7 @@ class EmailTemplateRendererTests {
     @Test
     void theNonEngagementNoticeWearsTheSameEnvelopeAsTheQuestion() {
         String body = renderer.renderNonEngagementNotice(
-                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.");
+                "Maria Perez", "Firma Ejemplo", "La firma no puede asumir este asunto.").text();
 
         assertThat(body).startsWith("Estimado(a) Maria:\n\n");
         assertThat(body).contains("Cordialmente,\nEquipo de consultas\nFirma Ejemplo\n");
@@ -176,7 +193,7 @@ class EmailTemplateRendererTests {
     void aFirmAuthoredNoticeIsReproducedVerbatim() {
         String notice = "Apreciado(a) consultante:\n\nNo tomamos este asunto.\n\nAtentamente,\nLa firma";
 
-        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n");
+        String body = renderer.renderNonEngagementNotice("Maria Perez", "Firma Ejemplo", "\n\n" + notice + "  \n").text();
 
         // Nothing inserted, reworded or stripped between the salutation and the signature.
         assertThat(body).isEqualTo("Estimado(a) Maria:\n\n" + notice + "\n\nCordialmente,\n"
@@ -201,11 +218,64 @@ class EmailTemplateRendererTests {
         assertThat(renderer.diagnosticsQuestionSubject(null)).isEqualTo("Necesitamos algunos datos para revisar su consulta");
     }
 
-    private String salutationFor(String clientName) {
-        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").split("\n")[0];
+    @Test
+    void theStatusAnswerListsEachOpenActivityWithItsStatusLine() {
+        RenderedEmail mail = renderer.renderStatusAnswer("Maria Perez", "Firma Ejemplo",
+                List.of(dated("Audiencia inicial", LocalDate.of(2026, 3, 3))), LocalDate.of(2026, 3, 1));
+
+        assertThat(mail.text()).isEqualTo("""
+                Estimado(a) Maria:
+
+                Este es el estado de sus asuntos con nosotros:
+
+                Audiencia inicial
+                Programada para el 3 de marzo de 2026.
+
+                Cordialmente,
+                Firma Ejemplo
+                """);
     }
 
-    private ConsultationResponse consultation() {
+    @Test
+    void theClientForwardTellsTheLawyerWhoWroteWhyAndWhat() {
+        RenderedEmail mail = renderer.renderClientForward("Acme SAS", "gc@acme.co", "Motivo.", null, "  ");
+
+        assertThat(mail.text()).isEqualTo("""
+                LegalGate le reenvia un correo de su cliente Acme SAS <gc@acme.co>.
+                Motivo: Motivo.
+                Responda a este correo para contestarle directamente al cliente.
+
+                Asunto: (sin asunto)
+
+                (sin contenido)""");
+    }
+
+    @Test
+    void anActivityNudgeNamesTheActivityTheClientAndTheDateAndLinksToTheConsole() {
+        RenderedEmail mail = renderer.renderActivityNudge(EmailTemplateRenderer.ActivityNudge.OVERDUE,
+                "Contestación", "Acme SAS", LocalDate.of(2026, 3, 3), "https://x.co/dashboard?client=c&activity=a");
+
+        assertThat(mail.text()).isEqualTo("""
+                LegalGate:
+
+                La actividad "Contestación" del cliente Acme SAS vencio el 3 de marzo de 2026 y sigue abierta.
+                Si ya termino, marquela como terminada; si no, actualice su fecha.
+
+                Ver en la consola: https://x.co/dashboard?client=c&activity=a
+
+                Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.""");
+    }
+
+    static Activity dated(String label, LocalDate on) {
+        return new Activity("activity-1", "tenant-a", "client-1", "type-1", "Audiencia", ActivityKind.DATED, label,
+                on.minusDays(10), null, null, on, null, "lawyer-1", false, null, null, null, Instant.parse("2026-01-01T00:00:00Z"));
+    }
+
+    private String salutationFor(String clientName) {
+        return renderer.renderDiagnosticsQuestion(clientName, "Firma Ejemplo", "su despido", "¿Fecha?").text().split("\n")[0];
+    }
+
+    static ConsultationResponse consultation() {
         return new ConsultationResponse(
                 "a1b2c3d4-0000-4000-8000-000000000000", "tenant-a",
                 "Juan & Co Pérez", "juan@example.com",
@@ -213,7 +283,7 @@ class EmailTemplateRendererTests {
                 "GENERAL", "ana@firm.co", null, null, null, null, Instant.parse("2026-07-01T12:00:00Z"));
     }
 
-    private EventResponse event() {
+    static EventResponse event() {
         return new EventResponse(
                 "event-1", "lawyer-1", "Ana Abogada", "ana@firm.co",
                 "Tutela", "URGENTE", 1, Instant.parse("2026-07-03T00:00:00Z"), 100,

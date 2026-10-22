@@ -30,7 +30,7 @@ public final class ClientsModels {
     public enum ActivityKind { TURNAROUND, DATED, EXTERNAL }
 
     /** A date as Client and lawyer mail write it, e.g. "3 de marzo de 2026"; empty for none. */
-    static String spanishDate(LocalDate date) {
+    public static String spanishDate(LocalDate date) {
         return date == null ? "" : date.format(DATE);
     }
 

@@ -15,9 +15,9 @@ import com.legalgate.intake.service.BusinessDays;
 import com.legalgate.intake.service.EmailTemplateRenderer;
 import com.legalgate.intake.service.FirmNameResolver;
 import com.legalgate.intake.service.IntakeService;
+import com.legalgate.intake.service.RenderedEmail;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -163,52 +163,16 @@ public class ClientMailService {
                     reminders);
             return;
         }
-        String answer = statusAnswer(entry, client, open);
+        RenderedEmail answer = renderer.renderStatusAnswer(salutationName(client), firmName(entry), open, BusinessDays.today());
         if (intakeService.settingsForTenant(entry.tenantId()).automaticAnswers()) {
             clients.saveCorrespondence(entry.tenantId(),
-                    entry.resolved(intent.intent(), ClientsModels.ANSWERED, answer),
+                    entry.resolved(intent.intent(), ClientsModels.ANSWERED, answer.text()),
                     List.of(clientMessage(entry, STATUS_ANSWER, answer)));
             return;
         }
-        forward(entry, client, intent.intent(), ClientsModels.WOULD_HAVE_ANSWERED, answer,
+        forward(entry, client, intent.intent(), ClientsModels.WOULD_HAVE_ANSWERED, answer.text(),
                 "El cliente pregunto por el estado de su trabajo. Las respuestas automaticas estan apagadas; "
                         + "la consola muestra la respuesta que se habria enviado.", List.of());
-    }
-
-    /**
-     * The status answer: fixed Spanish sentences filled from the record and nothing else, so no
-     * model ever states anything about a Client's matter (ADR-0007). Dates are Bogota's.
-     */
-    String statusAnswer(Correspondence entry, Client client, List<Activity> open) {
-        LocalDate today = BusinessDays.today();
-        StringBuilder answer = new StringBuilder(renderer.salutation(salutationName(client)))
-                .append("\n\nEste es el estado de sus asuntos con nosotros:\n");
-        for (Activity activity : open) {
-            answer.append("\n").append(activity.displayName()).append("\n").append(statusLine(activity, today)).append("\n");
-        }
-        return answer.append("\n").append(renderer.clientSignOff(firmName(entry))).toString();
-    }
-
-    private static String statusLine(Activity activity, LocalDate today) {
-        LocalDate expected = activity.expectedDate();
-        return switch (activity.kind()) {
-            case TURNAROUND -> "Inicio: " + ClientsModels.spanishDate(activity.startDate()) + ". Han transcurrido "
-                    + days(Math.max(0, BusinessDays.between(activity.startDate(), today))) + " y faltan "
-                    + Math.max(0, BusinessDays.between(today, expected)) + ". Fecha estimada de entrega: "
-                    + ClientsModels.spanishDate(expected) + ".";
-            case DATED -> "Programada para el " + ClientsModels.spanishDate(expected) + ".";
-            case EXTERNAL -> expected == null
-                    ? "Estamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo."
-                    : today.isAfter(expected)
-                            ? "El termino legal para la decision vencio el " + ClientsModels.spanishDate(expected)
-                                    + " y estamos atentos a la respuesta del juzgado o la autoridad."
-                            : "Estamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
-                                    + ClientsModels.spanishDate(expected) + ".";
-        };
-    }
-
-    private static String days(int count) {
-        return count == 1 ? "1 dia habil" : count + " dias habiles";
     }
 
     /** Passes the email to the Responsible Lawyer and sends the Client a receipt, in one write. */
@@ -221,19 +185,10 @@ public class ClientMailService {
 
     private NotificationOutboxItem forwardToLawyer(Correspondence entry, Client client, String why) {
         LawyerProfile lawyer = lawyer(entry.tenantId(), client.responsibleLawyerId());
-        String body = """
-                LegalGate le reenvia un correo de su cliente %s <%s>.
-                Motivo: %s
-                Responda a este correo para contestarle directamente al cliente.
-
-                Asunto: %s
-
-                %s
-                """.formatted(client.name(), entry.contactAddress(), why,
-                firstNonBlank(entry.subject(), "(sin asunto)"), firstNonBlank(entry.body(), "(sin contenido)")).trim();
+        RenderedEmail mail = renderer.renderClientForward(client.name(), entry.contactAddress(), why, entry.subject(), entry.body());
         return NotificationOutboxItem.forCorrespondence(entry.id(), FORWARD, "LAWYER", lawyer.email(), null,
                 entry.contactAddress(), "Correo de cliente: " + client.name() + " - " + firstNonBlank(entry.subject(), "(sin asunto)"),
-                body);
+                mail.text(), mail.html());
     }
 
     private NotificationOutboxItem receipt(Correspondence entry, Client client) {
@@ -244,10 +199,10 @@ public class ClientMailService {
      * Firm Voice, threaded on the Client's own email, to the Contact Address that matched and from
      * the tenant's plain intake address, so a reply comes back through Contact Address matching.
      */
-    NotificationOutboxItem clientMessage(Correspondence entry, String type, String body) {
+    NotificationOutboxItem clientMessage(Correspondence entry, String type, RenderedEmail mail) {
         return NotificationOutboxItem.forCorrespondence(entry.id(), type, "CLIENT", entry.contactAddress(),
                 intakeService.settingsForTenant(entry.tenantId()).intakeEmail(), null,
-                renderer.clientReplySubject(entry.subject()), body);
+                renderer.clientReplySubject(entry.subject()), mail.text(), mail.html());
     }
 
     String firmName(Correspondence entry) {

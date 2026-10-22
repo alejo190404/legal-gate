@@ -66,7 +66,7 @@ public class DiagnosticsService {
     // The body only: the template layer wraps it in the salutation, signature and the
     // not-legal-advice disclaimer, so neither is repeated here.
     // One line per paragraph: a hard-wrapped paragraph rewraps badly on a phone.
-    private static final String DEFAULT_NON_ENGAGEMENT_NOTICE =
+    static final String DEFAULT_NON_ENGAGEMENT_NOTICE =
             "Gracias por escribirnos.\n"
             + "\n"
             + "Despues de revisar su mensaje, la firma no puede asumir este asunto.\n"
@@ -396,30 +396,30 @@ public class DiagnosticsService {
         );
     }
 
-    /** Plaintext firm correspondence, envelope and subject both supplied by the template layer. */
+    /** Firm correspondence, envelope, subject and bodies all supplied by the template layer. */
     private NotificationOutboxItem questionNotification(ConsultationResponse consultation, DiagnosticsSession session,
             ConsultationDiagnosticsResponse verdict) {
+        RenderedEmail mail = emailTemplateRenderer.renderDiagnosticsQuestion(
+                consultation.clientName(), firmNameOf(session),
+                usableAcknowledgment(verdict.acknowledgment()), verdict.question());
         return new NotificationOutboxItem(
                 consultation.id(), null, "DIAGNOSTICS_QUESTION", "CLIENT", consultation.clientEmail(),
                 replyAddressFor(session),
                 emailTemplateRenderer.diagnosticsQuestionSubject(originalSubjectOf(session)),
-                emailTemplateRenderer.renderDiagnosticsQuestion(
-                        consultation.clientName(), firmNameOf(session),
-                        usableAcknowledgment(verdict.acknowledgment()), verdict.question()),
-                null, null);
+                mail.text(), mail.html(), null);
     }
 
     /** Same envelope as the question; the firm's own notice is the body and is not touched here. */
     private NotificationOutboxItem nonEngagementNotification(ConsultationResponse consultation, DiagnosticsSession session) {
         String configured = intakeService.settingsForTenant(session.tenantId()).nonEngagementNotice();
         String body = configured == null || configured.isBlank() ? DEFAULT_NON_ENGAGEMENT_NOTICE : configured;
+        RenderedEmail mail = emailTemplateRenderer.renderNonEngagementNotice(
+                consultation.clientName(), firmNameOf(session), body);
         return new NotificationOutboxItem(
                 consultation.id(), null, "NON_ENGAGEMENT_NOTICE", "CLIENT", consultation.clientEmail(),
                 replyAddressFor(session),
                 emailTemplateRenderer.nonEngagementSubject(originalSubjectOf(session)),
-                emailTemplateRenderer.renderNonEngagementNotice(
-                        consultation.clientName(), firmNameOf(session), body),
-                null, null);
+                mail.text(), mail.html(), null);
     }
 
     private String originalSubjectOf(DiagnosticsSession session) {

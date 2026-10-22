@@ -28,6 +28,19 @@ class ResendOutboundEmailClientTests {
     }
 
     @Test
+    void clientCorrespondenceAndActivityRemindersSendTheirCardWhenTheyHaveOne() {
+        NotificationOutboxItem receipt = NotificationOutboxItem.forCorrespondence("corr-1", "CLIENT_RECEIPT", "CLIENT",
+                "gc@acme.co", "firma-demo@intake.legal-gate.co", null, "Re: Hola", "Cuerpo", "<p>Tarjeta</p>");
+        NotificationOutboxItem nudge = NotificationOutboxItem.forActivity("activity-1", "ACTIVITY_NUDGE", "ana@a.co",
+                "Actividad vencida", "Cuerpo", "<p>Tarjeta</p>");
+
+        assertThat(client(properties(false, "re_key")).payload(receipt, null))
+                .containsEntry("text", "Cuerpo").containsEntry("html", "<p>Tarjeta</p>");
+        assertThat(client(properties(false, "re_key")).payload(nudge, null))
+                .containsEntry("text", "Cuerpo").containsEntry("html", "<p>Tarjeta</p>");
+    }
+
+    @Test
     void carriesNoMessageIdBecauseResendSilentlyReplacesIt() {
         Map<String, Object> payload = client(properties(false, "re_key"))
                 .payload(notification("CLIENT", null), "<CAF=original@mail.gmail.com>");

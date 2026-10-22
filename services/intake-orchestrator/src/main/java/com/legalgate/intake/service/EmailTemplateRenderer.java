@@ -1,5 +1,7 @@
 package com.legalgate.intake.service;
 
+import com.legalgate.intake.clients.ClientsModels;
+import com.legalgate.intake.clients.ClientsModels.Activity;
 import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.EventResponse;
 import java.io.IOException;
@@ -7,10 +9,12 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -19,10 +23,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 
 /**
- * Renders the outbound consultation emails: rich HTML from the classpath templates for the
- * transactional notices, plaintext for the conversational mail a potential client receives
- * (ADR 0004). Merge fields are flat {@code {{key}}} tokens, so a plain string replace over an
- * escaped value map is enough — no template engine dependency.
+ * Owns every outbound email body: each render returns the plaintext part and, where the type has
+ * one yet, the HTML card in the House Style (ADR-0009). Merge fields are flat {@code {{key}}}
+ * tokens, so a plain string replace over an escaped value map is enough — no template engine.
  */
 @Component
 public class EmailTemplateRenderer {
@@ -57,7 +60,7 @@ public class EmailTemplateRenderer {
         this.clientTemplate = load("templates/email/client-scheduled.html");
     }
 
-    String renderLawyer(ConsultationResponse consultation, EventResponse event) {
+    RenderedEmail renderLawyer(ConsultationResponse consultation, EventResponse event) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("matter_id", matterId(consultation.id()));
         fields.put("client_name", nullToEmpty(consultation.clientName()));
@@ -66,17 +69,43 @@ public class EmailTemplateRenderer {
         fields.put("urgency", nullToEmpty(event.urgencyName()));
         fields.put("datetime", lawyerDateTime(event.scheduledStart(), event.scheduledEnd()));
         fields.put("summary", nullToEmpty(consultation.summary()));
-        return render(lawyerTemplate, fields);
+        return new RenderedEmail(lawyerText(consultation, event), render(lawyerTemplate, fields));
+    }
+
+    private String lawyerText(ConsultationResponse consultation, EventResponse event) {
+        return """
+                LegalGate agendo una consulta.
+
+                Cliente: %s <%s>
+                Ruta: %s
+                Urgencia: %s
+                SLA: %s
+                Hora: %s - %s
+                En SLA: %s
+                %s
+                Resumen:
+                %s
+                """.formatted(
+                consultation.clientName(),
+                consultation.clientEmail(),
+                event.routeName(),
+                event.urgencyName(),
+                event.slaDeadline(),
+                event.scheduledStart(),
+                event.scheduledEnd(),
+                Boolean.TRUE.equals(event.scheduledWithinSla()) ? "si" : "no",
+                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
+                consultation.summary()
+        ).trim();
     }
 
     /**
      * The scheduling receipt a potential client gets. It carries the firm's name and no LegalGate
-     * mark of any kind (ADR 0004): the firm is who they wrote to, and LegalGate is a supplier they
-     * have never heard of. {@code firmName} is resolved by the caller with the sender-name fallback,
-     * unlike a signature: a card whose header is blank is worse than one naming the same sender the
-     * message already arrives from, and a tenant with no display name has none to show.
+     * mark of any kind: the firm is who they wrote to, and LegalGate is a supplier they have never
+     * heard of. {@code firmName} is the firm's display name with no fallback; a tenant without one
+     * gets an empty header band, as with signatures (ADR-0009).
      */
-    String renderClient(ConsultationResponse consultation, EventResponse event, String firmName) {
+    RenderedEmail renderClient(ConsultationResponse consultation, EventResponse event, String firmName) {
         ZonedDateTime start = event.scheduledStart() == null ? null : ZonedDateTime.ofInstant(event.scheduledStart(), BUSINESS_ZONE);
         ZonedDateTime end = event.scheduledEnd() == null ? null : ZonedDateTime.ofInstant(event.scheduledEnd(), BUSINESS_ZONE);
         Map<String, String> fields = new LinkedHashMap<>();
@@ -90,7 +119,31 @@ public class EmailTemplateRenderer {
         fields.put("duration", durationLabel(event.scheduledStart(), event.scheduledEnd()));
         fields.put("lawyer_name", firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER));
         fields.put("summary", nullToEmpty(consultation.summary()));
-        return render(clientTemplate, fields);
+        return new RenderedEmail(clientText(consultation, event, firmName), render(clientTemplate, fields));
+    }
+
+    private String clientText(ConsultationResponse consultation, EventResponse event, String firmName) {
+        String firm = nullToEmpty(firmName).trim();
+        return """
+                %s
+
+                Hora: %s - %s
+                Abogado: %s <%s>
+                %s
+                Resumen:
+                %s
+
+                Este correo es automatico: no podemos leer lo que respondas aqui. Si necesitas
+                algo, escribenos al correo de siempre y con gusto te ayudamos.
+                """.formatted(
+                firm.isEmpty() ? "Tu consulta fue agendada." : "Tu consulta con " + firm + " fue agendada.",
+                event.scheduledStart(),
+                event.scheduledEnd(),
+                firstNonBlank(event.lawyerDisplayName(), UNASSIGNED_LAWYER),
+                event.lawyerEmail(),
+                event.meetingUrl() == null ? "" : "Meeting: " + event.meetingUrl(),
+                consultation.summary()
+        ).trim();
     }
 
     /**
@@ -102,8 +155,8 @@ public class EmailTemplateRenderer {
      * <p>{@code acknowledgment} is what the potential client wrote about, in their own terms; the
      * caller passes null when the model gave nothing usable and the neutral receipt is used instead.
      */
-    String renderDiagnosticsQuestion(String clientName, String firmName, String acknowledgment, String question) {
-        return salutation(clientName) + "\n"
+    RenderedEmail renderDiagnosticsQuestion(String clientName, String firmName, String acknowledgment, String question) {
+        return new RenderedEmail(salutation(clientName) + "\n"
                 + "\n"
                 + acknowledgmentLine(acknowledgment) + "\n"
                 + "\n"
@@ -113,7 +166,7 @@ public class EmailTemplateRenderer {
                 + "\n"
                 + "Quedamos atentos a su respuesta.\n"
                 + "\n"
-                + signOff(firmName);
+                + signOff(firmName), null);
     }
 
     /**
@@ -121,28 +174,120 @@ public class EmailTemplateRenderer {
      * itself is the letter's body and goes out verbatim — a firm that wrote a complete letter into
      * the field must not end up with two greetings, so nothing here reads, rewords or strips it.
      */
-    String renderNonEngagementNotice(String clientName, String firmName, String notice) {
-        return salutation(clientName) + "\n"
+    RenderedEmail renderNonEngagementNotice(String clientName, String firmName, String notice) {
+        return new RenderedEmail(salutation(clientName) + "\n"
                 + "\n"
                 + nullToEmpty(notice).strip() + "\n"
                 + "\n"
                 // No "quedamos atentos": the firm is declining, not inviting a reply.
-                + signOff(firmName);
+                + signOff(firmName), null);
     }
 
     /**
-     * The receipt a Client gets when their email goes to a lawyer. Firm Voice, plaintext, every
-     * sentence fixed (ADR-0007). A Client is represented, so unlike a potential client's letters
-     * this carries no not-legal-advice disclaimer and is signed by the firm, not its intake team.
+     * The receipt a Client gets when their email goes to a lawyer. Firm Voice, every sentence fixed
+     * (ADR-0007). A Client is represented, so unlike a potential client's letters this carries no
+     * not-legal-advice disclaimer and is signed by the firm, not its intake team.
      *
      * @param salutationName the Client's name for a person, or null for an organization
      */
-    public String renderClientReceipt(String salutationName, String firmName) {
-        return salutation(salutationName) + "\n"
+    public RenderedEmail renderClientReceipt(String salutationName, String firmName) {
+        return new RenderedEmail(salutation(salutationName) + "\n"
                 + "\n"
                 + "Recibimos su mensaje y lo trasladamos a su abogado(a), quien le respondera directamente.\n"
                 + "\n"
-                + clientSignOff(firmName);
+                + clientSignOff(firmName), null);
+    }
+
+    /**
+     * The automatic answer to a Client's Status Inquiry: fixed sentences filled from the record and
+     * nothing else, so no model ever states anything about a Client's matter (ADR-0007). Dates are
+     * Bogota's; {@code today} is the day the answer reflects.
+     *
+     * @param salutationName the Client's name for a person, or null for an organization
+     */
+    public RenderedEmail renderStatusAnswer(String salutationName, String firmName, List<Activity> open, LocalDate today) {
+        StringBuilder text = new StringBuilder(salutation(salutationName))
+                .append("\n\nEste es el estado de sus asuntos con nosotros:\n");
+        for (Activity activity : open) {
+            text.append("\n").append(activity.displayName()).append("\n").append(statusLine(activity, today)).append("\n");
+        }
+        return new RenderedEmail(text.append("\n").append(clientSignOff(firmName)).toString(), null);
+    }
+
+    private static String statusLine(Activity activity, LocalDate today) {
+        LocalDate expected = activity.expectedDate();
+        return switch (activity.kind()) {
+            case TURNAROUND -> "Inicio: " + ClientsModels.spanishDate(activity.startDate()) + ". Han transcurrido "
+                    + days(Math.max(0, BusinessDays.between(activity.startDate(), today))) + " y faltan "
+                    + Math.max(0, BusinessDays.between(today, expected)) + ". Fecha estimada de entrega: "
+                    + ClientsModels.spanishDate(expected) + ".";
+            case DATED -> "Programada para el " + ClientsModels.spanishDate(expected) + ".";
+            case EXTERNAL -> expected == null
+                    ? "Estamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo."
+                    : today.isAfter(expected)
+                            ? "El termino legal para la decision vencio el " + ClientsModels.spanishDate(expected)
+                                    + " y estamos atentos a la respuesta del juzgado o la autoridad."
+                            : "Estamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
+                                    + ClientsModels.spanishDate(expected) + ".";
+        };
+    }
+
+    private static String days(int count) {
+        return count == 1 ? "1 dia habil" : count + " dias habiles";
+    }
+
+    /**
+     * A Client's email passed to their Responsible Lawyer, who replies straight to the Client.
+     * Staff mail, but the Client sees it quoted in that reply (ADR-0009).
+     */
+    public RenderedEmail renderClientForward(String clientName, String contactAddress, String why, String subject,
+            String body) {
+        String text = """
+                LegalGate le reenvia un correo de su cliente %s <%s>.
+                Motivo: %s
+                Responda a este correo para contestarle directamente al cliente.
+
+                Asunto: %s
+
+                %s
+                """.formatted(clientName, contactAddress, why,
+                trimmedOr(subject, "(sin asunto)"), trimmedOr(body, "(sin contenido)")).trim();
+        return new RenderedEmail(text, null);
+    }
+
+    /** The three reminders a lawyer gets about stale work, each with its subject and its sentence. */
+    public enum ActivityNudge {
+        OVERDUE("Actividad vencida", """
+                La actividad "%s" del cliente %s vencio el %s y sigue abierta.
+                Si ya termino, marquela como terminada; si no, actualice su fecha."""),
+        TERM_PASSED("Termino legal vencido", """
+                El termino legal de "%s" del cliente %s termino el %s y no hay decision registrada.
+                Puede ser momento de actuar, por ejemplo con un incidente de desacato."""),
+        HELD_BACK("Consulta de estado retenida", """
+                %2$s pregunto por el estado de su trabajo y LegalGate no respondio porque "%1$s" esta vencida desde el %3$s.
+                El correo del cliente se le reenvio a su abogado responsable. Cierre la actividad o actualice su fecha.""");
+
+        private final String subject;
+        private final String sentence;
+
+        ActivityNudge(String subject, String sentence) {
+            this.subject = subject;
+            this.sentence = sentence;
+        }
+
+        public String subject() {
+            return subject;
+        }
+    }
+
+    /** A reminder to a lawyer: LegalGate-branded, and nothing in it changes state. */
+    public RenderedEmail renderActivityNudge(ActivityNudge nudge, String activityName, String clientName, LocalDate date,
+            String consoleLink) {
+        String text = "LegalGate:\n\n"
+                + nudge.sentence.formatted(activityName, clientName, ClientsModels.spanishDate(date)) + "\n\n"
+                + "Ver en la consola: " + consoleLink + "\n\n"
+                + "Este correo es informativo: nada cambia hasta que alguien actualice la actividad en la consola.";
+        return new RenderedEmail(text, null);
     }
 
     /** Client mail stays on the Client's own subject line, as a reply to it. */
@@ -288,6 +433,10 @@ public class EmailTemplateRenderer {
 
     private String firstNonBlank(String primary, String fallback) {
         return primary == null || primary.isBlank() ? fallback : primary;
+    }
+
+    private static String trimmedOr(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 
     private static String nullToEmpty(String value) {

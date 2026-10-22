@@ -40,18 +40,18 @@ public record NotificationOutboxItem(
                 nextAttemptAt, null, null, null);
     }
 
-    /** Plaintext mail about a Client's email; no Consultation, no Event, no calendar invite. */
+    /** Mail about a Client's email; no Consultation, no Event, no calendar invite. {@code htmlBody} may be null. */
     public static NotificationOutboxItem forCorrespondence(String correspondenceId, String type, String recipientRole,
-            String recipientEmail, String fromEmail, String replyTo, String subject, String body) {
+            String recipientEmail, String fromEmail, String replyTo, String subject, String body, String htmlBody) {
         return new NotificationOutboxItem(null, null, null, null, type, recipientRole, recipientEmail, fromEmail,
-                subject, body, null, null, "PENDING", 0, null, null, null, null, null, correspondenceId, replyTo, null);
+                subject, body, htmlBody, null, "PENDING", 0, null, null, null, null, null, correspondenceId, replyTo, null);
     }
 
-    /** A plaintext reminder to a lawyer about an Activity. */
+    /** A reminder to a lawyer about an Activity. {@code htmlBody} may be null. */
     public static NotificationOutboxItem forActivity(String activityId, String type, String recipientEmail,
-            String subject, String body) {
+            String subject, String body, String htmlBody) {
         return new NotificationOutboxItem(null, null, null, null, type, "LAWYER", recipientEmail, null,
-                subject, body, null, null, "PENDING", 0, null, null, null, null, null, null, null, activityId);
+                subject, body, htmlBody, null, "PENDING", 0, null, null, null, null, null, null, null, activityId);
     }
 
     /** The same message in a new delivery state. */
