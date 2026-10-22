@@ -51,16 +51,18 @@ class StatusInquiryTests extends ClientsSeam {
         assertThat(answer.recipientRole()).isEqualTo("CLIENT");
         assertThat(answer.subject()).isEqualTo("Re: Como va?");
         assertThat(answer.body())
-                .startsWith("Estimado(a):\n\n")
+                .contains("Estimado(a):\n\n")
                 .contains("Contrato de arriendo\n")
-                .contains("Inicio: " + DATE.format(drafting.startDate()) + ". Han transcurrido 2 dias habiles y faltan 3.")
+                .contains("Inicio: " + DATE.format(drafting.startDate()) + ". Han transcurrido 2 días hábiles y faltan 3.")
                 .contains("Fecha estimada de entrega: " + DATE.format(drafting.expectedDate()) + ".")
-                .endsWith("Cordialmente,\nVargas & Asociados\n")
+                .contains("Cordialmente,\nVargas & Asociados\n")
+                .doesNotContain("Puede responder")
                 .doesNotContain("LegalGate");
         Correspondence entry = onlyEntry();
         assertThat(entry.outcome()).isEqualTo(ClientsModels.ANSWERED);
         assertThat(entry.intent()).isEqualTo(ClientMailIntentResponse.STATUS_INQUIRY);
         assertThat(entry.answerText()).isEqualTo(answer.body());
+        assertThat(answer.htmlBody()).contains("Contrato de arriendo").doesNotContain("LegalGate");
         assertThat(answer.correspondenceId()).isEqualTo(entry.id());
     }
 
@@ -77,6 +79,7 @@ class StatusInquiryTests extends ClientsSeam {
         assertThat(entry.outcome()).isEqualTo(ClientsModels.WOULD_HAVE_ANSWERED);
         assertThat(entry.answerText()).contains("Audiencia inicial\nProgramada para el "
                 + DATE.format(BusinessDays.today().plusDays(10)) + ".");
+        assertThat(entry.answerText()).startsWith("Estado de sus asuntos\n").contains("Corte · Estado al ");
     }
 
     @Test
@@ -160,11 +163,11 @@ class StatusInquiryTests extends ClientsSeam {
         ask(mail("gc@acme.co", "Acme GC <gc@acme.co>", "<s-7@acme.co>"));
 
         assertThat(onlyEntry().answerText())
-                .contains("Fallo de tutela\nEstamos a la espera de la decision del juzgado o la autoridad. El termino legal vence el "
+                .contains("Fallo de tutela\nEstamos a la espera de la decisión del juzgado o la autoridad. El término legal vence el "
                         + DATE.format(BusinessDays.add(recent, 10)) + ".")
-                .contains("Respuesta a derecho de petición\nEl termino legal para la decision vencio el "
+                .contains("Respuesta a derecho de petición\nEl término legal para la decisión venció el "
                         + DATE.format(BusinessDays.add(old, 15)) + " y estamos atentos a la respuesta del juzgado o la autoridad.")
-                .contains("Registro de marca\nEstamos a la espera de la decision del juzgado o la autoridad, que no tiene un termino fijo.");
+                .contains("Registro de marca\nEstamos a la espera de la decisión del juzgado o la autoridad, que no tiene un término fijo.");
     }
 
     void ask(InboundEmailReceived email) {

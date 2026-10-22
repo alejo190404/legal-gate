@@ -132,13 +132,13 @@ class DiagnosticsTests {
         assertThat(queued.get(0).type()).isEqualTo("DIAGNOSTICS_QUESTION");
         assertThat(queued.get(0).recipientEmail()).isEqualTo("maria@example.com");
         assertThat(queued.get(0).body()).contains("Cual fue la fecha del despido?");
-        // Firm correspondence, not a bare prompt: salutation, framing, signature, plaintext only.
+        // Firm correspondence, not a bare prompt: salutation, framing, signature, card and plaintext.
         assertThat(queued.get(0).body())
-                .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje sobre el despido en su trabajo.");
+                .contains("Estimado(a) Maria:\n\nRecibimos su mensaje sobre el despido en su trabajo.");
         assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
         assertThat(queued.get(0).body()).doesNotContain("LegalGate");
         assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
-        assertThat(queued.get(0).htmlBody()).isNull();
+        assertThat(queued.get(0).htmlBody()).contains("Cual fue la fecha del despido?");
         assertThat(queued.get(0).icsContent()).isNull();
         assertThat(queued.get(0).fromEmail())
                 .startsWith("firma-demo+d")
@@ -169,8 +169,11 @@ class DiagnosticsTests {
             List<NotificationOutboxItem> queued = repository.claimPendingNotifications(10);
             assertThat(queued).hasSize(1);
             assertThat(queued.get(0).body())
-                    .startsWith("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n")
+                    .contains("Estimado(a) Maria:\n\nRecibimos su mensaje.\n\n")
                     .contains("Cual fue la fecha del despido?");
+            assertThat(queued.get(0).htmlBody())
+                    .contains("Recibimos su mensaje.")
+                    .doesNotContain("Recibimos su mensaje sobre");
             assertThat(sessionFor(pending).rounds()).isEqualTo(1);
             assertThat(sessionFor(pending).status()).isEqualTo(DiagnosticsSession.PENDING);
         }
@@ -219,11 +222,11 @@ class DiagnosticsTests {
         assertThat(queued.get(0).type()).isEqualTo("NON_ENGAGEMENT_NOTICE");
         assertThat(queued.get(0).body()).contains("No se ha formado ninguna relacion abogado-cliente");
         // Same Firm Voice envelope and same thread as every other client message.
-        assertThat(queued.get(0).body()).startsWith("Estimado(a) Maria:");
+        assertThat(queued.get(0).body()).contains("Estimado(a) Maria:");
         assertThat(queued.get(0).body()).contains("Cordialmente,\nEquipo de consultas");
         assertThat(queued.get(0).body()).doesNotContain("LegalGate");
         assertThat(queued.get(0).subject()).isEqualTo("Re: Consulta laboral");
-        assertThat(queued.get(0).htmlBody()).isNull();
+        assertThat(queued.get(0).htmlBody()).contains("No se ha formado ninguna relacion abogado-cliente");
     }
 
     @Test
