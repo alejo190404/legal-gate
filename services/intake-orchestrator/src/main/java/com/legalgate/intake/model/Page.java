@@ -1,12 +1,10 @@
 package com.legalgate.intake.model;
 
 import java.nio.charset.StandardCharsets;
-import java.text.Normalizer;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.http.HttpStatus;
@@ -28,11 +26,6 @@ public record Page<T>(List<T> items, String nextCursor) {
         }
         List<T> items = rows.subList(0, limit);
         return new Page<>(List.copyOf(items), cursor(sortKey.apply(items.get(limit - 1))));
-    }
-
-    /** Text as search compares it: lowercase, accents dropped. In-memory twin of Postgres {@code unaccent(lower(...))}. */
-    public static String searchable(String text) {
-        return Normalizer.normalize(text.toLowerCase(Locale.ROOT), Normalizer.Form.NFD).replaceAll("\\p{M}", "");
     }
 
     /** Encodes the last row's sort key, e.g. its name and id. */

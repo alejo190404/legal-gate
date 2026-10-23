@@ -7,6 +7,7 @@ import com.legalgate.intake.clients.ClientsModels.Correspondence;
 import com.legalgate.intake.clients.ClientsModels.HistoryEntry;
 import com.legalgate.intake.model.NotificationOutboxItem;
 import com.legalgate.intake.model.Page;
+import com.legalgate.intake.model.SearchText;
 import com.legalgate.intake.repository.IntakeRepository;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -50,7 +51,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
 
     @Override
     public Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit) {
-        String needle = query == null ? "" : Page.searchable(query.trim());
+        String needle = query == null ? "" : SearchText.of(query.trim());
         Comparator<Client> byName = Comparator.comparing((Client client) -> client.name().toLowerCase(Locale.ROOT))
                 .thenComparing(Client::id);
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
@@ -58,9 +59,9 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .map(this::withOpenActivities)
                 .filter(client -> !idleOnly || client.openActivities() == 0)
                 .filter(client -> needle.isEmpty()
-                        || Page.searchable(client.name()).contains(needle)
-                        || (client.idNumber() != null && Page.searchable(client.idNumber()).contains(needle))
-                        || client.contactAddresses().stream().anyMatch(address -> Page.searchable(address).contains(needle)))
+                        || SearchText.of(client.name()).contains(needle)
+                        || (client.idNumber() != null && SearchText.of(client.idNumber()).contains(needle))
+                        || client.contactAddresses().stream().anyMatch(address -> SearchText.of(address).contains(needle)))
                 .filter(client -> after == null || isAfter(client, after.get(0), after.get(1)))
                 .sorted(byName)
                 .limit(limit + 1L)

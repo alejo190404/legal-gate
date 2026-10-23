@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { ApiConfigService } from '../config/api-config.service';
-import { Client, ClientsComponent } from './clients';
+import { Activity, Client, ClientsComponent } from './clients';
 
 const LAWYERS = [
   { id: 'lawyer-ana', displayName: 'Ana Abogada', email: 'ana@firm.co', active: true },
@@ -446,7 +446,7 @@ describe('ClientsComponent', () => {
     const { fixture, http } = setup();
     http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.componentInstance.open(client());
-    const activity = (id: string, name: string) => ({
+    const activity = (id: string, name: string): Activity => ({
       id, clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
       label: name, displayName: name, startDate: '2026-09-01', turnaroundDays: 5, dueDate: null, scheduledDate: null,
       termDays: null, assignedLawyerId: 'lawyer-ana', done: false, doneAt: null, expectedDate: '2026-09-08',
@@ -466,7 +466,7 @@ describe('ClientsComponent', () => {
     expect(complete('a1').textContent!.trim()).toBe('Terminando…');
     expect(complete('a2').disabled).toBe(false);
     complete('a1').click();
-    fixture.componentInstance.completeActivity(activity('a1', 'Contrato') as any);
+    fixture.componentInstance.completeActivity(activity('a1', 'Contrato'));
     const request = http.expectOne('/api/clients/client-1/activities/a1/done');
 
     request.flush({ error: 'unknown' }, { status: 500, statusText: 'Server Error' });

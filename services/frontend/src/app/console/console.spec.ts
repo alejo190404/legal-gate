@@ -200,6 +200,27 @@ describe('ConsoleComponent session + billing flow', () => {
     }
   });
 
+  it('drops a team save error that comes back after the user moved to Ajustes', () => {
+    const { component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+    component.setView('team');
+    component.saveSettings();
+    component.setView('settings');
+    http.expectOne('/api/tenant/settings').flush(
+      { error: 'duplicate_lawyer_email', message: 'duplicate_lawyer_email' },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    expect(component.settingsErrorMessage()).toBe('');
+  });
+
+  it('drops a rules save error that comes back after the user moved to Equipo', () => {
+    const { component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+    component.setView('rules');
+    component.saveSettings();
+    component.setView('team');
+    http.expectOne('/api/tenant/settings').flush({}, { status: 409, statusText: 'Conflict' });
+    expect(component.settingsErrorMessage()).toBe('');
+  });
+
   it('opens the Client and Activity a reminder email links to once the session loads', () => {
     window.history.replaceState({}, '', '/dashboard?client=client-1&activity=activity-1');
     try {
