@@ -61,4 +61,29 @@ describe('ActivityTypesComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Indica el plazo en días hábiles');
   });
+
+  it('opens the edit form beneath the row it edits and restores the row on cancel', () => {
+    const fixture = TestBed.createComponent(ActivityTypesComponent);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http.expectOne('/api/activity-types').flush([
+      { id: 't1', name: 'Fallo de tutela', kind: 'EXTERNAL', defaultTurnaroundDays: null, defaultTermDays: 10, retiredAt: null },
+      { id: 't2', name: 'Concepto', kind: 'TURNAROUND', defaultTurnaroundDays: 5, defaultTermDays: null, retiredAt: null },
+    ]);
+    fixture.detectChanges();
+    const button = (label: string): HTMLButtonElement =>
+      [...fixture.nativeElement.querySelectorAll('button')].find((b: HTMLElement) => b.textContent === label);
+    button('Editar').click();
+    fixture.detectChanges();
+
+    const rows = fixture.nativeElement.querySelectorAll('.detail-row');
+    expect(fixture.nativeElement.querySelectorAll('form').length).toBe(1);
+    expect(rows[0].nextElementSibling.tagName).toBe('FORM');
+    expect(fixture.nativeElement.textContent).not.toContain('+ Nuevo tipo de actividad');
+
+    button('Cancelar').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(rows[0].nextElementSibling).toBe(rows[1]);
+  });
 });
