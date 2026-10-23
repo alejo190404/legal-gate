@@ -2,8 +2,11 @@ package com.legalgate.intake.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.legalgate.intake.model.ConsultationResponse;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class InMemoryIntakeRepositoryTests {
@@ -46,6 +49,27 @@ class InMemoryIntakeRepositoryTests {
                 .singleElement()
                 .extracting(NotificationOutboxItem::htmlBody)
                 .isEqualTo("<p>Body</p>");
+    }
+
+    @Test
+    void consultationSearchIgnoresAccentsBothWays() {
+        InMemoryIntakeRepository repository = new InMemoryIntakeRepository();
+        String accented = consultation(repository, "José", "Arrendamiento de bodega en Fontibón", "2026-10-01T10:00:00Z");
+        String plain = consultation(repository, "Ana", "Bodega en Fontibon", "2026-10-01T10:01:00Z");
+
+        assertThat(repository.consultationsForTenant("tenant-a", null, "FONTIBON", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(plain, accented);
+        assertThat(repository.consultationsForTenant("tenant-a", null, "fontibón", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(plain, accented);
+        assertThat(repository.consultationsForTenant("tenant-a", null, "jose", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(accented);
+        assertThat(repository.consultationsForTenant("tenant-a", null, "100%", null, 50).items()).isEmpty();
+    }
+
+    private String consultation(InMemoryIntakeRepository repository, String clientName, String summary, String createdAt) {
+        return repository.saveConsultation("tenant-a", new ConsultationResponse(UUID.randomUUID().toString(), "tenant-a",
+                clientName, "ana@example.com", summary, null, "RECEIVED", "NORMAL", null, null, null, null, null,
+                null, Instant.parse(createdAt))).id();
     }
 
     private NotificationOutboxItem notification(String subject) {

@@ -187,12 +187,12 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 .thenComparing(ConsultationResponse::id).reversed();
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
         Instant afterCreatedAt = after == null ? null : Page.instant(after.get(0));
-        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String needle = query == null ? "" : Page.searchable(query.trim());
         List<ConsultationResponse> rows = consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
                 .filter(consultation -> stage == null || stage.equals(consultation.stage()))
                 .filter(consultation -> needle.isEmpty() || Stream.of(consultation.clientName(),
                                 consultation.clientEmail(), consultation.id(), consultation.summary())
-                        .anyMatch(field -> field != null && field.toLowerCase(Locale.ROOT).contains(needle)))
+                        .anyMatch(field -> field != null && Page.searchable(field).contains(needle)))
                 .filter(consultation -> after == null || consultation.createdAt().isBefore(afterCreatedAt)
                         || consultation.createdAt().equals(afterCreatedAt) && consultation.id().compareTo(after.get(1)) < 0)
                 .sorted(newestFirst)

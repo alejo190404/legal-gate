@@ -403,6 +403,23 @@ class ClientsMigrationPostgresTests {
                 .extracting(Client::name).containsExactly("Dora 100%_");
     }
 
+    @Test
+    void searchIgnoresAccentsBothWays() {
+        JdbcClientsRepository repository = repository();
+        repository.saveClient("tenant-a", client(null, "José Núñez", LAWYER_A, "jose@nunez.co"), List.of());
+        repository.saveClient("tenant-a", client(null, "Jose Perez", LAWYER_A, "jp@otro.co"), List.of());
+        repository.saveClient("tenant-a", client(null, "Inés", LAWYER_A, "info@peñalosa.co"), List.of());
+
+        assertThat(repository.clients("tenant-a", "JOSE", false, null, 10).items())
+                .extracting(Client::name).containsExactly("Jose Perez", "José Núñez");
+        assertThat(repository.clients("tenant-a", "nunez", false, null, 10).items())
+                .extracting(Client::name).containsExactly("José Núñez");
+        assertThat(repository.clients("tenant-a", "pérez", false, null, 10).items())
+                .extracting(Client::name).containsExactly("Jose Perez");
+        assertThat(repository.clients("tenant-a", "penalosa", false, null, 10).items())
+                .extracting(Client::name).containsExactly("Inés");
+    }
+
     static Activity turnaround(JdbcClientsRepository repository, String tenant, Client client, String lawyerId) {
         repository.seedActivityTypesOnce(tenant, ClientsService.STARTER_CATALOG);
         ActivityType type = repository.activityTypes(tenant).stream()
