@@ -877,6 +877,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
   setView(view: ConsoleView): void {
     this.activeView.set(view);
+    // Equipo, Ajustes and Reglas share one error slot: a save error belongs to the panel it came from.
+    this.settingsErrorMessage.set('');
     this.closeConsoleMenu();
   }
 
