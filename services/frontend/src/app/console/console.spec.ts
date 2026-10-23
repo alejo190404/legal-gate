@@ -181,6 +181,25 @@ describe('ConsoleComponent session + billing flow', () => {
     expect(component.settingsErrorMessage()).toBe('Dos abogados no pueden tener el mismo email.');
   });
 
+  it('keeps a refused team save out of Ajustes and Reglas', () => {
+    const { fixture, component, http } = consoleWith([lawyer('lawyer-ana', 'Ana Abogada', true)]);
+    component.setView('team');
+    component.saveSettings();
+    http.expectOne('/api/tenant/settings').flush(
+      { error: 'duplicate_lawyer_email', message: 'duplicate_lawyer_email' },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Dos abogados no pueden tener el mismo email.');
+
+    for (const view of ['settings', 'rules', 'team'] as const) {
+      component.setView(view);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Dos abogados no pueden tener el mismo email.');
+      if (view === 'settings') http.expectOne('/api/activity-types').flush([]);
+    }
+  });
+
   it('opens the Client and Activity a reminder email links to once the session loads', () => {
     window.history.replaceState({}, '', '/dashboard?client=client-1&activity=activity-1');
     try {
