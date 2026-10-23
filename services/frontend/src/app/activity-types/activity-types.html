@@ -45,6 +45,7 @@
 </div>
 
 <ng-template #formTemplate>
+  <!-- Not redundant: on Cancelar Angular refreshes this view once with form null before the caller's @if removes it. -->
   @if (form; as f) {
     <form class="settings-form" (submit)="save(); $event.preventDefault()">
       <div class="form-field">

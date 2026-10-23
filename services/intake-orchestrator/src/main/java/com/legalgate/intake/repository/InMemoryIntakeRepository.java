@@ -8,6 +8,7 @@ import com.legalgate.intake.model.EventResponse;
 import com.legalgate.intake.model.LawyerAvailabilityWindow;
 import com.legalgate.intake.model.LawyerProfile;
 import com.legalgate.intake.model.NotificationOutboxItem;
+import com.legalgate.intake.model.SearchText;
 import com.legalgate.intake.model.TenantProvisioning;
 import com.legalgate.intake.model.TenantSettingsResponse;
 import java.time.Instant;
@@ -187,12 +188,12 @@ class InMemoryIntakeRepository implements IntakeRepository {
                 .thenComparing(ConsultationResponse::id).reversed();
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
         Instant afterCreatedAt = after == null ? null : Page.instant(after.get(0));
-        String needle = query == null ? "" : Page.searchable(query.trim());
+        String needle = query == null ? "" : SearchText.of(query.trim());
         List<ConsultationResponse> rows = consultationsByTenant.getOrDefault(tenantSlug, List.of()).stream()
                 .filter(consultation -> stage == null || stage.equals(consultation.stage()))
                 .filter(consultation -> needle.isEmpty() || Stream.of(consultation.clientName(),
                                 consultation.clientEmail(), consultation.id(), consultation.summary())
-                        .anyMatch(field -> field != null && Page.searchable(field).contains(needle)))
+                        .anyMatch(field -> field != null && SearchText.of(field).contains(needle)))
                 .filter(consultation -> after == null || consultation.createdAt().isBefore(afterCreatedAt)
                         || consultation.createdAt().equals(afterCreatedAt) && consultation.id().compareTo(after.get(1)) < 0)
                 .sorted(newestFirst)

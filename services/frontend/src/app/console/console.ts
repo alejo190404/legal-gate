@@ -1275,6 +1275,7 @@ export class ConsoleComponent implements OnInit, OnDestroy {
 
     this.isSubmitting.set(true);
     this.settingsErrorMessage.set('');
+    const savedFrom = this.activeView();
     this.http
       .put<TenantSettingsResponse>(this.apiConfig.url('/api/tenant/settings'), {
         lawyers,
@@ -1293,7 +1294,8 @@ export class ConsoleComponent implements OnInit, OnDestroy {
         },
         error: (error: HttpErrorResponse) => {
           this.handleProtectedError(error, () => {
-            this.settingsErrorMessage.set(this.teamSaveError(error));
+            // A late error stays with the panel that saved, not the one now open.
+            if (this.activeView() === savedFrom) this.settingsErrorMessage.set(this.teamSaveError(error));
             this.isSubmitting.set(false);
           });
         },
