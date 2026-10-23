@@ -3,6 +3,16 @@
   display: contents;
 }
 
+/* The list and the detail scroll on their own, so the selected Client's detail stays beside the list. */
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+.page > :not(.clients-layout) {
+  flex: none;
+}
+
 .clients-toolbar {
   display: flex;
   gap: 12px;
@@ -12,7 +22,11 @@
 
 .clients-layout {
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
 .clients-layout.split {
@@ -24,6 +38,12 @@
   flex-direction: column;
   border: 1px solid var(--border);
   background: var(--bg-surface);
+  max-height: 100%;
+  overflow: auto;
+}
+
+.clients-layout .detail {
+  max-height: 100%;
 }
 
 .client-row {
@@ -77,9 +97,19 @@
   flex: 1;
 }
 
+/* One column: list and detail stack, and the page scrolls them together. */
 @media (max-width: 900px) {
+  .page {
+    display: block;
+  }
+
   .clients-layout.split {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .clients-list {
+    overflow: visible;
   }
 }
 
