@@ -118,7 +118,10 @@
                     <span class="tag kw">Término vencido</span>
                   }
                   <button class="link-button" type="button" (click)="openActivityEdit(activity)">Editar</button>
-                  <button class="link-button" type="button" (click)="completeActivity(activity)">Terminar</button>
+                  <button class="link-button" type="button" [disabled]="completingIds().has(activity.id)"
+                    (click)="completeActivity(activity)">
+                    {{ completingIds().has(activity.id) ? 'Terminando…' : 'Terminar' }}
+                  </button>
                 }
               </span>
             </div>
