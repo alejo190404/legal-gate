@@ -49,7 +49,8 @@ class JdbcClientsRepository implements ClientsRepository {
     }
 
     // Keyset on (lower(name), id): both sides of the comparison are lowered by Postgres, so the
-    // cursor sorts exactly like the rows. strpos matches the query literally, % and _ included.
+    // cursor sorts exactly like the rows. strpos matches the query literally, % and _ included,
+    // and unaccent on both sides lets "jose" find "José" and back.
     @Override
     public Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit) {
         StringBuilder sql = new StringBuilder(clientSelect()).append(" where t.slug = ?");
@@ -57,9 +58,10 @@ class JdbcClientsRepository implements ClientsRepository {
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (!needle.isEmpty()) {
             sql.append("""
-                     and (strpos(lower(c.name), ?) > 0 or strpos(lower(coalesce(c.id_number, '')), ?) > 0
+                     and (strpos(unaccent(lower(c.name)), unaccent(?)) > 0
+                       or strpos(unaccent(lower(coalesce(c.id_number, ''))), unaccent(?)) > 0
                        or exists (select 1 from client_contact_addresses a
-                                  where a.client_id = c.id and strpos(lower(a.address), ?) > 0))
+                                  where a.client_id = c.id and strpos(unaccent(lower(a.address)), unaccent(?)) > 0))
                     """);
             args.addAll(List.of(needle, needle, needle));
         }

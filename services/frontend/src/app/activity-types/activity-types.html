@@ -29,8 +29,23 @@
         </span>
       }
     </div>
+    @if (form?.id === type.id) {
+      <ng-container *ngTemplateOutlet="formTemplate" />
+    }
   }
 
+  @if (form?.id === null) {
+    <ng-container *ngTemplateOutlet="formTemplate" />
+  } @else if (!form) {
+    @if (errorMessage()) {
+      <div class="panel-error"><strong>{{ errorMessage() }}</strong></div>
+    }
+    <button class="btn" type="button" (click)="startCreate()">+ Nuevo tipo de actividad</button>
+  }
+</div>
+
+<ng-template #formTemplate>
+  <!-- Not redundant: on Cancelar Angular refreshes this view once with form null before the caller's @if removes it. -->
   @if (form; as f) {
     <form class="settings-form" (submit)="save(); $event.preventDefault()">
       <div class="form-field">
@@ -67,10 +82,5 @@
         <button class="btn" type="button" (click)="cancel()">Cancelar</button>
       </div>
     </form>
-  } @else {
-    @if (errorMessage()) {
-      <div class="panel-error"><strong>{{ errorMessage() }}</strong></div>
-    }
-    <button class="btn" type="button" (click)="startCreate()">+ Nuevo tipo de actividad</button>
   }
-</div>
+</ng-template>

@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { ApiConfigService } from '../config/api-config.service';
-import { Client, ClientsComponent } from './clients';
+import { Activity, Client, ClientsComponent } from './clients';
 
 const LAWYERS = [
   { id: 'lawyer-ana', displayName: 'Ana Abogada', email: 'ana@firm.co', active: true },
@@ -440,6 +440,41 @@ describe('ClientsComponent', () => {
     http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
     fixture.detectChanges();
     expect(dialog()).toBeNull();
+  });
+
+  it('holds an Activity\'s Terminar while its completion is in flight', () => {
+    const { fixture, http } = setup();
+    http.expectOne('/api/clients').flush({ items: [client()], nextCursor: null });
+    fixture.componentInstance.open(client());
+    const activity = (id: string, name: string): Activity => ({
+      id, clientId: 'client-1', activityTypeId: 'type-draft', typeName: 'Redacción de contrato', kind: 'TURNAROUND',
+      label: name, displayName: name, startDate: '2026-09-01', turnaroundDays: 5, dueDate: null, scheduledDate: null,
+      termDays: null, assignedLawyerId: 'lawyer-ana', done: false, doneAt: null, expectedDate: '2026-09-08',
+      overdue: false, termPassed: false });
+    http.expectOne('/api/clients/client-1/activities').flush([activity('a1', 'Contrato'), activity('a2', 'Poder')]);
+    http.expectOne('/api/clients/client-1/history').flush([]);
+    http.expectOne('/api/clients/client-1/correspondence').flush([]);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const complete = (id: string) =>
+      page.querySelector<HTMLButtonElement>(`#activity-${id} button:last-of-type`)!;
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    complete('a1').click();
+    fixture.detectChanges();
+    expect(complete('a1').disabled).toBe(true);
+    expect(complete('a1').textContent!.trim()).toBe('Terminando…');
+    expect(complete('a2').disabled).toBe(false);
+    complete('a1').click();
+    fixture.componentInstance.completeActivity(activity('a1', 'Contrato'));
+    const request = http.expectOne('/api/clients/client-1/activities/a1/done');
+
+    request.flush({ error: 'unknown' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(complete('a1').disabled).toBe(false);
+    expect(complete('a1').textContent!.trim()).toBe('Terminar');
+    expect(page.textContent).toContain('No se pudo cerrar la actividad.');
+    confirmSpy.mockRestore();
   });
 
   it('clears an Activity error once a later save or close succeeds', () => {
