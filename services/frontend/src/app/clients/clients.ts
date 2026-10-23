@@ -1,7 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, DestroyRef, ElementRef, OnInit, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription } from 'rxjs';
+import { Subscription, finalize } from 'rxjs';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityKind, ActivityType } from '../activity-types/activity-types';
@@ -217,6 +217,8 @@ export class ClientsComponent implements OnInit {
   readonly activityTypes = signal<ActivityType[]>([]);
   readonly offeredTypes = computed(() => this.activityTypes().filter((type) => !type.retiredAt));
   readonly activityError = signal('');
+  // Activities whose completion request is in flight; their Terminar stays disabled.
+  readonly completingIds = signal<ReadonlySet<string>>(new Set());
   readonly activityForm = signal<ActivityForm | null>(null);
   private readonly activityDialog = viewChild<ElementRef<HTMLElement>>('activityDialog');
   // Focus moves into the Activity dialog when it opens.
@@ -407,11 +409,19 @@ export class ClientsComponent implements OnInit {
 
   completeActivity(activity: Activity): void {
     const client = this.selected();
-    if (!client || !confirm(`¿Marcar "${activity.displayName}" como terminada? No se puede deshacer.`)) {
+    if (
+      !client ||
+      this.completingIds().has(activity.id) ||
+      !confirm(`¿Marcar "${activity.displayName}" como terminada? No se puede deshacer.`)
+    ) {
       return;
     }
+    const settle = () =>
+      this.completingIds.update((ids) => new Set([...ids].filter((id) => id !== activity.id)));
+    this.completingIds.update((ids) => new Set(ids).add(activity.id));
     this.http
       .post<Activity>(this.apiConfig.url(`/api/clients/${client.id}/activities/${activity.id}/done`), {})
+      .pipe(finalize(settle))
       .subscribe({
         next: () => {
           this.activityError.set('');
