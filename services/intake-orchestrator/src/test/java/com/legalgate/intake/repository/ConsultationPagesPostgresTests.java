@@ -171,6 +171,20 @@ class ConsultationPagesPostgresTests {
         assertThat(repository.consultationsForTenant(TENANT, null, "100%", null, 50).items()).isEmpty();
     }
 
+    // Users in Colombia often type without accents: "fontibon" finds "Fontibón" and back.
+    @Test
+    void searchIgnoresAccentsBothWays() {
+        String accented = save("RECEIVED", START, "José", "ana@example.com", "Arrendamiento de bodega en Fontibón").id();
+        String plain = save("RECEIVED", START.plusSeconds(60), "Ana", "ana@example.com", "Bodega en Fontibon").id();
+
+        assertThat(repository.consultationsForTenant(TENANT, null, "FONTIBON", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(plain, accented);
+        assertThat(repository.consultationsForTenant(TENANT, null, "fontibón", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(plain, accented);
+        assertThat(repository.consultationsForTenant(TENANT, null, "jose", null, 50).items())
+                .extracting(ConsultationResponse::id).containsExactly(accented);
+    }
+
     private ConsultationResponse save(String status, Instant createdAt, String clientName, String clientEmail, String summary) {
         return repository.saveConsultation(TENANT, new ConsultationResponse(UUID.randomUUID().toString(), TENANT,
                 clientName, clientEmail, summary, null, status, "NORMAL", null, null, null, null, null,

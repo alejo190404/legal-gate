@@ -578,7 +578,8 @@ class JdbcIntakeRepository implements IntakeRepository {
     }
 
     // Keyset on (created_at, id), newest first: a Consultation arriving mid-paging sorts before the
-    // cursor, so later pages neither skip nor repeat anything. strpos matches the query literally.
+    // cursor, so later pages neither skip nor repeat anything. strpos matches the query literally;
+    // unaccent lets "fontibon" find "Fontibón" and back.
     @Override
     public Page<ConsultationResponse> consultationsForTenant(String tenantSlug, String stage, String query, String cursor, int limit) {
         StringBuilder sql = new StringBuilder(consultationSelect()).append(" where t.slug = ?");
@@ -590,10 +591,10 @@ class JdbcIntakeRepository implements IntakeRepository {
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (!needle.isEmpty()) {
             sql.append("""
-                     and (strpos(lower(coalesce(c.client_name, '')), ?) > 0
-                       or strpos(lower(coalesce(c.client_email, '')), ?) > 0
+                     and (strpos(unaccent(lower(coalesce(c.client_name, ''))), unaccent(?)) > 0
+                       or strpos(unaccent(lower(coalesce(c.client_email, ''))), unaccent(?)) > 0
                        or strpos(c.id::text, ?) > 0
-                       or strpos(lower(coalesce(c.summary, '')), ?) > 0)
+                       or strpos(unaccent(lower(coalesce(c.summary, ''))), unaccent(?)) > 0)
                     """);
             args.addAll(List.of(needle, needle, needle, needle));
         }

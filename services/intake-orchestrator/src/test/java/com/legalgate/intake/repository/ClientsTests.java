@@ -167,6 +167,18 @@ class ClientsTests {
     }
 
     @Test
+    void theListSearchIgnoresAccentsBothWays() {
+        ClientsFixtures.saveLawyers(intake, TENANT);
+        clients.create(TENANT, ADMIN, request("José Núñez", "PERSON", List.of("jose@nunez.co")));
+        clients.create(TENANT, ADMIN, request("Jose Perez", "PERSON", List.of("jp@otro.co")));
+
+        assertThat(clients.search(TENANT, "JOSE", false, null).items()).extracting(Client::name)
+                .containsExactly("Jose Perez", "José Núñez");
+        assertThat(clients.search(TENANT, "nunez", false, null).items()).extracting(Client::name).containsExactly("José Núñez");
+        assertThat(clients.search(TENANT, "pérez", false, null).items()).extracting(Client::name).containsExactly("Jose Perez");
+    }
+
+    @Test
     void theListComesFiftyClientsAtATime() {
         ClientsFixtures.saveLawyers(intake, TENANT);
         for (int i = 1; i <= 51; i++) {

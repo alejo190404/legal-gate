@@ -50,7 +50,7 @@ public class InMemoryClientsRepository implements ClientsRepository {
 
     @Override
     public Page<Client> clients(String tenantSlug, String query, boolean idleOnly, String cursor, int limit) {
-        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String needle = query == null ? "" : Page.searchable(query.trim());
         Comparator<Client> byName = Comparator.comparing((Client client) -> client.name().toLowerCase(Locale.ROOT))
                 .thenComparing(Client::id);
         List<String> after = cursor == null ? null : Page.sortKey(cursor, 2);
@@ -58,9 +58,9 @@ public class InMemoryClientsRepository implements ClientsRepository {
                 .map(this::withOpenActivities)
                 .filter(client -> !idleOnly || client.openActivities() == 0)
                 .filter(client -> needle.isEmpty()
-                        || client.name().toLowerCase(Locale.ROOT).contains(needle)
-                        || (client.idNumber() != null && client.idNumber().toLowerCase(Locale.ROOT).contains(needle))
-                        || client.contactAddresses().stream().anyMatch(address -> address.toLowerCase(Locale.ROOT).contains(needle)))
+                        || Page.searchable(client.name()).contains(needle)
+                        || (client.idNumber() != null && Page.searchable(client.idNumber()).contains(needle))
+                        || client.contactAddresses().stream().anyMatch(address -> Page.searchable(address).contains(needle)))
                 .filter(client -> after == null || isAfter(client, after.get(0), after.get(1)))
                 .sorted(byName)
                 .limit(limit + 1L)
